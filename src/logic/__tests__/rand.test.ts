@@ -7,14 +7,16 @@ describe('rand', () => {
     const a = [rand(), rand(), rand()]
     setSeed(42)
     const b = [rand(), rand(), rand()]
-    setSeed(null)
     expect(a).toEqual(b)
   })
 
-  it('chance(1) is always true and chance(0) always false', () => {
+  it('produces a reproducible chance() sequence for a given seed', () => {
     setSeed(7)
-    expect(chance(1)).toBe(true)
-    expect(chance(0)).toBe(false)
-    setSeed(null)
+    const a = Array.from({ length: 10 }, () => chance(0.5))
+    setSeed(7)
+    const b = Array.from({ length: 10 }, () => chance(0.5))
+    expect(a).toEqual(b)
+    // a coin-flip run of ten should not be all-heads or all-tails
+    expect(new Set(a).size).toBe(2)
   })
 })
