@@ -12,6 +12,7 @@ import {
   nextRank,
   rankIndex,
   repUnlocked,
+  SLOTS,
   swagOf,
   weeklyUpkeep,
 } from '../logic/economy'
@@ -20,6 +21,8 @@ import { arch, closeChance, makeLead } from '../logic/leads'
 import { withLog } from '../logic/log'
 import {
   activeChannels,
+  channelOf,
+  isChannelLocked,
   rollInbound,
   weeklyChannelRep,
   weeklyChannelSpend,
@@ -40,6 +43,9 @@ import type {
   SummaryLine,
   WeekSummary,
 } from './types'
+
+/** Three savable loadouts — "Otis Mode", "Full Gremlin", and one more. */
+export const PRESET_SLOTS = 3
 
 export function initialState(): GameState {
   return {
@@ -282,6 +288,70 @@ export function reducer(state: GameState, action: Action): GameState {
             : 'You put on the ' +
                 it.name +
                 ' and checked your reflection in a parked car.',
+        ),
+      )
+    }
+    case 'TOGGLE_CHANNEL': {
+      const c = channelOf(action.channelId)
+      if (!c) return state
+      const on = state.activeChannelIds.includes(c.id)
+      /* A locked channel can't be started, but one already running can always
+         be stopped — reputation can decay below the bar you signed up at. */
+      if (!on && isChannelLocked(state, c)) return state
+      const activeChannelIds = on
+        ? state.activeChannelIds.filter((id) => id !== c.id)
+        : [...state.activeChannelIds, c.id]
+      return sync(
+        withLog(
+          { ...state, activeChannelIds },
+          'flavor',
+          on
+            ? 'You pulled the plug on ' +
+                c.name +
+                '. The silence is cheaper and worse.'
+            : 'You signed up for ' + c.name + '. ' + c.flavor,
+        ),
+      )
+    }
+    case 'SAVE_PRESET': {
+      if (action.index < 0 || action.index >= PRESET_SLOTS) return state
+      const outfitPresets = [...state.outfitPresets]
+      outfitPresets[action.index] = {
+        name: action.name,
+        equipped: { ...state.equipped },
+      }
+      return sync(
+        withLog(
+          { ...state, outfitPresets },
+          'flavor',
+          'You saved this look as “' +
+            action.name +
+            '” so you can become this person again on command.',
+        ),
+      )
+    }
+    case 'RENAME_PRESET': {
+      const existing = state.outfitPresets[action.index]
+      if (!existing) return state
+      const outfitPresets = [...state.outfitPresets]
+      outfitPresets[action.index] = { ...existing, name: action.name }
+      return { ...state, outfitPresets }
+    }
+    case 'LOAD_PRESET': {
+      const preset = state.outfitPresets[action.index]
+      if (!preset) return state
+      const equipped: GameState['equipped'] = {}
+      SLOTS.forEach((slot) => {
+        const id = preset.equipped[slot.id]
+        if (id && state.ownedSwagIds.includes(id)) equipped[slot.id] = id
+      })
+      return sync(
+        withLog(
+          { ...state, equipped },
+          'flavor',
+          'You changed into “' +
+            preset.name +
+            '” in a parking garage in under a minute.',
         ),
       )
     }
