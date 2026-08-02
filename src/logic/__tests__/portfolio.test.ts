@@ -5,6 +5,7 @@ import {
   STREET_NAMES,
 } from '../../data/properties'
 import { TENANTS } from '../../data/tenants'
+import { TENANT_EVENTS } from '../../data/tenantEvents'
 
 describe('property data', () => {
   it('lists the six buyable types and no vrbo entry', () => {
@@ -71,5 +72,28 @@ describe('tenant data', () => {
     const steve = TENANTS.find((t) => t.id === 'sobStorySteve')!
     expect(steve.onSkip).toBe('gone')
     expect(steve.evictBody).toContain('koi')
+  })
+})
+
+describe('tenant event data', () => {
+  it('has all eight events', () => {
+    expect(TENANT_EVENTS.map((e) => e.id)).toEqual([
+      'burstPipe',
+      'roofLeak',
+      'noiseComplaint',
+      'supportRaccoon',
+      'rentStrike',
+      'greatReferral',
+      'cityInspection',
+      'leaseRenewal',
+    ])
+  })
+  it('marks exactly the four PropCo-resolvable minors', () => {
+    expect(TENANT_EVENTS.filter((e) => e.minor).map((e) => e.id)).toEqual([
+      'burstPipe',
+      'roofLeak',
+      'noiseComplaint',
+      'supportRaccoon',
+    ])
   })
 })
