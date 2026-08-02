@@ -8,6 +8,8 @@ describe('reputation', () => {
     expect(clampRep(-5)).toBe(0)
     expect(clampRep(140)).toBe(100)
     expect(clampRep(42)).toBe(42)
+    expect(clampRep(42.6)).toBe(43)
+    expect(clampRep(42.4)).toBe(42)
   })
 
   it('reports which thresholds are unlocked', () => {
@@ -21,6 +23,12 @@ describe('reputation', () => {
     expect(crossed.map((t) => t.rep)).toEqual([30, 50])
     expect(crossedThresholds(52, 28)).toEqual([])
     expect(crossedThresholds(50, 50)).toEqual([])
+  })
+
+  it('returns every threshold crossed by a single large jump', () => {
+    expect(crossedThresholds(0, 100).map((t) => t.rep)).toEqual([
+      15, 30, 50, 75, 90,
+    ])
   })
 
   it('exposes all five thresholds in ascending order', () => {

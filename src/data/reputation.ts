@@ -15,8 +15,8 @@ export const REP_CRINGE_SCALES_AT = 50
 /* The single source of truth for every rep gate. Logic reads these constants
    by name; nothing hardcodes a number at a call site. */
 export const REP_INBOUND_AT = 15
-export const REP_MIDTIER_CLIENTS_AT = 30
-export const REP_TV_AND_OTIS_AT = 50
+export const REP_BETTER_CLIENTS_AT = 30
+export const REP_PRESTIGE_AT = 50
 export const REP_CELEBRITY_AT = 75
 export const REP_FREE_LEAD_AT = 90
 
@@ -27,12 +27,12 @@ export const REP_THRESHOLDS: RepThreshold[] = [
       "You've been recognized at a gas station. The phone starts ringing on its own now.",
   },
   {
-    rep: REP_MIDTIER_CLIENTS_AT,
+    rep: REP_BETTER_CLIENTS_AT,
     toast:
       'A stranger said “I know you from somewhere” and meant it kindly. Better clients are circling.',
   },
   {
-    rep: REP_TV_AND_OTIS_AT,
+    rep: REP_PRESTIGE_AT,
     toast:
       'A local producer has your number. So does a man who whispers about money.',
   },
