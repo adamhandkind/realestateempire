@@ -5,17 +5,33 @@ import {
   LOSE_AT,
   START_CASH,
   bragFor,
+  clampRep,
   commissionFor,
+  crossedThresholds,
   deriveStats,
   nextRank,
   rankIndex,
+  repUnlocked,
   swagOf,
   weeklyUpkeep,
 } from '../logic/economy'
 import { applyEvent, selectEvent, shouldCringe } from '../logic/events'
 import { arch, closeChance, makeLead } from '../logic/leads'
 import { withLog } from '../logic/log'
+import {
+  activeChannels,
+  rollInbound,
+  weeklyChannelRep,
+  weeklyChannelSpend,
+} from '../logic/marketing'
 import { chance, money, pick, randInt } from '../logic/rand'
+import { INBOUND_LINES } from '../data/marketing'
+import {
+  REP_DECAY_PER_WEEK,
+  REP_FREE_LEAD_AT,
+  REP_INBOUND_AT,
+  REP_PER_DEAL,
+} from '../data/reputation'
 import type {
   Action,
   GameState,
@@ -211,6 +227,7 @@ export function reducer(state: GameState, action: Action): GameState {
         careerEarnings: s.careerEarnings + earnings,
         leads: s.leads.map((l) => (l.id === lead.id ? { ...l, sold: true } : l)),
         counters: { ...s.counters, dealsClosed: s.counters.dealsClosed + 1 },
+        reputation: clampRep(s.reputation + REP_PER_DEAL),
       }
       const line =
         lead.clientName +
@@ -286,7 +303,8 @@ export function reducer(state: GameState, action: Action): GameState {
 
 /**
  * Order of operations is load-bearing:
- * archive sold → patience/ghosts → expenses → event → cringe → promotion →
+ * archive sold → patience/ghosts → marketing (billing, inbound leads, rep
+ * gain) → rep decay check → expenses → event → cringe → promotion →
  * week rolls → lose check → summary.
  */
 export function endWeek(state: GameState): GameState {
@@ -334,6 +352,62 @@ export function endWeek(state: GameState): GameState {
     survivors.push({ ...l, patience: p })
   })
   s = { ...s, leads: survivors }
+
+  /* 1b. marketing: bill, produce inbound leads, move reputation */
+  const repBefore = s.reputation
+  const spend = weeklyChannelSpend(s)
+  let inboundCount = 0
+
+  if (spend > 0) {
+    s = { ...s, cash: s.cash - spend }
+    money_out.push(['Marketing', spend])
+  }
+
+  if (repUnlocked(s.reputation, REP_INBOUND_AT)) {
+    activeChannels(s).forEach((c) => {
+      const lead = rollInbound(s, c)
+      if (!lead) return
+      inboundCount++
+      s = { ...s, leads: [...s.leads, lead] }
+      s = withLog(
+        s,
+        'event',
+        INBOUND_LINES[c.id] + ' ' + lead.clientName + ' is on the board.',
+      )
+    })
+  }
+
+  if (repUnlocked(s.reputation, REP_FREE_LEAD_AT)) {
+    const lead = makeLead(s)
+    inboundCount++
+    s = { ...s, leads: [...s.leads, lead] }
+    s = withLog(
+      s,
+      'event',
+      'Your face IS the marketing now. ' +
+        lead.clientName +
+        ' called without being asked, having seen you somewhere they cannot place.',
+    )
+  }
+
+  /* 1c. reputation movement, then the out-of-sight decay */
+  const repGain = weeklyChannelRep(s)
+  if (repGain) s = { ...s, reputation: clampRep(s.reputation + repGain) }
+  if (s.activeChannelIds.length === 0) {
+    const decayed = clampRep(s.reputation - REP_DECAY_PER_WEEK)
+    if (decayed < s.reputation) {
+      s = { ...s, reputation: decayed }
+      s = withLog(
+        s,
+        'flavor',
+        'Nobody saw your face anywhere this week. Out of sight, out of mind, out of the group chat.',
+      )
+    }
+  }
+
+  crossedThresholds(repBefore, s.reputation).forEach((t) => {
+    s = withLog(s, 'event', t.toast)
+  })
 
   /* 2. expenses */
   const desk = s.rank === 'receptionist' ? 0 : DESK_FEE
@@ -414,7 +488,11 @@ export function endWeek(state: GameState): GameState {
     moneyIn: money_in,
     moneyOut: money_out,
     events,
-    marketing: { spend: 0, leads: 0, repChange: 0 },
+    marketing: {
+      spend,
+      leads: inboundCount,
+      repChange: s.reputation - repBefore,
+    },
     net: s.cash - startCash,
     promo: promo ? promo.name : null,
     brag: bragFor(s),
