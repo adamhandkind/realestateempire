@@ -6,6 +6,8 @@ import {
 } from '../../data/properties'
 import { TENANTS } from '../../data/tenants'
 import { TENANT_EVENTS } from '../../data/tenantEvents'
+import { MILESTONES } from '../../data/milestones'
+import { VRBO_EVENTS } from '../../data/vrbo'
 
 describe('property data', () => {
   it('lists the six buyable types and no vrbo entry', () => {
@@ -94,6 +96,28 @@ describe('tenant event data', () => {
       'roofLeak',
       'noiseComplaint',
       'supportRaccoon',
+    ])
+  })
+})
+
+describe('milestone and vrbo data', () => {
+  it('lists the four milestones in ascending threshold order', () => {
+    expect(MILESTONES.map((m) => m.id)).toEqual([
+      'mogul250',
+      'portfolioGuy',
+      'sevenFig',
+      'genWealth',
+    ])
+    expect(MILESTONES.map((m) => m.threshold)).toEqual([
+      250000, 500000, 1000000, 2500000,
+    ])
+  })
+  it('has four equally-weighted vrbo events', () => {
+    expect(VRBO_EVENTS.map((e) => e.id)).toEqual([
+      'bachelorParty',
+      'filmCrew',
+      'influencerSummit',
+      'plumbingCatastrophe',
     ])
   })
 })
