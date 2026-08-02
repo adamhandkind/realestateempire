@@ -97,10 +97,14 @@ describe('End Week — reputation', () => {
 describe('End Week — inbound leads', () => {
   it('produces no inbound leads below the reputation gate', () => {
     setSeed(11)
-    // rep 5 is under REP_INBOUND_AT (15) — channel bills but delivers nothing
-    let s = base({ reputation: 5, activeChannelIds: ['facebookAds'], leads: [] })
+    // flyerBlitz earns no reputation, so rep stays parked at 5 — under the
+    // gate at 15 — for the whole run. It bills every week and delivers nothing.
+    let s = base({ reputation: 5, activeChannelIds: ['flyerBlitz'], leads: [] })
     for (let i = 0; i < 20; i++) s = endWeek(s)
+    expect(s.reputation).toBe(5)
     expect(s.leads.every((l) => l.channelId === undefined)).toBe(true)
+    expect(s.summary!.marketing.spend).toBe(100)
+    expect(s.summary!.marketing.leads).toBe(0)
   })
 
   it('inbound leads arrive free and carry a channel badge', () => {
