@@ -898,7 +898,7 @@ export const TENANTS: TenantArchetype[] = [
     availableMinCondition: 0,
     availableMaxR: 1.4,
     intro: [
-      "{name} asked if he 'minds if he improves things.' You said no. He heard yes.",
+      "{name} asked if you 'mind if he improves things.' You said no. He heard yes.",
     ],
     leave: [
       '{name} moved out. The unit now has one skylight you did not commission.',
@@ -948,7 +948,7 @@ export const TENANTS: TenantArchetype[] = [
     skip: [
       "{name}'s rent was eaten by a medical thing involving a parrot.",
       "{name} can't pay: his car, his cousin, and Mercury are all in retrograde.",
-      'This week’s story involved a boat he does not own.',
+      "This week's story involved a boat he does not own.",
     ],
     evictBody:
       "Steve looks up. 'You know what, you're right. I'll be out by Friday. It's just… my grandmother's koi surgery was this Friday.' (There is no koi. There may not be a grandmother.)",
