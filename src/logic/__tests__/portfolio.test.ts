@@ -4,6 +4,7 @@ import {
   RENO_PROJECTS,
   STREET_NAMES,
 } from '../../data/properties'
+import { TENANTS } from '../../data/tenants'
 
 describe('property data', () => {
   it('lists the six buyable types and no vrbo entry', () => {
@@ -36,5 +37,39 @@ describe('property data', () => {
       'luxuryPkg',
     ])
     expect(STREET_NAMES).toHaveLength(12)
+  })
+})
+
+describe('tenant data', () => {
+  it('has all eight archetypes', () => {
+    expect(TENANTS.map((t) => t.id)).toEqual([
+      'perfectPatricia',
+      'corpLease',
+      'lateLenny',
+      'diyDave',
+      'partyPaulie',
+      'sobStorySteve',
+      'contentCrew',
+      'theHoarder',
+    ])
+  })
+  it('caps Patricia at fair rent and gates corpLease on condition', () => {
+    const patricia = TENANTS.find((t) => t.id === 'perfectPatricia')!
+    const corp = TENANTS.find((t) => t.id === 'corpLease')!
+    expect(patricia.availableMaxR).toBe(1.0)
+    expect(corp.availableMinCondition).toBe(70)
+  })
+  it('marks the two archetypes that never leave voluntarily', () => {
+    const forever = TENANTS.filter((t) => t.stayMax === null)
+    expect(forever.map((t) => t.id)).toEqual(['sobStorySteve', 'theHoarder'])
+  })
+  it('carries the rent modifiers', () => {
+    expect(TENANTS.find((t) => t.id === 'corpLease')!.rentMod).toBe(1.2)
+    expect(TENANTS.find((t) => t.id === 'contentCrew')!.rentMod).toBe(1.3)
+  })
+  it('gives Steve an eviction confirmation body and a write-off skip rule', () => {
+    const steve = TENANTS.find((t) => t.id === 'sobStorySteve')!
+    expect(steve.onSkip).toBe('gone')
+    expect(steve.evictBody).toContain('koi')
   })
 })
