@@ -28,7 +28,7 @@ export default function RankTrack({ state }: { state: GameState }) {
       })}
       {LOCKED_RANKS.map((n, i) => (
         <div key={n} className="res-rt lock" title="Coming in a future update.">
-          <span className="num">{5 + i}</span>
+          <span className="num">{6 + i}</span>
           <span>{n}</span>
           <span className="req">Locked</span>
         </div>

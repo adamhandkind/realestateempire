@@ -40,11 +40,18 @@ export const RANKS: RankDef[] = [
     req: { earnings: 25000, showings: 0, deals: 6 },
     blurb: 'Listings. Marble. Tier 3 swag.',
   },
+  {
+    id: 'topProducer',
+    n: 5,
+    name: 'Top Producer',
+    split: 0.6,
+    req: { earnings: 250000, showings: 0, deals: 25, rep: 40 },
+    blurb: 'Luxury listings, a TV spot, and a body you paid cash for.',
+  },
 ]
 
-/** Ranks 5–9. Rendered greyed out on the track; nothing is built behind them. */
+/** Ranks 6–9. Rendered greyed out on the track; nothing is built behind them. */
 export const LOCKED_RANKS: string[] = [
-  'Top Producer',
   'Team Lead',
   'Managing Broker',
   'Brokerage Owner',

@@ -143,7 +143,8 @@ export function nextRank(state: GameState): RankDef | null {
   const ok =
     state.careerEarnings >= r.earnings &&
     state.counters.showingsRun >= r.showings &&
-    state.counters.dealsClosed >= r.deals
+    state.counters.dealsClosed >= r.deals &&
+    state.reputation >= (r.rep ?? 0)
   return ok ? nxt : null
 }
 
