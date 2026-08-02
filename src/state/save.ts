@@ -31,7 +31,8 @@ export function writeSave(state: GameState): void {
   }
 }
 
-/** Returns the parsed save, or null if the paste isn't one. */
+/** Returns the parsed save, or null if the JSON parsed but isn't one of ours.
+ *  Throws on malformed JSON; the caller catches that and says so. */
 export function parseImport(text: string): GameState | null {
   return migrate(JSON.parse(text))
 }

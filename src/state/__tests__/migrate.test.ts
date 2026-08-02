@@ -86,4 +86,38 @@ describe('migrate', () => {
     expect(migrate({ hello: 'world' })).toBeNull()
     expect(migrate(null)).toBeNull()
   })
+
+  it('leaves a hand-built v2 save with populated v2 fields untouched', () => {
+    const v2Shaped = {
+      ...V1_SAVE,
+      version: 2,
+      permBonuses: { hustle: 1, swagger: 2, ego: 3 },
+      reputation: 42,
+      activeChannelIds: ['radio'],
+      outfitPresets: [{ name: 'Casual', equipped: { outfit: 'discountSuit' } }],
+      gagCounters: { vrboOffers: 5, nextVrboWeek: 30 },
+      channelMuteUntil: { radio: 10 },
+      pendingChoice: null,
+    }
+    const s = migrate(v2Shaped)!
+    expect(s.reputation).toBe(42)
+    expect(s.activeChannelIds).toEqual(['radio'])
+    expect(s.outfitPresets).toEqual([
+      { name: 'Casual', equipped: { outfit: 'discountSuit' } },
+    ])
+    expect(s.gagCounters).toEqual({ vrboOffers: 5, nextVrboWeek: 30 })
+    expect(s.channelMuteUntil).toEqual({ radio: 10 })
+  })
+
+  it('fills in a partially-present nested object field by field', () => {
+    const s = migrate({ ...V1_SAVE, gagCounters: { vrboOffers: 3 } })!
+    expect(s.gagCounters.vrboOffers).toBe(3)
+    expect(s.gagCounters.nextVrboWeek).toBe(0)
+  })
+
+  it('migrates a null leads array to an empty array instead of throwing', () => {
+    expect(() => migrate({ ...V1_SAVE, leads: null })).not.toThrow()
+    const s = migrate({ ...V1_SAVE, leads: null })!
+    expect(s.leads).toEqual([])
+  })
 })

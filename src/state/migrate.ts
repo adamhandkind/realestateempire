@@ -3,6 +3,7 @@
    here, so a Phase 1 player who refreshes mid-game lands in v2 with their
    progress intact and nothing to re-earn. */
 
+import { RANKS } from '../data/ranks'
 import { initialState } from './reducer'
 import type { GameState } from './types'
 
@@ -25,32 +26,44 @@ export function migrate(raw: unknown): GameState | null {
     ...merged,
     version: 2,
     permBonuses: {
-      hustle: s.permBonuses?.hustle ?? 0,
-      swagger: s.permBonuses?.swagger ?? 0,
-      ego: s.permBonuses?.ego ?? 0,
+      hustle: s.permBonuses?.hustle ?? base.permBonuses.hustle,
+      swagger: s.permBonuses?.swagger ?? base.permBonuses.swagger,
+      ego: s.permBonuses?.ego ?? base.permBonuses.ego,
     },
-    reputation: typeof s.reputation === 'number' ? s.reputation : 0,
+    reputation: typeof s.reputation === 'number' ? s.reputation : base.reputation,
     activeChannelIds: Array.isArray(s.activeChannelIds)
       ? (s.activeChannelIds as string[])
-      : [],
+      : base.activeChannelIds,
     outfitPresets: Array.isArray(s.outfitPresets)
       ? (s.outfitPresets as GameState['outfitPresets'])
-      : [],
+      : base.outfitPresets,
     gagCounters: {
       vrboOffers:
-        (s.gagCounters as { vrboOffers?: number } | undefined)?.vrboOffers ?? 0,
+        (s.gagCounters as { vrboOffers?: number } | undefined)?.vrboOffers ??
+        base.gagCounters.vrboOffers,
       nextVrboWeek:
         (s.gagCounters as { nextVrboWeek?: number } | undefined)
-          ?.nextVrboWeek ?? 0,
+          ?.nextVrboWeek ?? base.gagCounters.nextVrboWeek,
     },
     channelMuteUntil:
       s.channelMuteUntil && typeof s.channelMuteUntil === 'object'
         ? (s.channelMuteUntil as Record<string, number>)
-        : {},
+        : base.channelMuteUntil,
     pendingChoice:
-      (s.pendingChoice as GameState['pendingChoice'] | undefined) ?? null,
+      (s.pendingChoice as GameState['pendingChoice'] | undefined) ??
+      base.pendingChoice,
     /* transient UI fields never come back from disk */
     summary: null,
     promo: null,
+    /* v1-era fields are trusted except where a corrupt value would crash the
+       first render before the reducer ever runs. */
+    leads: Array.isArray(s.leads) ? (s.leads as GameState['leads']) : base.leads,
+    counters:
+      s.counters && typeof s.counters === 'object'
+        ? { ...base.counters, ...(s.counters as object) }
+        : base.counters,
+    rank: RANKS.some((r) => r.id === s.rank)
+      ? (s.rank as GameState['rank'])
+      : base.rank,
   }
 }
