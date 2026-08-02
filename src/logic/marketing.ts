@@ -10,7 +10,7 @@ import { chance, pick } from './rand'
 export const channelOf = (id: string): Channel | undefined =>
   CHANNELS.find((c) => c.id === id)
 
-export function isChannelLocked(channel: Channel, state: GameState): boolean {
+export function isChannelLocked(state: GameState, channel: Channel): boolean {
   return (
     !atLeastRank(state.rank, channel.unlockRank) ||
     !repUnlocked(state.reputation, channel.unlockRep)

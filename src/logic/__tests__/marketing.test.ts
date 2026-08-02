@@ -60,25 +60,25 @@ describe('channel data', () => {
 describe('locking', () => {
   it('locks the billboard below rep 30', () => {
     expect(
-      isChannelLocked(channelOf('billboard')!, at({ reputation: 29, rank: 'sellerAgent' })),
+      isChannelLocked(at({ reputation: 29, rank: 'sellerAgent' }), channelOf('billboard')!),
     ).toBe(true)
     expect(
-      isChannelLocked(channelOf('billboard')!, at({ reputation: 30, rank: 'sellerAgent' })),
+      isChannelLocked(at({ reputation: 30, rank: 'sellerAgent' }), channelOf('billboard')!),
     ).toBe(false)
   })
 
   it('locks the TV commercial below Top Producer', () => {
     expect(
-      isChannelLocked(channelOf('tvCommercial')!, at({ rank: 'sellerAgent' })),
+      isChannelLocked(at({ rank: 'sellerAgent' }), channelOf('tvCommercial')!),
     ).toBe(true)
-    expect(isChannelLocked(channelOf('tvCommercial')!, at())).toBe(false)
+    expect(isChannelLocked(at(), channelOf('tvCommercial')!)).toBe(false)
   })
 
   it('locks seller-rank channels for a buyer agent', () => {
     expect(
-      isChannelLocked(channelOf('benchDomination')!, at({ rank: 'buyerAgent' })),
+      isChannelLocked(at({ rank: 'buyerAgent' }), channelOf('benchDomination')!),
     ).toBe(true)
-    expect(isChannelLocked(channelOf('flyerBlitz')!, at({ rank: 'buyerAgent' }))).toBe(
+    expect(isChannelLocked(at({ rank: 'buyerAgent' }), channelOf('flyerBlitz')!)).toBe(
       false,
     )
   })
@@ -169,7 +169,7 @@ describe('rollInbound', () => {
       const l = rollInbound(s, forced)!
       if (forced.leadPool.includes(l.archetypeId)) inPool++
     }
-    expect(inPool).toBeGreaterThan(100)
+    expect(inPool).toBeGreaterThan(135)
   })
 
   it('sends a share of TikTok leads to ghostGary', () => {
@@ -181,7 +181,7 @@ describe('rollInbound', () => {
       if (rollInbound(s, forced)!.archetypeId === 'ghostGary') gary++
     }
     expect(TIKTOK_GHOST_RATE).toBe(0.3)
-    expect(gary).toBeGreaterThan(60)
-    expect(gary).toBeLessThan(220)
+    expect(gary).toBeGreaterThan(80)
+    expect(gary).toBeLessThan(170)
   })
 })
