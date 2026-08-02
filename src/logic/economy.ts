@@ -30,6 +30,32 @@ export const rankIndex = (id: RankId): number =>
   RANKS.findIndex((r) => r.id === id)
 export const rankOf = (id: RankId): RankDef => RANKS[rankIndex(id)]
 
+/* --- rank/shop predicates. Moved out of the single-file component so no
+       component has to compute a game rule for itself. --- */
+
+/** True once the player has reached `target` or better. */
+export const atLeastRank = (current: RankId, target: RankId): boolean =>
+  rankIndex(current) >= rankIndex(target)
+
+export const isSwagLocked = (item: SwagItem, rank: RankId): boolean =>
+  rankIndex(rank) < rankIndex(item.unlockRank)
+
+export const canAfford = (state: GameState, item: SwagItem): boolean =>
+  state.cash >= item.price
+
+export const isOwned = (state: GameState, item: SwagItem): boolean =>
+  state.ownedSwagIds.includes(item.id)
+
+export const isEquipped = (state: GameState, item: SwagItem): boolean =>
+  state.equipped[item.slot] === item.id
+
+/** Ego gets loud enough to start costing you deals. */
+export const isEgoDangerous = (stats: Stats): boolean => stats.ego >= 8
+
+/** Seller's Agent sitting on six figures — the Phase 2 teaser. */
+export const isPhase2Teaser = (state: GameState): boolean =>
+  atLeastRank(state.rank, 'sellerAgent') && state.cash >= 100000
+
 /** Base 1/1/0, plus every equipped item, plus permanent event bonuses. */
 export function deriveStats(state: GameState): Stats {
   let hustle = 1,

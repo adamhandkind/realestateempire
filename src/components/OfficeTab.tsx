@@ -1,0 +1,172 @@
+import type { Dispatch } from 'react'
+import { atLeastRank, weeklyExpenses } from '../logic/economy'
+import { byStage } from '../logic/leads'
+import { money } from '../logic/rand'
+import type { Action, GameState } from '../state/types'
+import RankTrack from './RankTrack'
+
+function ActionButton({
+  title,
+  ap,
+  desc,
+  reason,
+  onClick,
+}: {
+  title: string
+  ap: number
+  desc: string
+  reason: string | null
+  onClick: () => void
+}) {
+  return (
+    <button
+      className="res-btn"
+      disabled={!!reason}
+      onClick={onClick}
+      title={reason || desc}
+    >
+      <div className="t">
+        <span>{title}</span>
+        <span className="ap">{ap} AP</span>
+      </div>
+      <div className="d">{reason || desc}</div>
+    </button>
+  )
+}
+
+export default function OfficeTab({
+  state,
+  dispatch,
+  goToLeads,
+  importText,
+  setImportText,
+  exported,
+  onExport,
+  onImport,
+}: {
+  state: GameState
+  dispatch: Dispatch<Action>
+  goToLeads: () => void
+  importText: string
+  setImportText: (v: string) => void
+  exported: string
+  onExport: () => void
+  onImport: () => void
+}) {
+  const st = state.stats
+  const junior = atLeastRank(state.rank, 'junior')
+  const buyerPlus = atLeastRank(state.rank, 'buyerAgent')
+  const noAp = state.ap < 1
+  const stages = byStage(state.leads)
+
+  return (
+    <>
+      <div className="res-panel dark">
+        <h3 className="res-h2 res-display">This Week's Work</h3>
+        <div className="res-grid">
+          <ActionButton
+            title="Work the Phones"
+            ap={1}
+            desc={
+              'Dial strangers until leads happen. Hustle ' +
+              st.hustle +
+              ' means more names.'
+            }
+            reason={
+              !junior
+                ? 'Locked — nobody gives the receptionist a phone list.'
+                : noAp
+                  ? 'No action points left this week.'
+                  : null
+            }
+            onClick={() => dispatch({ type: 'WORK_PHONES' })}
+          />
+          <ActionButton
+            title="Assist a Showing"
+            ap={1}
+            desc="Hold the sign, refill the cookies, learn the trade. Flat $100."
+            reason={
+              state.rank !== 'receptionist'
+                ? "You're past this. Mostly."
+                : noAp
+                  ? 'No action points left this week.'
+                  : null
+            }
+            onClick={() => dispatch({ type: 'ASSIST_SHOWING' })}
+          />
+          <ActionButton
+            title="Side Hustle"
+            ap={1}
+            desc="Photos, staging, drone work, aggressive nodding. $150–$400."
+            reason={noAp ? 'No action points left this week.' : null}
+            onClick={() => dispatch({ type: 'SIDE_HUSTLE' })}
+          />
+          <ActionButton
+            title="Run a Showing"
+            ap={1}
+            desc={junior ? 'Head to the Leads tab and pick a client.' : 'Locked.'}
+            reason={
+              !junior
+                ? 'Unlocks at Junior Showing Assistant.'
+                : state.leads.some((l) => l.stage !== 'ready')
+                  ? 'Open the Leads tab to choose a client.'
+                  : 'No lead is waiting on a showing.'
+            }
+            onClick={goToLeads}
+          />
+          <ActionButton
+            title="Attempt a Close"
+            ap={1}
+            desc={
+              buyerPlus
+                ? 'Full split. Leads tab.'
+                : "Referral cut only until Buyer's Agent."
+            }
+            reason={
+              !junior
+                ? 'Unlocks at Junior Showing Assistant.'
+                : stages.ready.length
+                  ? 'Open the Leads tab to close.'
+                  : "Nobody's ready to sign."
+            }
+            onClick={goToLeads}
+          />
+        </div>
+      </div>
+
+      <div className="res-panel">
+        <h3 className="res-h2 res-display">The Ladder</h3>
+        <RankTrack state={state} />
+        <div style={{ fontSize: 12, color: '#5e6270', marginTop: 10 }}>
+          Career earnings {money(state.careerEarnings)} ·{' '}
+          {state.counters.showingsRun} showings · {state.counters.dealsClosed}{' '}
+          deals · weekly overhead {money(weeklyExpenses(state))}
+        </div>
+      </div>
+
+      <div className="res-panel dark">
+        <h3 className="res-h2 res-display">Settings</h3>
+        <div className="res-mini" style={{ marginBottom: 8 }}>
+          <button onClick={onExport}>Export Save</button>
+          <button onClick={onImport} disabled={!importText.trim()}>
+            Import Save
+          </button>
+        </div>
+        {exported && (
+          <textarea
+            className="res-ta"
+            readOnly
+            value={exported}
+            onFocus={(e) => e.target.select()}
+          />
+        )}
+        <textarea
+          className="res-ta"
+          placeholder="Paste a save here, then hit Import Save."
+          value={importText}
+          onChange={(e) => setImportText(e.target.value)}
+        />
+      </div>
+    </>
+  )
+}

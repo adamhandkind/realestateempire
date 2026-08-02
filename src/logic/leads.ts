@@ -1,5 +1,5 @@
 import { ARCHETYPES, FIRST_NAMES } from '../data/archetypes'
-import type { Archetype, GameState, Lead, RankId } from '../state/types'
+import type { Archetype, GameState, Lead, RankId, Stage } from '../state/types'
 import { activeModifierDelta, deriveStats } from './economy'
 import { pick, rand, randInt } from './rand'
 
@@ -32,6 +32,17 @@ export function makeLead(state: GameState, forcedArch?: Archetype): Lead {
     intro: pick(a.intros),
     referralBonus: false,
   }
+}
+
+/** How much of the patience fuse is left, as a percentage. */
+export const fusePct = (lead: Lead): number =>
+  Math.max(0, (lead.patience / lead.maxPatience) * 100)
+
+/** Buckets the pipeline into its three columns. */
+export function byStage(leads: Lead[]): Record<Stage, Lead[]> {
+  const out: Record<Stage, Lead[]> = { new: [], shown: [], ready: [] }
+  leads.forEach((l) => out[l.stage].push(l))
+  return out
 }
 
 /**
