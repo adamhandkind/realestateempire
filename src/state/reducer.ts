@@ -27,14 +27,14 @@ import type {
 
 export function initialState(): GameState {
   return {
-    version: 1,
+    version: 2,
     week: 1,
     cash: START_CASH,
     careerEarnings: 0,
     ap: AP_PER_WEEK,
     rank: 'receptionist',
     stats: { hustle: 1, swagger: 1, ego: 0 },
-    permBonuses: { hustle: 0, swagger: 0 },
+    permBonuses: { hustle: 0, swagger: 0, ego: 0 },
     leads: [],
     ownedSwagIds: [],
     equipped: {},
@@ -50,6 +50,12 @@ export function initialState(): GameState {
     gameOver: false,
     summary: null,
     promo: null,
+    reputation: 0,
+    activeChannelIds: [],
+    outfitPresets: [],
+    gagCounters: { vrboOffers: 0, nextVrboWeek: 0 },
+    channelMuteUntil: {},
+    pendingChoice: null,
   }
 }
 
@@ -408,6 +414,7 @@ export function endWeek(state: GameState): GameState {
     moneyIn: money_in,
     moneyOut: money_out,
     events,
+    marketing: { spend: 0, leads: 0, repChange: 0 },
     net: s.cash - startCash,
     promo: promo ? promo.name : null,
     brag: bragFor(s),
