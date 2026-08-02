@@ -114,7 +114,9 @@ describe('migrate', () => {
   it('fills in a partially-present nested object field by field', () => {
     const s = migrate({ ...V1_SAVE, gagCounters: { vrboOffers: 3 } })!
     expect(s.gagCounters.vrboOffers).toBe(3)
-    expect(s.gagCounters.nextVrboWeek).toBe(0)
+    // A migrating player gets two weeks of peace before the wholesaler
+    // finds them again. V1_SAVE is at week 22.
+    expect(s.gagCounters.nextVrboWeek).toBe(24)
   })
 
   it('migrates a null leads array to an empty array instead of throwing', () => {

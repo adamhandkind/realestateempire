@@ -1,9 +1,25 @@
-import { CRINGE_QUOTES, DISASTER_FLAVORS, EVENTS } from '../data/events'
+import {
+  BAD_REVIEW_BASE_WEIGHT,
+  BAD_REVIEW_LINES,
+  COPYCAT_LINES,
+  CRINGE_HIGH_FAME,
+  CRINGE_QUOTES,
+  DISASTER_FLAVORS,
+  EVENTS,
+  GALA_LINES,
+  NEWS_COVERAGE,
+  VIRAL_SCENARIOS,
+  VRBO_MAX_GAP,
+  VRBO_MIN_GAP,
+  VRBO_PITCHES,
+} from '../data/events'
+import { ALGORITHM_MUTE_WEEKS } from '../data/marketing'
+import { REP_CRINGE_PENALTY, REP_CRINGE_SCALES_AT } from '../data/reputation'
 import type { EventDef, EventId, GameState } from '../state/types'
-import { deriveStats } from './economy'
+import { atLeastRank, clampRep, deriveStats } from './economy'
 import { arch, makeLead } from './leads'
 import { withLog } from './log'
-import { chance, pick, rand } from './rand'
+import { chance, pick, rand, randInt } from './rand'
 
 export interface EventResult {
   state: GameState
@@ -18,18 +34,45 @@ export interface EventResult {
 export function selectEvent(state: GameState): EventDef | null {
   if (!chance(0.3)) return null
   const pool = EVENTS.filter((e) => e.condition(state))
-  const total = pool.reduce((t, e) => t + e.weight, 0)
+  const weightOf = (e: EventDef): number =>
+    e.id === 'badReview' ? badReviewWeight(state) : e.weight
+  const total = pool.reduce((t, e) => t + weightOf(e), 0)
   if (total <= 0) return null
   let roll = rand() * total
   let chosen = pool[0]
   for (const e of pool) {
-    roll -= e.weight
+    roll -= weightOf(e)
     if (roll <= 0) {
       chosen = e
       break
     }
   }
   return chosen
+}
+
+/** Community Sponsorship halves how often bad reviews come up. */
+export function badReviewWeight(state: GameState): number {
+  return state.activeChannelIds.includes('communitySponsorship')
+    ? BAD_REVIEW_BASE_WEIGHT / 2
+    : BAD_REVIEW_BASE_WEIGHT
+}
+
+/** The guaranteed 6–9 week VRBO cadence, independent of the 30% roll. */
+export function vrboDue(state: GameState): boolean {
+  return (
+    atLeastRank(state.rank, 'sellerAgent') &&
+    state.week >= state.gagCounters.nextVrboWeek
+  )
+}
+
+export function scheduleNextVrbo(state: GameState): GameState {
+  return {
+    ...state,
+    gagCounters: {
+      ...state.gagCounters,
+      nextVrboWeek: state.week + randInt(VRBO_MIN_GAP, VRBO_MAX_GAP),
+    },
+  }
 }
 
 /** Fires independently of the 30% roll, once ego gets loud enough. */
@@ -183,8 +226,15 @@ export function applyEvent(state: GameState, id: EventId): EventResult {
       break
     }
     case 'cringeEvent': {
+      const famous = s.reputation >= REP_CRINGE_SCALES_AT
       s = { ...s, cash: s.cash - 100 }
       cashDelta = -100
+      if (famous)
+        s = { ...s, reputation: clampRep(s.reputation - REP_CRINGE_PENALTY) }
+      const scene = famous
+        ? pick(CRINGE_HIGH_FAME) + ' ' + pick(NEWS_COVERAGE)
+        : 'Your motivational video went viral for the wrong reasons. ' +
+          pick(CRINGE_QUOTES)
       if (s.leads.length) {
         const l = pick(s.leads)
         s = {
@@ -195,8 +245,7 @@ export function applyEvent(state: GameState, id: EventId): EventResult {
         s = withLog(
           s,
           'event',
-          'Your motivational video went viral for the wrong reasons. ' +
-            pick(CRINGE_QUOTES) +
+          scene +
             ' ' +
             l.clientName +
             ' saw it, watched it twice, and stopped replying. Also, the videographer invoiced you.',
@@ -205,12 +254,147 @@ export function applyEvent(state: GameState, id: EventId): EventResult {
         s = withLog(
           s,
           'event',
-          'Your motivational video went viral for the wrong reasons. ' +
-            pick(CRINGE_QUOTES) +
+          scene +
             ' The comments are a crime scene. Also, the videographer invoiced you.',
         )
       }
       label = 'Went viral (badly)'
+      break
+    }
+    case 'viralSuccess': {
+      s = { ...s, reputation: clampRep(s.reputation + 10) }
+      const fresh = [makeLead(s), makeLead(s), makeLead(s)]
+      s = { ...s, leads: [...s.leads, ...fresh] }
+      s = withLog(
+        s,
+        'event',
+        pick(VIRAL_SCENARIOS) +
+          ' Three strangers called before you finished reading the comments: ' +
+          fresh.map((l) => l.clientName).join(', ') +
+          '.',
+      )
+      label = 'Went viral (well)'
+      break
+    }
+    case 'badReview': {
+      s = { ...s, cash: s.cash - 200, reputation: clampRep(s.reputation - 8) }
+      cashDelta = -200
+      s = withLog(
+        s,
+        'event',
+        pick(BAD_REVIEW_LINES) +
+          ' You paid a reputation-management service to reply politely on your behalf.',
+      )
+      label = 'One-star essay'
+      break
+    }
+    case 'algorithmChange': {
+      s = {
+        ...s,
+        channelMuteUntil: {
+          ...s.channelMuteUntil,
+          tiktok: s.week + ALGORITHM_MUTE_WEEKS,
+        },
+      }
+      s = withLog(
+        s,
+        'event',
+        'The algorithm changed overnight. Your videos now reach four people, three of whom are you on other devices. The invoice, however, arrives exactly on time.',
+      )
+      label = 'Algorithm change'
+      break
+    }
+    case 'vrboSpam': {
+      const n = s.gagCounters.vrboOffers
+      s = {
+        ...s,
+        gagCounters: { ...s.gagCounters, vrboOffers: n + 1 },
+        pendingChoice: {
+          id: 'vrboSpam',
+          title: 'THE 424/7 VRBO',
+          body: VRBO_PITCHES[Math.min(n, VRBO_PITCHES.length - 1)],
+          options: [
+            {
+              key: 'decline',
+              label: 'Decline (for now)',
+              hint: 'There is no other button. There will be, one day.',
+            },
+          ],
+        },
+      }
+      label = 'The 424/7 VRBO'
+      break
+    }
+    case 'tvInterview': {
+      s = {
+        ...s,
+        pendingChoice: {
+          id: 'tvInterview',
+          title: 'LOCAL TV WANTS FOUR MINUTES',
+          body: 'The morning show wants you between a weather hit and a segment about a duck. The producer asks how you want to come across.',
+          options: [
+            {
+              key: 'humble',
+              label: 'Stay humble',
+              hint: 'Credit the team. Look trustworthy. Sleep fine.',
+            },
+            {
+              key: 'ego',
+              label: 'Full ego',
+              hint: 'Point at the camera. Say your own name twice.',
+            },
+          ],
+        },
+      }
+      label = 'TV interview'
+      break
+    }
+    case 'copycatAgent': {
+      s = {
+        ...s,
+        pendingChoice: {
+          id: 'copycatAgent',
+          title: 'CHADWICK STERLING III HAS NOTES',
+          body: pick(COPYCAT_LINES),
+          options: [
+            {
+              key: 'cease',
+              label: 'Pay $500 for a cease-and-desist',
+              hint: 'A lawyer writes one paragraph. It works.',
+            },
+            {
+              key: 'eat',
+              label: 'Let it go',
+              hint: 'Free. Costs you something else.',
+            },
+          ],
+        },
+      }
+      label = 'Copycat agent'
+      break
+    }
+    case 'charityGala': {
+      s = {
+        ...s,
+        pendingChoice: {
+          id: 'charityGala',
+          title: 'THE CHARITY GALA',
+          body: pick(GALA_LINES),
+          options: [
+            {
+              key: 'attend',
+              label: 'Pay $500 and attend',
+              hint: 'Handshakes, a photo wall, and one very good lead.',
+            },
+            {
+              key: 'skip',
+              label: 'Skip it',
+              hint: 'The parking lot has a view of the window.',
+            },
+          ],
+        },
+      }
+      label = 'Charity gala'
       break
     }
     default:

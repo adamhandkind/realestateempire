@@ -48,7 +48,8 @@ export function migrate(raw: unknown): GameState | null {
         base.gagCounters.vrboOffers,
       nextVrboWeek:
         (s.gagCounters as { nextVrboWeek?: number } | undefined)
-          ?.nextVrboWeek ?? base.gagCounters.nextVrboWeek,
+          ?.nextVrboWeek ??
+        (typeof s.week === 'number' ? s.week + 2 : 6),
     },
     channelMuteUntil:
       s.channelMuteUntil && typeof s.channelMuteUntil === 'object'

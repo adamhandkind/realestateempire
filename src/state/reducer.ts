@@ -17,7 +17,13 @@ import {
   swagOf,
   weeklyUpkeep,
 } from '../logic/economy'
-import { applyEvent, selectEvent, shouldCringe } from '../logic/events'
+import {
+  applyEvent,
+  scheduleNextVrbo,
+  selectEvent,
+  shouldCringe,
+  vrboDue,
+} from '../logic/events'
 import { arch, closeChance, makeLead } from '../logic/leads'
 import { withLog } from '../logic/log'
 import {
@@ -73,7 +79,7 @@ export function initialState(): GameState {
     reputation: 0,
     activeChannelIds: [],
     outfitPresets: Array(PRESET_SLOTS).fill(null),
-    gagCounters: { vrboOffers: 0, nextVrboWeek: 0 },
+    gagCounters: { vrboOffers: 0, nextVrboWeek: 6 },
     channelMuteUntil: {},
     pendingChoice: null,
   }
@@ -359,6 +365,80 @@ export function reducer(state: GameState, action: Action): GameState {
         ),
       )
     }
+    case 'RESOLVE_CHOICE_EVENT': {
+      const pc = state.pendingChoice
+      if (!pc) return state
+      if (!pc.options.some((o) => o.key === action.key)) return state
+      let s: GameState = { ...state, pendingChoice: null }
+      switch (action.key) {
+        case 'decline':
+          s = withLog(
+            s,
+            'flavor',
+            'You declined the 424/7 VRBO. He said “for now?” You said nothing. He wrote “for now” on his hand.',
+          )
+          break
+        case 'humble':
+          s = { ...s, reputation: clampRep(s.reputation + 8) }
+          s = withLog(
+            s,
+            'event',
+            'On air you credited your clients, your team, and the city itself. Four separate people called it “refreshing.” The duck segment ran long and nobody minded.',
+          )
+          break
+        case 'ego':
+          s = {
+            ...s,
+            reputation: clampRep(s.reputation + 4),
+            permBonuses: { ...s.permBonuses, ego: s.permBonuses.ego + 1 },
+          }
+          s = withLog(
+            s,
+            'event',
+            'You pointed at the camera and said your own name twice. The clip is now the station’s most-shared segment of the year, for reasons the station has not examined.',
+          )
+          break
+        case 'cease':
+          s = { ...s, cash: s.cash - 500, reputation: clampRep(s.reputation + 2) }
+          s = withLog(
+            s,
+            'money',
+            'A lawyer wrote one paragraph. Chadwick’s billboard came down within a day and the story of it going down did better than the ad ever did.',
+          )
+          break
+        case 'eat':
+          s = { ...s, reputation: clampRep(s.reputation - 3) }
+          s = withLog(
+            s,
+            'event',
+            'You let it go. Half the city now cannot tell which of you is which, and the half that can prefers his font.',
+          )
+          break
+        case 'attend': {
+          s = { ...s, cash: s.cash - 500, reputation: clampRep(s.reputation + 5) }
+          const lead = makeLead(s)
+          s = { ...s, leads: [...s.leads, lead] }
+          s = withLog(
+            s,
+            'money',
+            'You went, you shook every hand in the room, and you left with ' +
+              lead.clientName +
+              ' and a small trophy for attending.',
+          )
+          break
+        }
+        case 'skip':
+          s = withLog(
+            s,
+            'flavor',
+            'You watched the gala from the parking lot with the engine running, which is technically also networking.',
+          )
+          break
+        default:
+          break
+      }
+      return sync(s)
+    }
     case 'END_WEEK':
       return endWeek(state)
     case 'IMPORT_SAVE':
@@ -521,6 +601,13 @@ export function endWeek(state: GameState): GameState {
     s = r.state
     events.push(r.label)
     money_out.push([r.label, -r.cashDelta])
+  }
+
+  /* 4b. the 424/7 VRBO, on its own guaranteed 6–9 week clock */
+  if (vrboDue(s) && !s.pendingChoice) {
+    const r = applyEvent(s, 'vrboSpam')
+    s = scheduleNextVrbo(r.state)
+    events.push(r.label)
   }
 
   /* 5. promotion. Unlike the inbound gate above, this reads reputation AFTER
