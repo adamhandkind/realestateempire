@@ -449,7 +449,9 @@ export function endWeek(state: GameState): GameState {
     money_out.push([r.label, -r.cashDelta])
   }
 
-  /* 5. promotion */
+  /* 5. promotion. Unlike the inbound gate above, this reads reputation AFTER
+        this week's channel gain — promotion has always used live earnings and
+        deals, and reputation is no different. */
   let promo: RankDef | null = null
   const nxt = nextRank(s)
   if (nxt) {

@@ -37,6 +37,16 @@ describe('End Week — marketing billing', () => {
     expect(after.cash).toBeLessThan(50000)
   })
 
+  it('bills marketing before the brokerage takes its expenses', () => {
+    setSeed(12)
+    const s = endWeek(base({ activeChannelIds: ['billboard'] }))
+    const labels = s.summary!.moneyOut.map(([l]) => l)
+    // Order here mirrors End Week's step order, which the spec calls
+    // load-bearing — marketing resolves before expenses.
+    expect(labels.indexOf('Marketing')).toBeGreaterThanOrEqual(0)
+    expect(labels.indexOf('Desk fee')).toBeGreaterThan(labels.indexOf('Marketing'))
+  })
+
   it('still bills a muted channel', () => {
     setSeed(4)
     const s = endWeek(
