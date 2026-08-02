@@ -117,12 +117,22 @@ export type ChoiceEventId =
   | 'copycatAgent'
   | 'charityGala'
 
+/** Every answer a choice modal can produce. The reducer switches on these. */
+export type ChoiceKey =
+  | 'decline'
+  | 'humble'
+  | 'ego'
+  | 'cease'
+  | 'eat'
+  | 'attend'
+  | 'skip'
+
 export interface PendingChoice {
   id: ChoiceEventId
   title: string
   body: string
   /** Rendered left-to-right. `key` is echoed back in RESOLVE_CHOICE_EVENT. */
-  options: { key: string; label: string; hint: string }[]
+  options: { key: ChoiceKey; label: string; hint: string }[]
 }
 
 export interface EventDef {
@@ -221,6 +231,7 @@ export interface GameState {
   reputation: number
   activeChannelIds: string[]
   outfitPresets: OutfitPreset[]
+  /** Running-gag bookkeeping. Only the 424/7 VRBO offer uses it so far. */
   gagCounters: { vrboOffers: number; nextVrboWeek: number }
   /** channelId → the week number at which it starts producing again. */
   channelMuteUntil: Record<string, number>
@@ -242,7 +253,7 @@ export type Action =
   | { type: 'SAVE_PRESET'; index: number; name: string }
   | { type: 'LOAD_PRESET'; index: number }
   | { type: 'RENAME_PRESET'; index: number; name: string }
-  | { type: 'RESOLVE_CHOICE_EVENT'; key: string }
+  | { type: 'RESOLVE_CHOICE_EVENT'; key: ChoiceKey }
   | { type: 'END_WEEK' }
   | { type: 'IMPORT_SAVE'; state: GameState }
   | { type: 'RESTART' }
