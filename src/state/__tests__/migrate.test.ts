@@ -54,7 +54,7 @@ describe('migrate', () => {
     expect(s.version).toBe(2)
     expect(s.reputation).toBe(0)
     expect(s.activeChannelIds).toEqual([])
-    expect(s.outfitPresets).toEqual([])
+    expect(s.outfitPresets).toEqual([null, null, null])
     expect(s.gagCounters.vrboOffers).toBe(0)
     expect(s.channelMuteUntil).toEqual({})
     expect(s.pendingChoice).toBeNull()
@@ -104,6 +104,8 @@ describe('migrate', () => {
     expect(s.activeChannelIds).toEqual(['radio'])
     expect(s.outfitPresets).toEqual([
       { name: 'Casual', equipped: { outfit: 'discountSuit' } },
+      null,
+      null,
     ])
     expect(s.gagCounters).toEqual({ vrboOffers: 5, nextVrboWeek: 30 })
     expect(s.channelMuteUntil).toEqual({ radio: 10 })

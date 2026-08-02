@@ -8,6 +8,9 @@ export const SLOTS: SlotDef[] = [
   { id: 'office', label: 'Office' },
 ]
 
+/** Three savable loadouts — "Otis Mode", "Full Gremlin", and one more. */
+export const PRESET_SLOTS = 3
+
 export const SWAG: SwagItem[] = [
   {
     id: 'discountSuit',

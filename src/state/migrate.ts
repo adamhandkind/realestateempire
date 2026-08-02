@@ -4,6 +4,7 @@
    progress intact and nothing to re-earn. */
 
 import { RANKS } from '../data/ranks'
+import { PRESET_SLOTS } from '../data/swag'
 import { initialState } from './reducer'
 import type { GameState } from './types'
 
@@ -35,7 +36,11 @@ export function migrate(raw: unknown): GameState | null {
       ? (s.activeChannelIds as string[])
       : base.activeChannelIds,
     outfitPresets: Array.isArray(s.outfitPresets)
-      ? (s.outfitPresets as GameState['outfitPresets'])
+      ? Array.from(
+          { length: PRESET_SLOTS },
+          (_, i) =>
+            (s.outfitPresets as GameState['outfitPresets'])[i] ?? null,
+        )
       : base.outfitPresets,
     gagCounters: {
       vrboOffers:

@@ -230,7 +230,7 @@ export interface GameState {
   /** 0–100, clamped. */
   reputation: number
   activeChannelIds: string[]
-  outfitPresets: OutfitPreset[]
+  outfitPresets: (OutfitPreset | null)[]
   /** Running-gag bookkeeping. Only the 424/7 VRBO offer uses it so far. */
   gagCounters: { vrboOffers: number; nextVrboWeek: number }
   /** channelId → the week number at which it starts producing again. */

@@ -73,21 +73,28 @@ describe('presets', () => {
   it('supports three independent slots', () => {
     let s = reducer(owner(), { type: 'SAVE_PRESET', index: 0, name: 'A' })
     s = reducer({ ...s, equipped: {} }, { type: 'SAVE_PRESET', index: 2, name: 'C' })
-    expect(s.outfitPresets[0].name).toBe('A')
+    expect(s.outfitPresets[0]!.name).toBe('A')
     expect(s.outfitPresets[2]).toEqual({ name: 'C', equipped: {} })
   })
 
   it('rejects an out-of-range slot', () => {
     expect(reducer(owner(), { type: 'SAVE_PRESET', index: 3, name: 'nope' }).outfitPresets)
-      .toEqual([])
+      .toEqual([null, null, null])
     expect(reducer(owner(), { type: 'SAVE_PRESET', index: -1, name: 'nope' }).outfitPresets)
-      .toEqual([])
+      .toEqual([null, null, null])
+  })
+
+  it('keeps every slot addressable after saving to only the last one', () => {
+    const s = reducer(owner(), { type: 'SAVE_PRESET', index: 2, name: 'Last' })
+    expect(s.outfitPresets).toHaveLength(3)
+    expect(s.outfitPresets[0]).toBeNull()
+    expect(s.outfitPresets[2]!.name).toBe('Last')
   })
 
   it('snapshots the loadout rather than aliasing it', () => {
     const s = reducer(owner(), { type: 'SAVE_PRESET', index: 0, name: 'Snap' })
-    const changed = reducer(s, { type: 'EQUIP_SWAG', itemId: 'gasSunnies' })
-    expect(changed.outfitPresets[0].equipped).toEqual(equipped)
+    expect(s.outfitPresets[0]!.equipped).toEqual(equipped)
+    expect(s.outfitPresets[0]!.equipped).not.toBe(s.equipped)
   })
 
   it('loads a preset back in one action', () => {
@@ -121,13 +128,13 @@ describe('presets', () => {
   it('renames a saved preset without touching its loadout', () => {
     const saved = reducer(owner(), { type: 'SAVE_PRESET', index: 0, name: 'Old' })
     const renamed = reducer(saved, { type: 'RENAME_PRESET', index: 0, name: 'New' })
-    expect(renamed.outfitPresets[0].name).toBe('New')
-    expect(renamed.outfitPresets[0].equipped).toEqual(equipped)
+    expect(renamed.outfitPresets[0]!.name).toBe('New')
+    expect(renamed.outfitPresets[0]!.equipped).toEqual(equipped)
   })
 
   it('does nothing when renaming an empty slot', () => {
     const s = reducer(owner(), { type: 'RENAME_PRESET', index: 0, name: 'Ghost' })
-    expect(s.outfitPresets).toEqual([])
+    expect(s.outfitPresets).toEqual([null, null, null])
   })
 
   it('costs no action points to save or wear a loadout', () => {

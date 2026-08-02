@@ -10,6 +10,7 @@ import {
   crossedThresholds,
   deriveStats,
   nextRank,
+  PRESET_SLOTS,
   rankIndex,
   repUnlocked,
   SLOTS,
@@ -44,9 +45,6 @@ import type {
   WeekSummary,
 } from './types'
 
-/** Three savable loadouts — "Otis Mode", "Full Gremlin", and one more. */
-export const PRESET_SLOTS = 3
-
 export function initialState(): GameState {
   return {
     version: 2,
@@ -74,7 +72,7 @@ export function initialState(): GameState {
     promo: null,
     reputation: 0,
     activeChannelIds: [],
-    outfitPresets: [],
+    outfitPresets: Array(PRESET_SLOTS).fill(null),
     gagCounters: { vrboOffers: 0, nextVrboWeek: 0 },
     channelMuteUntil: {},
     pendingChoice: null,
@@ -315,7 +313,10 @@ export function reducer(state: GameState, action: Action): GameState {
     }
     case 'SAVE_PRESET': {
       if (action.index < 0 || action.index >= PRESET_SLOTS) return state
-      const outfitPresets = [...state.outfitPresets]
+      const outfitPresets = Array.from(
+        { length: PRESET_SLOTS },
+        (_, i) => state.outfitPresets[i] ?? null,
+      )
       outfitPresets[action.index] = {
         name: action.name,
         equipped: { ...state.equipped },
@@ -333,7 +334,10 @@ export function reducer(state: GameState, action: Action): GameState {
     case 'RENAME_PRESET': {
       const existing = state.outfitPresets[action.index]
       if (!existing) return state
-      const outfitPresets = [...state.outfitPresets]
+      const outfitPresets = Array.from(
+        { length: PRESET_SLOTS },
+        (_, i) => state.outfitPresets[i] ?? null,
+      )
       outfitPresets[action.index] = { ...existing, name: action.name }
       return { ...state, outfitPresets }
     }

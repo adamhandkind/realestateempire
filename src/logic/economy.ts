@@ -9,7 +9,7 @@ import {
   START_CASH,
 } from '../data/ranks'
 import { REP_MAX, REP_MIN, REP_THRESHOLDS } from '../data/reputation'
-import { SLOTS, SWAG } from '../data/swag'
+import { PRESET_SLOTS, SLOTS, SWAG } from '../data/swag'
 import type {
   GameState,
   RankDef,
@@ -26,6 +26,7 @@ export {
   DESK_FEE,
   LOCKED_RANKS,
   LOSE_AT,
+  PRESET_SLOTS,
   RANKS,
   SLOTS,
   START_CASH,
