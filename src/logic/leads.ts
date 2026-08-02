@@ -1,6 +1,11 @@
 import { ARCHETYPES, FIRST_NAMES } from '../data/archetypes'
 import type { Archetype, GameState, Lead, Stage } from '../state/types'
-import { activeModifierDelta, atLeastRank, deriveStats } from './economy'
+import {
+  activeModifierDelta,
+  atLeastRank,
+  deriveStats,
+  repUnlocked,
+} from './economy'
 import { pick, rand, randInt } from './rand'
 
 export const arch = (id: string): Archetype =>
@@ -12,7 +17,7 @@ export function legalArchetypes(state: GameState): Archetype[] {
   return ARCHETYPES.filter(
     (a) =>
       (a.rankBand === 'seller' ? canList : true) &&
-      state.reputation >= (a.unlockRep ?? 0),
+      repUnlocked(state.reputation, a.unlockRep ?? 0),
   )
 }
 

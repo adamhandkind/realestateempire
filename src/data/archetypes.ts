@@ -1,4 +1,9 @@
 import type { Archetype } from '../state/types'
+import {
+  REP_BETTER_CLIENTS_AT,
+  REP_CELEBRITY_AT,
+  REP_PRESTIGE_AT,
+} from './reputation'
 
 /** Paired with an archetype's surname pool so every First-Time buyer isn't
  *  literally named Fiona. */
@@ -277,7 +282,7 @@ export const ARCHETYPES: Archetype[] = [
     closeMod: 0.1,
     egoAffinity: 2,
     ghostChance: 0.1,
-    unlockRep: 30,
+    unlockRep: REP_BETTER_CLIENTS_AT,
     intros: [
       '“I want a smart home.” He means one lightbulb. He has brought the lightbulb.',
       'He offers to pay partly in equity in a company that makes an app for cold plunges.',
@@ -304,7 +309,7 @@ export const ARCHETYPES: Archetype[] = [
     closeMod: 0.05,
     egoAffinity: 0,
     ghostChance: 0.05,
-    unlockRep: 30,
+    unlockRep: REP_BETTER_CLIENTS_AT,
     intros: [
       'They say “open concept” eleven times before reaching the kitchen. You counted.',
       'One of them loves it. The other needs to “see other options.” Always the same one.',
@@ -331,7 +336,7 @@ export const ARCHETYPES: Archetype[] = [
     closeMod: 0.05,
     egoAffinity: -3,
     ghostChance: 0,
-    unlockRep: 50,
+    unlockRep: REP_PRESTIGE_AT,
     intros: [
       'He whispers. Everything he says is important and none of it is loud.',
       'He glances once at your watch and does not glance again.',
@@ -358,7 +363,7 @@ export const ARCHETYPES: Archetype[] = [
     closeMod: -0.1,
     egoAffinity: 4,
     ghostChance: 0.2,
-    unlockRep: 75,
+    unlockRep: REP_CELEBRITY_AT,
     intros: [
       'Her assistant sends an NDA for the open house. Then an NDA for the NDA.',
       'She arrives with an entourage of nine and introduces four of them by job title.',
