@@ -328,7 +328,7 @@ export const ARCHETYPES: Archetype[] = [
     rankBand: 'seller',
     price: [700000, 1100000],
     patience: 5,
-    closeMod: -0.05,
+    closeMod: 0.05,
     egoAffinity: -3,
     ghostChance: 0,
     unlockRep: 50,

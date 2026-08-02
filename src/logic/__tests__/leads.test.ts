@@ -113,9 +113,39 @@ describe('closeChance and ego affinity', () => {
       ...stateAt('sellerAgent', 60),
       permBonuses: { hustle: 0, swagger: 6, ego: 12 },
     }
-    expect(closeChance(quiet, otisLead())).toBeGreaterThan(
-      closeChance(loud, otisLead()),
+    const q = closeChance(quiet, otisLead())
+    const l = closeChance(loud, otisLead())
+    // Stripping the swag roughly doubles his close chance — that gap is the
+    // whole reason outfit presets exist.
+    expect(q).toBeCloseTo(0.75, 2)
+    expect(l).toBeCloseTo(0.39, 2)
+    expect(q - l).toBeGreaterThan(0.3)
+  })
+
+  it('rewards a high-ego loadout for Celebrity Cleo', () => {
+    const cleoLead = (): Lead => ({
+      id: 'L2',
+      archetypeId: 'celebrityCleo',
+      clientName: 'Cleo Marchetti',
+      stage: 'ready',
+      salePrice: 1000000,
+      patience: 3,
+      maxPatience: 3,
+      retriedClose: false,
+      createdWeek: 1,
+      intro: 'x',
+      referralBonus: false,
+    })
+    const quiet: GameState = {
+      ...stateAt('sellerAgent', 75),
+      permBonuses: { hustle: 0, swagger: 6, ego: 0 },
+    }
+    const loud: GameState = {
+      ...stateAt('sellerAgent', 75),
+      permBonuses: { hustle: 0, swagger: 6, ego: 12 },
+    }
+    expect(closeChance(loud, cleoLead())).toBeGreaterThan(
+      closeChance(quiet, cleoLead()),
     )
-    expect(closeChance(loud, otisLead())).toBeLessThan(0.35)
   })
 })
