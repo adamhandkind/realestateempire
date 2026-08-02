@@ -1,0 +1,55 @@
+/* Pure marketing math. Nothing here mutates state or logs — the reducer owns
+   both. Every roll goes through logic/rand so a seeded run is reproducible. */
+
+import { CHANNELS, LEAD_POOL_SKEW, TIKTOK_GHOST_RATE } from '../data/marketing'
+import type { Channel, GameState, Lead } from '../state/types'
+import { atLeastRank, repUnlocked } from './economy'
+import { arch, legalArchetypes, makeLead } from './leads'
+import { chance, pick } from './rand'
+
+export const channelOf = (id: string): Channel | undefined =>
+  CHANNELS.find((c) => c.id === id)
+
+export function isChannelLocked(state: GameState, channel: Channel): boolean {
+  return (
+    !atLeastRank(state.rank, channel.unlockRank) ||
+    !repUnlocked(state.reputation, channel.unlockRep)
+  )
+}
+
+/** Active channels, in table order, regardless of how they got toggled on. */
+export function activeChannels(state: GameState): Channel[] {
+  return CHANNELS.filter((c) => state.activeChannelIds.includes(c.id))
+}
+
+export function weeklyChannelSpend(state: GameState): number {
+  return activeChannels(state).reduce((t, c) => t + c.weeklyCost, 0)
+}
+
+export function weeklyChannelRep(state: GameState): number {
+  return activeChannels(state).reduce((t, c) => t + c.repPerWeek, 0)
+}
+
+/** A muted channel still bills; it just stops producing. */
+export function isChannelMuted(state: GameState, channelId: string): boolean {
+  const until = state.channelMuteUntil[channelId]
+  return typeof until === 'number' && state.week < until
+}
+
+/**
+ * One inbound roll for one channel. Returns the lead, or null when the roll
+ * misses, the channel is muted, or nothing legal is in the pool yet.
+ */
+export function rollInbound(state: GameState, channel: Channel): Lead | null {
+  if (isChannelMuted(state, channel.id)) return null
+  if (!chance(channel.inboundChance)) return null
+
+  if (channel.id === 'tiktok' && chance(TIKTOK_GHOST_RATE))
+    return makeLead(state, arch('ghostGary'), channel.id)
+
+  const legal = legalArchetypes(state)
+  if (!legal.length) return null
+  const skewed = legal.filter((a) => channel.leadPool.includes(a.id))
+  const from = skewed.length && chance(LEAD_POOL_SKEW) ? skewed : legal
+  return makeLead(state, pick(from), channel.id)
+}

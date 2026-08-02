@@ -8,8 +8,16 @@ import {
   RANKS,
   START_CASH,
 } from '../data/ranks'
-import { SLOTS, SWAG } from '../data/swag'
-import type { GameState, RankDef, RankId, Stats, SwagItem } from '../state/types'
+import { REP_MAX, REP_MIN, REP_THRESHOLDS } from '../data/reputation'
+import { PRESET_SLOTS, SLOTS, SWAG } from '../data/swag'
+import type {
+  GameState,
+  RankDef,
+  RankId,
+  RepThreshold,
+  Stats,
+  SwagItem,
+} from '../state/types'
 import { money, pick } from './rand'
 
 export {
@@ -18,6 +26,7 @@ export {
   DESK_FEE,
   LOCKED_RANKS,
   LOSE_AT,
+  PRESET_SLOTS,
   RANKS,
   SLOTS,
   START_CASH,
@@ -52,6 +61,19 @@ export const isEquipped = (state: GameState, item: SwagItem): boolean =>
 /** Ego gets loud enough to start costing you deals. */
 export const isEgoDangerous = (stats: Stats): boolean => stats.ego >= 8
 
+export const clampRep = (n: number): number =>
+  Math.max(REP_MIN, Math.min(REP_MAX, Math.round(n)))
+
+/** True once reputation has reached `at`. Every rep gate goes through this. */
+export const repUnlocked = (reputation: number, at: number): boolean =>
+  reputation >= at
+
+/** Thresholds strictly above `from` and at-or-below `to`. Empty when rep fell. */
+export function crossedThresholds(from: number, to: number): RepThreshold[] {
+  if (to <= from) return []
+  return REP_THRESHOLDS.filter((t) => t.rep > from && t.rep <= to)
+}
+
 /** Seller's Agent sitting on six figures — the Phase 2 teaser. */
 export const isPhase2Teaser = (state: GameState): boolean =>
   atLeastRank(state.rank, 'sellerAgent') && state.cash >= 100000
@@ -72,6 +94,7 @@ export function deriveStats(state: GameState): Stats {
   })
   hustle += state.permBonuses.hustle
   swagger += state.permBonuses.swagger
+  ego += state.permBonuses.ego
   return {
     hustle: Math.max(1, Math.min(10, hustle)),
     swagger: Math.max(1, Math.min(10, swagger)),
@@ -121,7 +144,8 @@ export function nextRank(state: GameState): RankDef | null {
   const ok =
     state.careerEarnings >= r.earnings &&
     state.counters.showingsRun >= r.showings &&
-    state.counters.dealsClosed >= r.deals
+    state.counters.dealsClosed >= r.deals &&
+    state.reputation >= (r.rep ?? 0)
   return ok ? nxt : null
 }
 

@@ -3,7 +3,7 @@
    wrapped so the game still runs when storage is unavailable. */
 
 import type { GameState } from './types'
-import { initialState } from './reducer'
+import { migrate } from './migrate'
 
 export const SAVE_KEY = 'res_save_v1'
 
@@ -17,9 +17,7 @@ export function loadSave(): GameState | null {
   try {
     const raw = window.localStorage.getItem(SAVE_KEY)
     if (!raw) return null
-    const s = JSON.parse(raw)
-    if (!s || s.version !== 1) return null
-    return { ...initialState(), ...s, summary: null, promo: null }
+    return migrate(JSON.parse(raw))
   } catch {
     return null
   }
@@ -33,9 +31,8 @@ export function writeSave(state: GameState): void {
   }
 }
 
-/** Returns the parsed save, or null if the paste isn't one. */
+/** Returns the parsed save, or null if the JSON parsed but isn't one of ours.
+ *  Throws on malformed JSON; the caller catches that and says so. */
 export function parseImport(text: string): GameState | null {
-  const parsed = JSON.parse(text)
-  if (parsed && parsed.version === 1) return parsed as GameState
-  return null
+  return migrate(JSON.parse(text))
 }

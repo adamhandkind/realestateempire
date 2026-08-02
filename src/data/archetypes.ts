@@ -1,4 +1,9 @@
 import type { Archetype } from '../state/types'
+import {
+  REP_BETTER_CLIENTS_AT,
+  REP_CELEBRITY_AT,
+  REP_PRESTIGE_AT,
+} from './reputation'
 
 /** Paired with an archetype's surname pool so every First-Time buyer isn't
  *  literally named Fiona. */
@@ -265,6 +270,114 @@ export const ARCHETYPES: Archetype[] = [
     ],
     successes: [
       'signed the listing agreement with a fountain pen and then gifted you the fountain pen.',
+    ],
+  },
+  {
+    id: 'techTyler',
+    label: 'Tech Bro Tyler',
+    surnames: ['Brennick', 'Aoyagi', 'Cordero', 'Whitfield'],
+    rankBand: 'buyer',
+    price: [500000, 700000],
+    patience: 3,
+    closeMod: 0.1,
+    egoAffinity: 2,
+    ghostChance: 0.1,
+    unlockRep: REP_BETTER_CLIENTS_AT,
+    intros: [
+      '“I want a smart home.” He means one lightbulb. He has brought the lightbulb.',
+      'He offers to pay partly in equity in a company that makes an app for cold plunges.',
+      'He asks whether the house has “good latency.” You say yes. He nods for a long time.',
+    ],
+    ghosts: [
+      'went heads-down on a launch and has not surfaced since.',
+      'moved to a city with better founders and worse weather.',
+      'decided renting is “capital efficient” and posted a thread about it.',
+    ],
+    successes: [
+      'signed on a tablet, in a hoodie, in eleven seconds.',
+      'closed and immediately asked if you take referral fees in tokens.',
+      'wired the funds from an airport lounge between two flights.',
+    ],
+  },
+  {
+    id: 'hgtvCouple',
+    label: 'The HGTV Couple',
+    surnames: ['Delacroix', 'Bonham', 'Pryce', 'Sandoval'],
+    rankBand: 'buyer',
+    price: [350000, 550000],
+    patience: 6,
+    closeMod: 0.05,
+    egoAffinity: 0,
+    ghostChance: 0.05,
+    unlockRep: REP_BETTER_CLIENTS_AT,
+    intros: [
+      'They say “open concept” eleven times before reaching the kitchen. You counted.',
+      'One of them loves it. The other needs to “see other options.” Always the same one.',
+      'They ask if the wall is load-bearing. It is. They ask again, more hopefully.',
+    ],
+    ghosts: [
+      'found a place with better light and a worse commute, and chose the light.',
+      'is “taking a beat” after seeing a backsplash they cannot stop thinking about.',
+      'went back to watching other people buy houses instead.',
+    ],
+    successes: [
+      'high-fived over an island they intend to demolish immediately.',
+      'signed the moment they were told the wall could, in fact, come down.',
+      'cried at the counter-offer and then again at the countertop.',
+    ],
+  },
+  {
+    id: 'oldMoneyOtis',
+    label: 'Old Money Otis',
+    surnames: ['Whitcombe', 'Ashgrove', 'Pennhaligan', 'Vail'],
+    rankBand: 'seller',
+    price: [700000, 1100000],
+    patience: 5,
+    closeMod: 0.05,
+    egoAffinity: -3,
+    ghostChance: 0,
+    unlockRep: REP_PRESTIGE_AT,
+    intros: [
+      'He whispers. Everything he says is important and none of it is loud.',
+      'He glances once at your watch and does not glance again.',
+      'He asks that the sign be small, wooden, and removed by Sunday.',
+    ],
+    ghosts: [
+      'has decided to keep the house in the family another generation.',
+      'stopped returning calls the week the billboard went up.',
+      'sold privately, to a neighbour, over a very quiet lunch.',
+    ],
+    successes: [
+      'signed with a fountain pen and thanked you for your discretion.',
+      'shook your hand once, firmly, and considered the matter concluded.',
+      'closed without a single photograph being taken of anything.',
+    ],
+  },
+  {
+    id: 'celebrityCleo',
+    label: 'Celebrity Cleo',
+    surnames: ['Marchetti', 'Vance', 'Okonkwo', 'Sinclair'],
+    rankBand: 'seller',
+    price: [900000, 1400000],
+    patience: 3,
+    closeMod: -0.1,
+    egoAffinity: 4,
+    ghostChance: 0.2,
+    unlockRep: REP_CELEBRITY_AT,
+    intros: [
+      'Her assistant sends an NDA for the open house. Then an NDA for the NDA.',
+      'She arrives with an entourage of nine and introduces four of them by job title.',
+      'She wants the listing photos shot “like a perfume ad, but for a driveway.”',
+    ],
+    ghosts: [
+      'is unreachable. Her publicist confirms she is unreachable and always was.',
+      'left for a shoot and the entourage left with her.',
+      'posted about a different house, in a different city, with a different agent.',
+    ],
+    successes: [
+      'signed at midnight, on a hood, under a ring light somebody brought.',
+      'closed and thanked you in a story that reached four hundred thousand people.',
+      'sold above asking to a buyer who mostly wanted the address.',
     ],
   },
 ]

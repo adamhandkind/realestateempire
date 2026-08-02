@@ -1,23 +1,36 @@
 import { ARCHETYPES, FIRST_NAMES } from '../data/archetypes'
-import type { Archetype, GameState, Lead, RankId, Stage } from '../state/types'
-import { activeModifierDelta, deriveStats } from './economy'
+import type { Archetype, GameState, Lead, Stage } from '../state/types'
+import {
+  activeModifierDelta,
+  atLeastRank,
+  deriveStats,
+  repUnlocked,
+} from './economy'
 import { pick, rand, randInt } from './rand'
 
 export const arch = (id: string): Archetype =>
   ARCHETYPES.find((a) => a.id === id)!
 
-/** Seller-band clients only appear once you can list. */
-export function legalArchetypes(rankId: RankId): Archetype[] {
-  const seller = rankId === 'sellerAgent'
-  return ARCHETYPES.filter((a) => (a.rankBand === 'seller' ? seller : true))
+/** Seller-band clients need a listing licence; some clients need fame. */
+export function legalArchetypes(state: GameState): Archetype[] {
+  const canList = atLeastRank(state.rank, 'sellerAgent')
+  return ARCHETYPES.filter(
+    (a) =>
+      (a.rankBand === 'seller' ? canList : true) &&
+      repUnlocked(state.reputation, a.unlockRep ?? 0),
+  )
 }
 
 export function makeName(a: Archetype): string {
   return pick(FIRST_NAMES) + ' ' + pick(a.surnames)
 }
 
-export function makeLead(state: GameState, forcedArch?: Archetype): Lead {
-  const a = forcedArch || pick(legalArchetypes(state.rank))
+export function makeLead(
+  state: GameState,
+  forcedArch?: Archetype,
+  channelId?: string,
+): Lead {
+  const a = forcedArch || pick(legalArchetypes(state))
   const raw = randInt(a.price[0], a.price[1])
   return {
     id: 'L' + Date.now().toString(36) + Math.floor(rand() * 1e6).toString(36),
@@ -31,6 +44,7 @@ export function makeLead(state: GameState, forcedArch?: Archetype): Lead {
     createdWeek: state.week,
     intro: pick(a.intros),
     referralBonus: false,
+    ...(channelId ? { channelId } : {}),
   }
 }
 

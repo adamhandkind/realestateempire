@@ -51,4 +51,7 @@ export const BRAG_TEMPLATES: Record<RankId, string[]> = {
     '{leads} in the pipeline. All of them think they found me. 😏',
     'From cookie trays to closing tables. Same person. Better outerwear. 🧥',
   ],
+  topProducer: [
+    '🏆 Top Producer. I did not become this. I revealed this. 🙏 #blessed',
+  ],
 }

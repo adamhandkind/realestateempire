@@ -5,17 +5,43 @@ import {
   LOSE_AT,
   START_CASH,
   bragFor,
+  clampRep,
   commissionFor,
+  crossedThresholds,
   deriveStats,
   nextRank,
+  PRESET_SLOTS,
   rankIndex,
+  repUnlocked,
+  SLOTS,
   swagOf,
   weeklyUpkeep,
 } from '../logic/economy'
-import { applyEvent, selectEvent, shouldCringe } from '../logic/events'
+import {
+  applyEvent,
+  scheduleNextVrbo,
+  selectEvent,
+  shouldCringe,
+  vrboDue,
+} from '../logic/events'
 import { arch, closeChance, makeLead } from '../logic/leads'
 import { withLog } from '../logic/log'
+import {
+  activeChannels,
+  channelOf,
+  isChannelLocked,
+  rollInbound,
+  weeklyChannelRep,
+  weeklyChannelSpend,
+} from '../logic/marketing'
 import { chance, money, pick, randInt } from '../logic/rand'
+import { INBOUND_LINES } from '../data/marketing'
+import {
+  REP_DECAY_PER_WEEK,
+  REP_FREE_LEAD_AT,
+  REP_INBOUND_AT,
+  REP_PER_DEAL,
+} from '../data/reputation'
 import type {
   Action,
   GameState,
@@ -27,14 +53,14 @@ import type {
 
 export function initialState(): GameState {
   return {
-    version: 1,
+    version: 2,
     week: 1,
     cash: START_CASH,
     careerEarnings: 0,
     ap: AP_PER_WEEK,
     rank: 'receptionist',
     stats: { hustle: 1, swagger: 1, ego: 0 },
-    permBonuses: { hustle: 0, swagger: 0 },
+    permBonuses: { hustle: 0, swagger: 0, ego: 0 },
     leads: [],
     ownedSwagIds: [],
     equipped: {},
@@ -50,6 +76,12 @@ export function initialState(): GameState {
     gameOver: false,
     summary: null,
     promo: null,
+    reputation: 0,
+    activeChannelIds: [],
+    outfitPresets: Array(PRESET_SLOTS).fill(null),
+    gagCounters: { vrboOffers: 0, nextVrboWeek: 6 },
+    channelMuteUntil: {},
+    pendingChoice: null,
   }
 }
 
@@ -205,6 +237,7 @@ export function reducer(state: GameState, action: Action): GameState {
         careerEarnings: s.careerEarnings + earnings,
         leads: s.leads.map((l) => (l.id === lead.id ? { ...l, sold: true } : l)),
         counters: { ...s.counters, dealsClosed: s.counters.dealsClosed + 1 },
+        reputation: clampRep(s.reputation + REP_PER_DEAL),
       }
       const line =
         lead.clientName +
@@ -262,6 +295,150 @@ export function reducer(state: GameState, action: Action): GameState {
         ),
       )
     }
+    case 'TOGGLE_CHANNEL': {
+      const c = channelOf(action.channelId)
+      if (!c) return state
+      const on = state.activeChannelIds.includes(c.id)
+      /* A locked channel can't be started, but one already running can always
+         be stopped — reputation can decay below the bar you signed up at. */
+      if (!on && isChannelLocked(state, c)) return state
+      const activeChannelIds = on
+        ? state.activeChannelIds.filter((id) => id !== c.id)
+        : [...state.activeChannelIds, c.id]
+      return sync(
+        withLog(
+          { ...state, activeChannelIds },
+          'flavor',
+          on
+            ? 'You pulled the plug on ' +
+                c.name +
+                '. The silence is cheaper and worse.'
+            : 'You signed up for ' + c.name + '. ' + c.flavor,
+        ),
+      )
+    }
+    case 'SAVE_PRESET': {
+      if (action.index < 0 || action.index >= PRESET_SLOTS) return state
+      const outfitPresets = Array.from(
+        { length: PRESET_SLOTS },
+        (_, i) => state.outfitPresets[i] ?? null,
+      )
+      outfitPresets[action.index] = {
+        name: action.name,
+        equipped: { ...state.equipped },
+      }
+      return sync(
+        withLog(
+          { ...state, outfitPresets },
+          'flavor',
+          'You saved this look as “' +
+            action.name +
+            '” so you can become this person again on command.',
+        ),
+      )
+    }
+    case 'RENAME_PRESET': {
+      const existing = state.outfitPresets[action.index]
+      if (!existing) return state
+      const outfitPresets = Array.from(
+        { length: PRESET_SLOTS },
+        (_, i) => state.outfitPresets[i] ?? null,
+      )
+      outfitPresets[action.index] = { ...existing, name: action.name }
+      return { ...state, outfitPresets }
+    }
+    case 'LOAD_PRESET': {
+      const preset = state.outfitPresets[action.index]
+      if (!preset) return state
+      const equipped: GameState['equipped'] = {}
+      SLOTS.forEach((slot) => {
+        const id = preset.equipped[slot.id]
+        if (id && state.ownedSwagIds.includes(id)) equipped[slot.id] = id
+      })
+      return sync(
+        withLog(
+          { ...state, equipped },
+          'flavor',
+          'You changed into “' +
+            preset.name +
+            '” in a parking garage in under a minute.',
+        ),
+      )
+    }
+    case 'RESOLVE_CHOICE_EVENT': {
+      const pc = state.pendingChoice
+      if (!pc) return state
+      if (!pc.options.some((o) => o.key === action.key)) return state
+      let s: GameState = { ...state, pendingChoice: null }
+      switch (action.key) {
+        case 'decline':
+          s = withLog(
+            s,
+            'flavor',
+            'You declined the 424/7 VRBO. He said “for now?” You said nothing. He wrote “for now” on his hand.',
+          )
+          break
+        case 'humble':
+          s = { ...s, reputation: clampRep(s.reputation + 8) }
+          s = withLog(
+            s,
+            'event',
+            'On air you credited your clients, your team, and the city itself. Four separate people called it “refreshing.” The duck segment ran long and nobody minded.',
+          )
+          break
+        case 'ego':
+          s = {
+            ...s,
+            reputation: clampRep(s.reputation + 4),
+            permBonuses: { ...s.permBonuses, ego: s.permBonuses.ego + 1 },
+          }
+          s = withLog(
+            s,
+            'event',
+            'You pointed at the camera and said your own name twice. The clip is now the station’s most-shared segment of the year, for reasons the station has not examined.',
+          )
+          break
+        case 'cease':
+          s = { ...s, cash: s.cash - 500, reputation: clampRep(s.reputation + 2) }
+          s = withLog(
+            s,
+            'money',
+            'A lawyer wrote one paragraph. Chadwick’s billboard came down within a day and the story of it going down did better than the ad ever did.',
+          )
+          break
+        case 'eat':
+          s = { ...s, reputation: clampRep(s.reputation - 3) }
+          s = withLog(
+            s,
+            'event',
+            'You let it go. Half the city now cannot tell which of you is which, and the half that can prefers his font.',
+          )
+          break
+        case 'attend': {
+          s = { ...s, cash: s.cash - 500, reputation: clampRep(s.reputation + 5) }
+          const lead = makeLead(s)
+          s = { ...s, leads: [...s.leads, lead] }
+          s = withLog(
+            s,
+            'money',
+            'You went, you shook every hand in the room, and you left with ' +
+              lead.clientName +
+              ' and a small trophy for attending.',
+          )
+          break
+        }
+        case 'skip':
+          s = withLog(
+            s,
+            'flavor',
+            'You watched the gala from the parking lot with the engine running, which is technically also networking.',
+          )
+          break
+        default:
+          break
+      }
+      return sync(s)
+    }
     case 'END_WEEK':
       return endWeek(state)
     case 'IMPORT_SAVE':
@@ -280,7 +457,8 @@ export function reducer(state: GameState, action: Action): GameState {
 
 /**
  * Order of operations is load-bearing:
- * archive sold → patience/ghosts → expenses → event → cringe → promotion →
+ * archive sold → patience/ghosts → marketing (billing, inbound leads, rep
+ * gain) → rep decay check → expenses → event → cringe → promotion →
  * week rolls → lose check → summary.
  */
 export function endWeek(state: GameState): GameState {
@@ -329,6 +507,62 @@ export function endWeek(state: GameState): GameState {
   })
   s = { ...s, leads: survivors }
 
+  /* 1b. marketing: bill, produce inbound leads, move reputation */
+  const repBefore = s.reputation
+  const spend = weeklyChannelSpend(s)
+  let inboundCount = 0
+
+  if (spend > 0) {
+    s = { ...s, cash: s.cash - spend }
+    money_out.push(['Marketing', spend])
+  }
+
+  if (repUnlocked(s.reputation, REP_INBOUND_AT)) {
+    activeChannels(s).forEach((c) => {
+      const lead = rollInbound(s, c)
+      if (!lead) return
+      inboundCount++
+      s = { ...s, leads: [...s.leads, lead] }
+      s = withLog(
+        s,
+        'event',
+        INBOUND_LINES[c.id] + ' ' + lead.clientName + ' is on the board.',
+      )
+    })
+  }
+
+  if (repUnlocked(s.reputation, REP_FREE_LEAD_AT)) {
+    const lead = makeLead(s)
+    inboundCount++
+    s = { ...s, leads: [...s.leads, lead] }
+    s = withLog(
+      s,
+      'event',
+      'Your face IS the marketing now. ' +
+        lead.clientName +
+        ' called without being asked, having seen you somewhere they cannot place.',
+    )
+  }
+
+  /* 1c. reputation movement, then the out-of-sight decay */
+  const repGain = weeklyChannelRep(s)
+  if (repGain) s = { ...s, reputation: clampRep(s.reputation + repGain) }
+  if (s.activeChannelIds.length === 0) {
+    const decayed = clampRep(s.reputation - REP_DECAY_PER_WEEK)
+    if (decayed < s.reputation) {
+      s = { ...s, reputation: decayed }
+      s = withLog(
+        s,
+        'flavor',
+        'Nobody saw your face anywhere this week. Out of sight, out of mind, out of the group chat.',
+      )
+    }
+  }
+
+  crossedThresholds(repBefore, s.reputation).forEach((t) => {
+    s = withLog(s, 'event', t.toast)
+  })
+
   /* 2. expenses */
   const desk = s.rank === 'receptionist' ? 0 : DESK_FEE
   const upkeep = weeklyUpkeep(s)
@@ -369,7 +603,16 @@ export function endWeek(state: GameState): GameState {
     money_out.push([r.label, -r.cashDelta])
   }
 
-  /* 5. promotion */
+  /* 4b. the 424/7 VRBO, on its own guaranteed 6–9 week clock */
+  if (vrboDue(s) && !s.pendingChoice) {
+    const r = applyEvent(s, 'vrboSpam')
+    s = scheduleNextVrbo(r.state)
+    events.push(r.label)
+  }
+
+  /* 5. promotion. Unlike the inbound gate above, this reads reputation AFTER
+        this week's channel gain — promotion has always used live earnings and
+        deals, and reputation is no different. */
   let promo: RankDef | null = null
   const nxt = nextRank(s)
   if (nxt) {
@@ -408,6 +651,11 @@ export function endWeek(state: GameState): GameState {
     moneyIn: money_in,
     moneyOut: money_out,
     events,
+    marketing: {
+      spend,
+      leads: inboundCount,
+      repChange: s.reputation - repBefore,
+    },
     net: s.cash - startCash,
     promo: promo ? promo.name : null,
     brag: bragFor(s),
