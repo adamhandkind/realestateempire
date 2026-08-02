@@ -1,0 +1,1180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Real Estate Simulator — Phase 1: The Agent Loop</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;500;700;900&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+/* =========================================================================
+   REAL ESTATE SIMULATOR — Phase 1: The Agent Loop
+   Single-file React component. Default export at the bottom (RealEstateSim).
+   All content is data. All economy math is pure functions outside the reducer.
+   ========================================================================= */
+
+const { useReducer, useEffect, useMemo, useRef, useState } = React;
+
+/* ------------------------------------------------------------------ STYLES */
+const CSS = `
+:root{
+  --ink:#14161f; --ink2:#1c1f2b; --ink3:#262a3a;
+  --marble:#f5f2ea; --brass:#c9a227; --sold:#c8372d; --mint:#3f7a5e;
+  --muted:#8c8f9e;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ink);color:var(--marble);
+  font-family:Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.res-display{font-family:"Archivo Black",Impact,sans-serif;letter-spacing:.01em}
+.res-app{max-width:1100px;margin:0 auto;padding:0 12px 140px}
+
+.res-header{position:sticky;top:0;z-index:40;background:linear-gradient(180deg,#14161f 70%,rgba(20,22,31,.92));
+  border-bottom:1px solid rgba(201,162,39,.35);padding:10px 12px 8px;margin:0 -12px}
+.res-hrow{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;max-width:1100px;margin:0 auto}
+.res-cash{font-size:30px;color:var(--brass);line-height:1}
+.res-cash.bump{animation:bump .45s ease}
+@keyframes bump{0%{transform:scale(1)}35%{transform:scale(1.16)}100%{transform:scale(1)}}
+.res-meta{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.09em}
+.res-rank{font-size:14px;color:var(--marble)}
+.res-pips{display:flex;gap:5px}
+.res-pip{width:11px;height:11px;border-radius:50%;border:1px solid var(--brass);background:transparent}
+.res-pip.on{background:var(--brass);box-shadow:0 0 8px rgba(201,162,39,.55)}
+.res-chips{display:flex;gap:6px;flex-wrap:wrap}
+.res-chip{border:1px solid rgba(245,242,234,.22);border-radius:999px;padding:3px 9px;font-size:11px;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--marble);background:var(--ink2)}
+.res-chip b{color:var(--brass);font-size:13px;margin-left:5px}
+.res-chip.warn{border-color:var(--sold);color:#ffb3ac}
+.res-chip.warn b{color:var(--sold)}
+
+.res-ticker{overflow:hidden;background:var(--ink2);border-top:1px solid rgba(201,162,39,.25);
+  border-bottom:1px solid rgba(201,162,39,.25);margin:0 -12px;white-space:nowrap}
+.res-ticker-inner{display:inline-block;padding:7px 0;font-size:12.5px;color:#cfc9b8;
+  animation:slide 48s linear infinite}
+.res-ticker span{padding:0 34px;border-right:1px solid rgba(245,242,234,.14)}
+@keyframes slide{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+
+.res-tabs{display:flex;gap:6px;margin:14px 0}
+.res-tab{flex:1;padding:9px 6px;border:1px solid rgba(245,242,234,.18);background:var(--ink2);
+  color:var(--muted);border-radius:8px;font-size:12px;letter-spacing:.09em;text-transform:uppercase;cursor:pointer}
+.res-tab.on{background:var(--brass);color:var(--ink);border-color:var(--brass);font-weight:700}
+
+.res-panel{background:var(--marble);color:var(--ink);border-radius:12px;padding:14px;margin-bottom:14px}
+.res-panel.dark{background:var(--ink2);color:var(--marble);border:1px solid rgba(245,242,234,.12)}
+.res-h2{font-size:15px;letter-spacing:.12em;text-transform:uppercase;margin:0 0 10px}
+
+.res-grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(228px,1fr))}
+.res-btn{width:100%;text-align:left;background:var(--ink);color:var(--marble);border:1px solid var(--brass);
+  border-radius:10px;padding:11px 12px;cursor:pointer;font-family:inherit}
+.res-btn:hover:not(:disabled){background:var(--ink3)}
+.res-btn:disabled{opacity:.4;cursor:not-allowed;border-color:rgba(245,242,234,.2)}
+.res-btn .t{font-size:14px;font-weight:700;display:flex;justify-content:space-between;gap:8px}
+.res-btn .ap{color:var(--brass);font-size:11px;letter-spacing:.08em}
+.res-btn .d{font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.4}
+
+.res-cols{display:grid;gap:10px;grid-template-columns:repeat(3,1fr)}
+@media(max-width:720px){.res-cols{grid-template-columns:1fr}}
+.res-col{background:var(--ink2);border:1px solid rgba(245,242,234,.12);border-radius:10px;padding:10px;min-height:80px}
+.res-col h3{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--brass);margin:0 0 8px}
+.res-lead{background:var(--marble);color:var(--ink);border-radius:9px;padding:10px;margin-bottom:9px;position:relative;overflow:hidden}
+.res-lead .n{font-weight:900;font-size:15px}
+.res-lead .a{font-size:11px;color:#6b6f7d;text-transform:uppercase;letter-spacing:.07em}
+.res-lead .p{font-family:"Archivo Black",sans-serif;font-size:19px;color:var(--mint);margin:4px 0}
+.res-lead .q{font-size:12px;font-style:italic;color:#4a4e5c;line-height:1.4;margin:6px 0}
+.res-fuse{height:6px;background:#ddd8cc;border-radius:99px;overflow:hidden;margin:8px 0 4px}
+.res-fuse i{display:block;height:100%;background:var(--mint)}
+.res-fuse i.low{background:var(--sold)}
+.res-mini{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.res-mini button{flex:1;min-width:104px;background:var(--ink);color:var(--marble);border:1px solid var(--brass);
+  border-radius:7px;padding:7px;font-size:11.5px;cursor:pointer;font-family:inherit}
+.res-mini button:disabled{opacity:.35;cursor:not-allowed}
+.res-sold{position:absolute;top:16px;right:-8px;background:var(--sold);color:#fff;font-family:"Archivo Black",sans-serif;
+  padding:5px 16px;transform:rotate(11deg);letter-spacing:.14em;font-size:15px;border:2px dashed #fff;
+  animation:stamp .5s ease}
+@keyframes stamp{from{transform:rotate(11deg) scale(2.6);opacity:0}to{transform:rotate(11deg) scale(1);opacity:1}}
+
+.res-rank-track{display:flex;flex-direction:column;gap:5px}
+.res-rt{display:flex;gap:4px 10px;align-items:baseline;flex-wrap:wrap;padding:7px 10px;border-radius:8px;background:#e9e4d7;font-size:13px}
+.res-rt>span:nth-child(2){flex:1 1 auto;min-width:0}
+.res-rt.cur{background:var(--brass);color:var(--ink);font-weight:700}
+.res-rt.done{background:#d8e5dc}
+.res-rt.lock{opacity:.42;font-style:italic}
+.res-rt .num{font-family:"Archivo Black",sans-serif;width:20px}
+.res-rt .req{margin-left:auto;font-size:11px;color:#5e6270;text-align:right;flex:0 1 auto}
+@media(max-width:520px){.res-rt .req{margin-left:30px;text-align:left;flex:1 0 100%}}
+
+.res-item{border:1px solid rgba(245,242,234,.14);border-radius:10px;padding:10px;background:var(--ink2)}
+.res-item.eq{border-color:var(--brass);box-shadow:0 0 0 1px var(--brass) inset}
+.res-item.lock{opacity:.45}
+.res-item .nm{font-weight:700;font-size:13.5px}
+.res-item .fl{font-size:11.5px;color:var(--muted);font-style:italic;margin:5px 0;line-height:1.4}
+.res-price{font-family:"Archivo Black",sans-serif;color:var(--brass);font-size:16px}
+.res-stat{display:inline-block;font-size:10px;letter-spacing:.06em;border:1px solid rgba(245,242,234,.28);
+  border-radius:4px;padding:1px 5px;margin:2px 3px 0 0}
+.res-stat.e{border-color:var(--sold);color:#ffb3ac}
+
+.res-log{list-style:none;margin:0;padding:0}
+.res-log li{padding:8px 0;border-bottom:1px dashed rgba(20,22,31,.16);font-size:13.5px;line-height:1.5}
+.res-log .w{font-size:10px;letter-spacing:.1em;color:#8a8d9b;text-transform:uppercase;margin-right:8px}
+.res-log .money{color:var(--mint);font-weight:700}
+.res-log .deal{color:var(--sold);font-weight:700}
+.res-log .promotion{color:#8a6f10;font-weight:900}
+
+.res-end{position:fixed;right:16px;bottom:16px;z-index:50;background:var(--brass);color:var(--ink);
+  border:none;border-radius:999px;padding:15px 24px;font-family:"Archivo Black",sans-serif;font-size:15px;
+  letter-spacing:.06em;cursor:pointer;box-shadow:0 8px 26px rgba(0,0,0,.5)}
+.res-end:disabled{opacity:.5}
+
+.res-modal{position:fixed;inset:0;background:rgba(10,11,16,.86);z-index:60;display:flex;align-items:center;
+  justify-content:center;padding:14px;overflow:auto}
+.res-card{background:var(--marble);color:var(--ink);border-radius:14px;padding:20px;max-width:520px;width:100%;
+  border-top:8px solid var(--brass);max-height:92vh;overflow:auto}
+.res-card h2{margin:0 0 4px;font-size:22px}
+.res-line{display:flex;justify-content:space-between;font-size:13.5px;padding:4px 0;border-bottom:1px dotted #cfc9ba}
+.res-brag{background:var(--ink);color:var(--marble);border-radius:10px;padding:12px;font-size:13px;
+  font-style:italic;line-height:1.5;margin-top:12px}
+.res-go{background:var(--brass);color:var(--ink);border:none;border-radius:9px;padding:12px;width:100%;
+  font-family:"Archivo Black",sans-serif;font-size:15px;cursor:pointer;margin-top:14px}
+
+.res-banner{background:var(--ink3);border-left:4px solid var(--brass);border-radius:8px;padding:8px 12px;
+  font-size:12.5px;margin-bottom:10px}
+.res-confetti{position:fixed;inset:0;pointer-events:none;z-index:70;overflow:hidden}
+.res-confetti i{position:absolute;top:-12px;width:8px;height:14px;background:var(--brass);
+  animation:fall 2.4s linear forwards}
+@keyframes fall{to{transform:translateY(105vh) rotate(720deg);opacity:.1}}
+.res-ta{width:100%;min-height:88px;font-family:monospace;font-size:11px;border-radius:8px;padding:8px;
+  border:1px solid #c3bdae;background:#fff;color:#14161f;margin-top:8px}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+`;
+
+/* -------------------------------------------------------------------- RNG */
+let _seed = null;
+function rand() {
+  if (_seed === null) return Math.random();
+  _seed = (_seed * 1664525 + 1013904223) % 4294967296;
+  return _seed / 4294967296;
+}
+const pick = (a) => a[Math.floor(rand() * a.length)];
+const randInt = (lo, hi) => lo + Math.floor(rand() * (hi - lo + 1));
+const chance = (p) => rand() < p;
+const money = (n) => (n < 0 ? "-$" : "$") + Math.abs(Math.round(n)).toLocaleString();
+
+/* ------------------------------------------------------------------- DATA */
+const COMMISSION_RATE = 0.025;
+const DESK_FEE = 150;
+const START_CASH = 800;
+const LOSE_AT = -1000;
+const AP_PER_WEEK = 5;
+
+const RANKS = [
+  { id: "receptionist", n: 1, name: "Receptionist", split: 0,
+    req: { earnings: 0, showings: 0, deals: 0 },
+    blurb: "Side hustles and open-house cookie logistics." },
+  { id: "junior", n: 2, name: "Junior Showing Assistant", split: 0.10,
+    req: { earnings: 1500, showings: 0, deals: 0 },
+    blurb: "Your own leads — but an actual agent signs the paperwork." },
+  { id: "buyerAgent", n: 3, name: "Buyer's Agent", split: 0.35,
+    req: { earnings: 5000, showings: 8, deals: 0 },
+    blurb: "The full loop. Your deals, your split." },
+  { id: "sellerAgent", n: 4, name: "Seller's Agent", split: 0.50,
+    req: { earnings: 25000, showings: 0, deals: 6 },
+    blurb: "Listings. Marble. Tier 3 swag." },
+];
+const LOCKED_RANKS = [
+  "Top Producer", "Team Lead", "Managing Broker", "Brokerage Owner", "Empire Owner",
+];
+const rankIndex = (id) => RANKS.findIndex((r) => r.id === id);
+const rankOf = (id) => RANKS[rankIndex(id)];
+
+const FIRST_NAMES = ["Dana","Marcus","Priya","Cody","Odette","Hank","Beatrix","Devon","Lorraine","Kiro",
+  "Shanice","Bartholomew","Wendy","Emmett","Junie","Ravi","Colleen","Tate","Magdalena","Chip",
+  "Yolanda","Desmond","Fern","Auggie","Rosalind","Kelvin","Trixie","Norm","Pilar","Ozzy"];
+
+const ARCHETYPES = [
+  {
+    id: "firstTimer", label: "First-Time Buyer", surnames: ["Fennimore","Fisk","Farrow","Pemberton","Quill"],
+    rankBand: "buyer", price: [180000, 260000], patience: 6, closeMod: 0.10, egoAffinity: -2, ghostChance: 0.05,
+    intros: [
+      "“So what IS a closing cost? Like, spiritually?”",
+      "“My mom is coming to the showing. And my dad. And their realtor friend Deb.”",
+      "“I printed a list of questions. It's forty-one pages. Front and back.”"],
+    ghosts: [
+      "went to one open house without you and got adopted by a nicer agent.",
+      "decided to “rent for one more year and really save,” which is buyer for goodbye.",
+      "asked their dad, and their dad said no."],
+    successes: [
+      "cried in the parking lot. Good crying. Everyone agreed it was good crying.",
+      "signed with a pen they immediately asked to keep as a memento."],
+  },
+  {
+    id: "cashChad", label: "Cash Buyer", surnames: ["Braddock","Stone","Kingsley","Vaughn","Ruiz"],
+    rankBand: "buyer", price: [220000, 350000], patience: 3, closeMod: 0.05, egoAffinity: 2, ghostChance: 0.10,
+    intros: [
+      "“I don't do mortgages, bro. Mortgages do me. No wait — reverse that.”",
+      "“Wire's ready. Is the house ready? Is the house EMOTIONALLY ready?”",
+      "“I can close Thursday. I can close yesterday if you know a guy.”"],
+    ghosts: [
+      "bought something else on a whim between two of your voicemails.",
+      "moved the money into a friend's protein company instead."],
+    successes: [
+      "closed in cash and then asked if there was a discount for closing in cash.",
+      "signed, flexed, and referred to you exclusively as “my guy” for the rest of the day."],
+  },
+  {
+    id: "lowballLarry", label: "Lowball Artist", surnames: ["Peck","Grubb","Nickels","Hasker","Doone"],
+    rankBand: "buyer", price: [180000, 300000], patience: 5, closeMod: -0.15, egoAffinity: 0, ghostChance: 0.05,
+    intros: [
+      "“I'll start at sixty percent and we'll meet at sixty-one percent.”",
+      "“That drywall's insulting. I'm insulted by that drywall.”",
+      "“Everything's negotiable. Including, and I cannot stress this enough, your commission.”"],
+    ghosts: [
+      "found a house he could insult more efficiently elsewhere.",
+      "made an offer so low the listing agent framed it and stopped answering."],
+    successes: [
+      "got eleven hundred off and told everyone at the closing table he'd “robbed the place.”"],
+  },
+  {
+    id: "nightmareNancy", label: "Impossible to Please", surnames: ["Prendergast","Bellweather","Crane","Voss","Ottoline"],
+    rankBand: "buyer", price: [200000, 320000], patience: 6, closeMod: -0.10, egoAffinity: -1, ghostChance: 0.05,
+    intros: [
+      "“The kitchen faces a direction. I'd prefer it didn't.”",
+      "“It's perfect. That's the problem. What are they hiding.”",
+      "“I want the same house, but the hallway should be somewhere else.”"],
+    ghosts: [
+      "listed forty-one deal-breakers and then blocked your number over the fortieth.",
+      "decided to stay put and renovate, which she will hate by Tuesday."],
+    successes: [
+      "bought the house she called “structurally arrogant” nine weeks ago. No comment was offered."],
+  },
+  {
+    id: "flipBro", label: "Aspiring Flipper", surnames: ["Kranz","Dunphy","Bexley","Slater","Moreno"],
+    rankBand: "buyer", price: [150000, 240000], patience: 4, closeMod: 0.05, egoAffinity: 1, ghostChance: 0.10,
+    intros: [
+      "“What's the ARV. Don't tell me the price, tell me the ARV.”",
+      "“I need distressed. Ideally the house AND the seller.”",
+      "“I watched a video. The whole video. So.”"],
+    ghosts: [
+      "ran the numbers, got a number, didn't like the number, and vanished.",
+      "pivoted to a podcast about flipping instead of flipping."],
+    successes: [
+      "closed and immediately said the word “equity” nine times in one sentence."],
+  },
+  {
+    id: "retireeRuth", label: "Sweet Retiree", surnames: ["Halloway","Perkins","Mabry","Winterbourne","Adeyemi"],
+    rankBand: "buyer", price: [250000, 400000], patience: 6, closeMod: 0.10, egoAffinity: -2, ghostChance: 0,
+    intros: [
+      "“I brought a loaf. You look like a young person who doesn't eat loaf.”",
+      "“Something single-storey, dear. My knees have opinions.”",
+      "“Take your time. I've got nothing but that.”"],
+    ghosts: ["would never ghost you and, in fact, never did."],
+    successes: [
+      "closed, hugged everyone including the notary, and left a tin of squares on the desk."],
+  },
+  {
+    id: "relocRob", label: "Corporate Relocation", surnames: ["Vanterpool","Ames","Okafor","Lindqvist","Bhatt"],
+    rankBand: "buyer", price: [300000, 450000], patience: 3, closeMod: 0.15, egoAffinity: 0, ghostChance: 0.05,
+    intros: [
+      "“I start Monday. Any Monday. The nearest Monday.”",
+      "“Garage? Great. I'll take it. What's the address again.”",
+      "“The company pays. I just need walls and a commute under twenty.”"],
+    ghosts: [
+      "got reassigned to a different region mid-showing and was gone before the lockbox closed.",
+      "took the corporate housing extension and stopped needing you."],
+    successes: [
+      "closed in record time and asked whether the movers could come during the signing."],
+  },
+  {
+    id: "influencerIzzy", label: "Content Creator", surnames: ["Vex","Solaire","Kim-Rivers","Blaze","Monrose"],
+    rankBand: "buyer", price: [250000, 400000], patience: 4, closeMod: 0, egoAffinity: 3, ghostChance: 0.25,
+    intros: [
+      "“I need natural light and a wall that photographs like a personality.”",
+      "“Love the blazer. Genuinely. Can we film the offer?”",
+      "“It has to be a content house. A house that makes content. About itself.”"],
+    ghosts: [
+      "posted a nine-part story arc about buying a house and then simply stopped mid-arc.",
+      "moved to a different city for the aesthetic and did not mention it to you."],
+    successes: [
+      "closed and tagged you in a post that spelled your name three different ways."],
+  },
+  {
+    id: "ghostGary", label: "Too Good To Be True", surnames: ["Mercer","Ashgrove","Pinter","Nyland","Cortez"],
+    rankBand: "buyer", price: [200000, 350000], patience: 5, closeMod: 0.10, egoAffinity: 0, ghostChance: 0.30,
+    intros: [
+      "“Pre-approved, flexible, and honestly just so easy to work with.”",
+      "“Whatever works for you! Truly. No notes.”",
+      "“I'll be at every showing. You can set your watch by me.”"],
+    ghosts: [
+      "did not show. Or call. Or exist, per the phone company.",
+      "left a voicemail that was eleven seconds of wind and then nothing, ever again.",
+      "was last seen agreeing enthusiastically to a time and place."],
+    successes: [
+      "actually closed. You will tell this story for years and no one will believe you."],
+  },
+  {
+    id: "luxLorenzo", label: "Luxury Seller", surnames: ["Castellane","Vandermeer","D'Avignon","Rothbury","Sartorius"],
+    rankBand: "seller", price: [450000, 600000], patience: 4, closeMod: -0.05, egoAffinity: 3, ghostChance: 0.10,
+    intros: [
+      "“The marble is imported. From marble.”",
+      "“I only list with agents who own at least two boas. Non-negotiable.”",
+      "“I want the listing photos shot like a fragrance ad. Do you have a horse.”"],
+    ghosts: [
+      "listed with an agent whose business card had a scent.",
+      "decided the market wasn't worthy of the foyer yet."],
+    successes: [
+      "signed the listing agreement with a fountain pen and then gifted you the fountain pen."],
+  },
+];
+const arch = (id) => ARCHETYPES.find((a) => a.id === id);
+
+const SWAG = [
+  { id:"discountSuit", name:"Discount Suit (Slightly Shiny)", price:200, tier:1, slot:"outfit", hustle:0, swagger:1, ego:0, upkeep:0, unlockRank:"receptionist", flavor:"Fits like a rental. Because it was." },
+  { id:"gasSunnies", name:"Gas Station Sunglasses", price:20, tier:1, slot:"accessory", hustle:0, swagger:1, ego:1, upkeep:0, unlockRank:"receptionist", flavor:"UV protection: rumored." },
+  { id:"doorSign", name:"Magnetic Car Door Sign", price:150, tier:1, slot:"accessory", hustle:1, swagger:0, ego:1, upkeep:0, unlockRank:"receptionist", flavor:"Your face, slightly stretched, on a 2009 sedan." },
+  { id:"beigeSedan", name:"2009 Beige Sedan", price:2500, tier:1, slot:"vehicle", hustle:1, swagger:0, ego:0, upkeep:40, unlockRank:"receptionist", flavor:"The check-engine light is “ambient lighting.”" },
+  { id:"cubicleFern", name:"Shared Cubicle Fern", price:75, tier:1, slot:"office", hustle:1, swagger:0, ego:0, upkeep:0, unlockRank:"receptionist", flavor:"Plastic. Motivational." },
+  { id:"busBench", name:"Bus Bench Ad (Your Face)", price:1200, tier:1, slot:"office", hustle:2, swagger:0, ego:1, upkeep:60, unlockRank:"receptionist", flavor:"People sit on your face daily. This is called “brand impressions.”" },
+  { id:"modernSuit", name:"Modern Suit", price:1800, tier:2, slot:"outfit", hustle:0, swagger:2, ego:1, upkeep:25, unlockRank:"receptionist", flavor:"Finally, sleeves the right length." },
+  { id:"bigCards", name:"Oversized Business Cards", price:400, tier:2, slot:"accessory", hustle:1, swagger:1, ego:1, upkeep:0, unlockRank:"receptionist", flavor:"Do not fit in wallets. Clients must carry them like diplomas." },
+  { id:"coffeeBucket", name:"Branded Coffee Bucket™", price:250, tier:2, slot:"accessory", hustle:1, swagger:0, ego:1, upkeep:0, unlockRank:"receptionist", flavor:"64oz mug with your face. Technically a planter." },
+  { id:"veneers", name:"Veneers (Glacier White)", price:4000, tier:2, slot:"accessory", hustle:0, swagger:2, ego:2, upkeep:0, unlockRank:"receptionist", flavor:"Adds lens flare to listing photos." },
+  { id:"usedSUV", name:"Used Luxury SUV", price:18000, tier:2, slot:"vehicle", hustle:1, swagger:2, ego:1, upkeep:120, unlockRank:"receptionist", flavor:"Heated everything. Smells like ambition and old cologne." },
+  { id:"smallOffice", name:"Small Private Office", price:6000, tier:2, slot:"office", hustle:2, swagger:1, ego:0, upkeep:200, unlockRank:"receptionist", flavor:"A door. Your name on it. In vinyl, but still." },
+  { id:"goldBlazer", name:"Gold Blazer", price:8500, tier:3, slot:"outfit", hustle:0, swagger:3, ego:3, upkeep:50, unlockRank:"sellerAgent", flavor:"The industry standard for people who describe themselves as “the industry standard.”" },
+  { id:"rainbowBoa", name:"Rainbow Boa", price:900, tier:3, slot:"accessory", hustle:0, swagger:1, ego:3, upkeep:0, unlockRank:"sellerAgent", flavor:"Closing-table intimidation wear." },
+  { id:"pimpCane", name:"Pimp Cane (Brokerage Logo Topper)", price:2200, tier:3, slot:"accessory", hustle:0, swagger:2, ego:2, upkeep:0, unlockRank:"sellerAgent", flavor:"Purely decorative. Points at crown moulding." },
+  { id:"piercings", name:"Pierced Everything Package", price:3500, tier:3, slot:"accessory", hustle:0, swagger:1, ego:4, upkeep:0, unlockRank:"sellerAgent", flavor:"Sets off metal detectors at the land registry office." },
+  { id:"chromeCar", name:"Chrome Sports Car", price:85000, tier:3, slot:"vehicle", hustle:0, swagger:3, ego:3, upkeep:600, unlockRank:"sellerAgent", flavor:"Visible from space. Two cupholders, zero trunk." },
+  { id:"cornerOffice", name:"Corner Office (Marble Desk)", price:40000, tier:3, slot:"office", hustle:3, swagger:2, ego:1, upkeep:800, unlockRank:"sellerAgent", flavor:"The desk weighs more than your first car. You mention this constantly." },
+];
+const swagOf = (id) => SWAG.find((s) => s.id === id);
+const SLOTS = [
+  { id: "outfit", label: "Outfit" }, { id: "accessory", label: "Accessory" },
+  { id: "vehicle", label: "Vehicle" }, { id: "office", label: "Office" },
+];
+
+const EVENTS = [
+  { id:"ghosted", weight:10, condition:(s)=>s.leads.length>0 },
+  { id:"lockbox", weight:10, condition:(s)=>s.leads.some((l)=>l.stage==="shown") },
+  { id:"poached", weight:8, condition:(s)=>s.leads.some((l)=>l.stage==="ready") },
+  { id:"referral", weight:8, condition:(s)=>s.counters.dealsClosed>=1 },
+  { id:"hotMarket", weight:6, condition:(s)=>s.week>=4 },
+  { id:"rateSpike", weight:6, condition:(s)=>s.week>=4 },
+  { id:"lostPaperwork", weight:8, condition:()=>true },
+  { id:"openHouseDisaster", weight:8, condition:()=>true },
+  { id:"fiveStarReview", weight:8, condition:(s)=>s.counters.dealsClosed>=1 },
+];
+const DISASTER_FLAVORS = [
+  "the basement made a sound the listing described as “character” and the plumber described as “sewage”",
+  "a raccoon attended the open house, ate two brownies, and left a review",
+  "a neighbour licensed in 1987 gave a forty-minute unsolicited tour of the property line",
+];
+const CRINGE_QUOTES = [
+  "“Most people are asleep at 4am. I'm awake. Selling. To no one. Yet.”",
+  "“They said the market was cold. So I wore the blazer. Checkmate.”",
+  "“If you're not filming yourself doing pushups next to a SOLD sign, are you even in real estate?”",
+];
+const SIDE_HUSTLES = [
+  "shot listing photos for an agent whose camera is “in the shop” permanently",
+  "staged a bungalow using three throw pillows and unshakeable confidence",
+  "flew a drone over a bungalow until the neighbours called someone",
+  "did “renovation consulting,” which is pointing at a wall and nodding slowly",
+  "hand-delivered feature sheets in the rain for a broker who calls you “sport”",
+];
+const ASSIST_FLAVORS = [
+  "refilled the cookie tray at an open house and were thanked by name once",
+  "held an open house sign at an intersection for four hours and waved at everyone",
+  "printed, folded, and fanned out 200 feature sheets into a perfect brochure spiral",
+];
+
+const BRAG_TEMPLATES = {
+  receptionist: [
+    "Blessed to announce I refilled the cookie tray at {showings} open houses. Small hinges swing big doors 🙏 #grind",
+    "Week {week}. No listings. No car. Just a laminated sign and a dream. 💪",
+    "Someone asked me if I worked here today. I said “not yet.” Manifesting. ✨",
+    "Woke up at 4am to be first to the printer. The printer was not impressed. I was. #hustle",
+    "{cash} in the account and a heart full of untapped potential. Watch this space. 📈",
+    "Not everyone gets to fold brochures. I get to fold brochures. Perspective. 🙏",
+    "Shoutout to the agent who let me carry the sign today. Mentorship is everything. 🤝",
+    "They laughed at the fern on my desk. The fern and I are aligned. 🌿",
+    "Reminder: every empire starts with somebody restocking the pens. ✍️",
+    "Week {week} of showing up. That's the whole post. #consistency",
+  ],
+  junior: [
+    "Ran {showings} showings this month. Somebody else signed. Still counts. Still climbing. 💪",
+    "Grateful to hand yet another close to a senior agent 🙏 Team win! (It was my lead.) #blessed",
+    "Just crossed {earnings} in career earnings. Started with a fern. 🌿📈",
+    "Unlocking doors for a living. Metaphorically AND literally. 🔑",
+    "{leads} people in my pipeline currently deciding whether I exist. 😅 #patience",
+    "Week {week}. The lockbox and I have an understanding now. 🤝",
+    "My referral cut bought a sandwich. That sandwich tasted like equity. 🥪",
+    "Nobody talks about the assistant years. I'm talking about them. Loudly. 📢",
+    "Someone called me “the showing guy.” Brand recognition is brand recognition. 🔥",
+    "If you want it, wake up and want it again the next day. That's it. That's the tip.",
+  ],
+  buyerAgent: [
+    "🎉 JUST CLOSED! Deal number {deals}. Not bragging, just documenting the journey 🙏 #blessed",
+    "{earnings} career earnings and counting. Remember when I was refilling cookie trays? I do. Daily.",
+    "Handed a family the keys today. Also handed them a branded pen. Both moments were emotional. 🔑",
+    "Your realtor is on a beach. I'm in a crawlspace with a flashlight. Choose wisely. 🔦",
+    "Week {week}: {leads} active buyers, zero excuses, one slightly shiny suit. 💼",
+    "People ask what I do for fun. I open lockboxes recreationally. 🧍",
+    "Closed above asking and below my own expectations of what I'd wear to do it. 😎",
+    "{cash} in the bank. Reinvesting all of it into looking like I have more. 📈",
+    "Somebody's rival agent tried it this week. Somebody's rival agent did not succeed. 👀",
+    "The market is what you make it. I made mine out of voicemails. ☎️",
+  ],
+  sellerAgent: [
+    "🏆 {deals} deals closed. {earnings} career earnings. Humbled. Truly. Deeply. Publicly. 🙏",
+    "The blazer is not a costume. The blazer is a commitment. ✨ #industrystandard",
+    "Listing appointment ran long because the marble deserved to be discussed. 🪨",
+    "Week {week}. {cash} liquid. Still answer my own phone, though. Mostly. ☎️",
+    "Someone asked if the car was necessary. Nothing is necessary. That's the point. 🚗",
+    "Just listed a home with more square footage than my first four apartments combined. 📈",
+    "Grateful for every client, every referral, and every reflective surface. 🙏",
+    "They don't hate you. They hate that the lapels caught the light. ✨",
+    "{leads} in the pipeline. All of them think they found me. 😏",
+    "From cookie trays to closing tables. Same person. Better outerwear. 🧥",
+  ],
+};
+
+/* --------------------------------------------------- PURE ECONOMY / LOGIC */
+function deriveStats(state) {
+  let hustle = 1, swagger = 1, ego = 0;
+  SLOTS.forEach((s) => {
+    const id = state.equipped[s.id];
+    if (!id) return;
+    const it = swagOf(id);
+    if (!it) return;
+    hustle += it.hustle; swagger += it.swagger; ego += it.ego;
+  });
+  hustle += state.permBonuses.hustle;
+  swagger += state.permBonuses.swagger;
+  return {
+    hustle: Math.max(1, Math.min(10, hustle)),
+    swagger: Math.max(1, Math.min(10, swagger)),
+    ego: Math.max(0, Math.min(15, ego)),
+  };
+}
+function weeklyUpkeep(state) {
+  let u = 0;
+  SLOTS.forEach((s) => { const it = swagOf(state.equipped[s.id]); if (it) u += it.upkeep; });
+  return u;
+}
+function weeklyExpenses(state) {
+  return (state.rank === "receptionist" ? 0 : DESK_FEE) + weeklyUpkeep(state);
+}
+function activeModifierDelta(state) {
+  return state.activeModifiers.reduce(
+    (t, m) => (m.expiresWeek > state.week ? t + m.closeChanceDelta : t), 0);
+}
+function closeChance(state, lead) {
+  const a = arch(lead.archetypeId);
+  const st = deriveStats(state);
+  let c = 0.35 + st.swagger * 0.05 + a.closeMod + st.ego * a.egoAffinity * 0.01;
+  c += activeModifierDelta(state);
+  if (lead.referralBonus) c += 0.10;
+  return Math.max(0.10, Math.min(0.90, c));
+}
+function splitFor(rankId) { return rankOf(rankId).split; }
+function commissionFor(salePrice, rankId) {
+  const gross = Math.round(salePrice * COMMISSION_RATE);
+  return { gross, earnings: Math.round(gross * splitFor(rankId)) };
+}
+function legalArchetypes(rankId) {
+  const seller = rankId === "sellerAgent";
+  return ARCHETYPES.filter((a) => (a.rankBand === "seller" ? seller : true));
+}
+function makeName(a) { return pick(FIRST_NAMES) + " " + pick(a.surnames); }
+function makeLead(state, forcedArch) {
+  const a = forcedArch || pick(legalArchetypes(state.rank));
+  const raw = randInt(a.price[0], a.price[1]);
+  return {
+    id: "L" + Date.now().toString(36) + Math.floor(rand() * 1e6).toString(36),
+    archetypeId: a.id,
+    clientName: makeName(a),
+    stage: "new",
+    salePrice: Math.round(raw / 5000) * 5000,
+    patience: a.patience,
+    maxPatience: a.patience,
+    retriedClose: false,
+    createdWeek: state.week,
+    intro: pick(a.intros),
+    referralBonus: false,
+  };
+}
+function nextRank(state) {
+  const i = rankIndex(state.rank);
+  const nxt = RANKS[i + 1];
+  if (!nxt) return null;
+  const r = nxt.req;
+  const ok = state.careerEarnings >= r.earnings
+    && state.counters.showingsRun >= r.showings
+    && state.counters.dealsClosed >= r.deals;
+  return ok ? nxt : null;
+}
+function bragFor(state) {
+  const t = pick(BRAG_TEMPLATES[state.rank]);
+  return t
+    .replace("{week}", String(state.week))
+    .replace("{cash}", money(state.cash))
+    .replace("{earnings}", money(state.careerEarnings))
+    .replace("{deals}", String(state.counters.dealsClosed))
+    .replace("{showings}", String(state.counters.showingsRun))
+    .replace("{leads}", String(state.leads.length));
+}
+
+/* ------------------------------------------------------------ INITIAL / IO */
+const SAVE_KEY = "res_save_v1";
+function initialState() {
+  return {
+    version: 1, week: 1, cash: START_CASH, careerEarnings: 0, ap: AP_PER_WEEK,
+    rank: "receptionist",
+    stats: { hustle: 1, swagger: 1, ego: 0 },
+    permBonuses: { hustle: 0, swagger: 0 },
+    leads: [], ownedSwagIds: [], equipped: {},
+    counters: { showingsRun: 0, dealsClosed: 0, leadsLost: 0 },
+    activeModifiers: [],
+    log: [{ week: 1, kind: "flavor",
+      text: "Day one. The broker points at a folding table near the printer and calls it “your desk.” Assist showings and pick up side work until somebody trusts you with a lockbox." }],
+    gameOver: false,
+    summary: null, promo: null,
+  };
+}
+function loadSave() {
+  try {
+    const raw = window.localStorage.getItem(SAVE_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    if (!s || s.version !== 1) return null;
+    return { ...initialState(), ...s, summary: null, promo: null };
+  } catch (e) { return null; }
+}
+function writeSave(state) {
+  try {
+    const { summary, promo, ...rest } = state;
+    window.localStorage.setItem(SAVE_KEY, JSON.stringify(rest));
+  } catch (e) { /* storage unavailable — game continues in memory */ }
+}
+
+/* -------------------------------------------------------------- REDUCER */
+function logAdd(state, kind, text) {
+  return [{ week: state.week, kind, text }, ...state.log].slice(0, 300);
+}
+function withLog(state, kind, text) { return { ...state, log: logAdd(state, kind, text) }; }
+function spendAp(state, n) { return { ...state, ap: state.ap - n }; }
+function sync(state) { return { ...state, stats: deriveStats(state) }; }
+
+function reducer(state, action) {
+  if (state.gameOver && action.type !== "RESTART" && action.type !== "IMPORT_SAVE") return state;
+  switch (action.type) {
+    case "WORK_PHONES": {
+      if (state.ap < 1) return state;
+      const st = deriveStats(state);
+      let n = 1 + Math.floor(st.hustle / 3) + (chance(0.5) ? 1 : -1);
+      n = Math.max(1, Math.min(4, n));
+      let s = spendAp(state, 1);
+      const fresh = [];
+      for (let i = 0; i < n; i++) fresh.push(makeLead(s));
+      s = { ...s, leads: [...s.leads, ...fresh] };
+      const names = fresh.map((l) => l.clientName).join(", ");
+      return sync(withLog(s, "flavor",
+        "You dialed until your ear got hot. Picked up: " + names + "."));
+    }
+    case "ASSIST_SHOWING": {
+      if (state.ap < 1 || state.rank !== "receptionist") return state;
+      let s = spendAp(state, 1);
+      s = { ...s, cash: s.cash + 100, careerEarnings: s.careerEarnings + 100,
+        counters: { ...s.counters, showingsRun: s.counters.showingsRun + 1 } };
+      return sync(withLog(s, "money",
+        "You " + pick(ASSIST_FLAVORS) + ". The agent handed you " + money(100) + " and called it “exposure, plus money.”"));
+    }
+    case "SIDE_HUSTLE": {
+      if (state.ap < 1) return state;
+      const amt = randInt(150, 400);
+      let s = spendAp(state, 1);
+      s = { ...s, cash: s.cash + amt, careerEarnings: s.careerEarnings + amt };
+      return sync(withLog(s, "money",
+        "You " + pick(SIDE_HUSTLES) + ". " + money(amt) + ", cash, no questions."));
+    }
+    case "RUN_SHOWING": {
+      if (state.ap < 1 || state.rank === "receptionist") return state;
+      const lead = state.leads.find((l) => l.id === action.leadId);
+      if (!lead || lead.stage === "ready") return state;
+      const a = arch(lead.archetypeId);
+      const advanced = lead.stage === "new" ? "shown" : "ready";
+      let s = spendAp(state, 1);
+      s = { ...s, leads: s.leads.map((l) => (l.id === lead.id ? { ...l, stage: advanced } : l)),
+        counters: { ...s.counters, showingsRun: s.counters.showingsRun + 1 } };
+      let text = "You walked " + lead.clientName + " through a " + a.label.toLowerCase()
+        + "'s idea of a dream home. "
+        + (advanced === "ready"
+          ? "They stopped asking questions and started asking about the paperwork."
+          : "They didn't leave immediately. In this business that's a milestone.");
+      if (state.rank === "junior") {
+        s = { ...s, cash: s.cash + 150, careerEarnings: s.careerEarnings + 150 };
+        text += " The office paid you " + money(150) + " for your trouble.";
+      }
+      return sync(withLog(s, state.rank === "junior" ? "money" : "flavor", text));
+    }
+    case "ATTEMPT_CLOSE": {
+      if (state.ap < 1 || state.rank === "receptionist") return state;
+      const lead = state.leads.find((l) => l.id === action.leadId);
+      if (!lead || lead.stage !== "ready" || lead.sold) return state;
+      const a = arch(lead.archetypeId);
+      let s = spendAp(state, 1);
+      const success = chance(closeChance(state, lead));
+      if (!success) {
+        if (lead.retriedClose) {
+          s = { ...s, leads: s.leads.filter((l) => l.id !== lead.id),
+            counters: { ...s.counters, leadsLost: s.counters.leadsLost + 1 } };
+          return sync(withLog(s, "event",
+            lead.clientName + " walked for good. Second time at the table, second time watching a pen go back in a pocket."));
+        }
+        s = { ...s, leads: s.leads.map((l) => (l.id === lead.id
+          ? { ...l, patience: Math.max(0, l.patience - 1), retriedClose: true } : l)) };
+        return sync(withLog(s, "event",
+          lead.clientName + " needed to “sleep on it,” which is a thing people say while backing toward a door. One more shot at this."));
+      }
+      const isReferralCut = state.rank === "junior";
+      const { gross, earnings } = commissionFor(lead.salePrice, state.rank);
+      s = { ...s,
+        cash: s.cash + earnings, careerEarnings: s.careerEarnings + earnings,
+        leads: s.leads.map((l) => (l.id === lead.id ? { ...l, sold: true } : l)),
+        counters: { ...s.counters, dealsClosed: s.counters.dealsClosed + 1 } };
+      const line = lead.clientName + " " + pick(a.successes)
+        + " The house sold for " + money(lead.salePrice) + "; "
+        + (isReferralCut
+          ? "the agent who signed it slid you a referral cut of " + money(earnings) + " and a compliment about your handwriting."
+          : "your share came to " + money(earnings) + ".");
+      return sync(withLog(s, "deal", line));
+    }
+    case "BUY_SWAG": {
+      const it = swagOf(action.itemId);
+      if (!it || state.ownedSwagIds.includes(it.id)) return state;
+      if (rankIndex(state.rank) < rankIndex(it.unlockRank)) return state;
+      if (state.cash < it.price) return state;
+      let s = { ...state, cash: state.cash - it.price, ownedSwagIds: [...state.ownedSwagIds, it.id] };
+      s = { ...s, equipped: { ...s.equipped, [it.slot]: it.id } };
+      return sync(withLog(s, "money",
+        "You bought the " + it.name + " and wore it out of the store. " + it.flavor));
+    }
+    case "EQUIP_SWAG": {
+      const it = swagOf(action.itemId);
+      if (!it || !state.ownedSwagIds.includes(it.id)) return state;
+      const already = state.equipped[it.slot] === it.id;
+      const equipped = { ...state.equipped };
+      if (already) delete equipped[it.slot]; else equipped[it.slot] = it.id;
+      const s = { ...state, equipped };
+      return sync(withLog(s, "flavor", already
+        ? "You put the " + it.name + " away. The room felt quieter."
+        : "You put on the " + it.name + " and checked your reflection in a parked car."));
+    }
+    case "END_WEEK": return endWeek(state);
+    case "IMPORT_SAVE": return sync({ ...initialState(), ...action.state, summary: null, promo: null });
+    case "RESTART": return initialState();
+    default: return state;
+  }
+}
+
+/* --------------------------------------------------------------- END WEEK */
+function endWeek(state) {
+  let s = { ...state };
+  const money_in = [], money_out = [], events = [];
+  const startCash = s.cash;
+
+  if (s.ap > 0) s = withLog(s, "flavor", "You spent the rest of the week practicing your signature.");
+
+  /* 0. archive anything that closed this week (the SOLD stamp has had its moment) */
+  s = { ...s, leads: s.leads.filter((l) => !l.sold) };
+
+  /* 1. patience + ghost rolls */
+  const survivors = [];
+  s.leads.forEach((l) => {
+    const a = arch(l.archetypeId);
+    if (a.ghostChance > 0 && chance(a.ghostChance)) {
+      s = withLog(s, "event", l.clientName + " " + pick(a.ghosts));
+      s = { ...s, counters: { ...s.counters, leadsLost: s.counters.leadsLost + 1 } };
+      return;
+    }
+    const p = l.patience - 1;
+    if (p <= 0) {
+      s = withLog(s, "event", l.clientName + " ran out of runway and " + pick(a.ghosts));
+      s = { ...s, counters: { ...s.counters, leadsLost: s.counters.leadsLost + 1 } };
+      return;
+    }
+    survivors.push({ ...l, patience: p });
+  });
+  s = { ...s, leads: survivors };
+
+  /* 2. expenses */
+  const desk = s.rank === "receptionist" ? 0 : DESK_FEE;
+  const upkeep = weeklyUpkeep(s);
+  if (desk) { s = { ...s, cash: s.cash - desk }; money_out.push(["Desk fee", desk]);
+    s = withLog(s, "money", "The brokerage took its desk fee, as brokerages do, for the desk you barely sit at."); }
+  if (upkeep) { s = { ...s, cash: s.cash - upkeep }; money_out.push(["Swag upkeep", upkeep]);
+    s = withLog(s, "money", "Insurance, storage, and dry cleaning on the image. Looking like this isn't free."); }
+
+  /* 3. random event (30%) */
+  if (chance(0.30)) {
+    const pool = EVENTS.filter((e) => e.condition(s));
+    const total = pool.reduce((t, e) => t + e.weight, 0);
+    if (total > 0) {
+      let roll = rand() * total, chosen = pool[0];
+      for (const e of pool) { roll -= e.weight; if (roll <= 0) { chosen = e; break; } }
+      const r = applyEvent(s, chosen.id);
+      s = r.state; events.push(r.label);
+      if (r.cashDelta > 0) money_in.push([r.label, r.cashDelta]);
+      if (r.cashDelta < 0) money_out.push([r.label, -r.cashDelta]);
+    }
+  }
+
+  /* 4. cringe event (independent, ego >= 8) */
+  if (deriveStats(s).ego >= 8 && chance(0.20)) {
+    const r = applyEvent(s, "cringeEvent");
+    s = r.state; events.push(r.label); money_out.push([r.label, -r.cashDelta]);
+  }
+
+  /* 5. promotion */
+  let promo = null;
+  const nxt = nextRank(s);
+  if (nxt) {
+    s = { ...s, rank: nxt.id };
+    promo = nxt;
+    s = withLog(s, "promotion",
+      "PROMOTED: " + nxt.name + ". They printed a certificate. Someone spelled your name right on the second try.");
+  }
+
+  /* 6. tidy modifiers, roll the week */
+  s = { ...s,
+    activeModifiers: s.activeModifiers.filter((m) => m.expiresWeek > s.week),
+    week: s.week + 1, ap: AP_PER_WEEK };
+  s = sync(s);
+
+  /* 7. lose check */
+  if (s.cash < LOSE_AT) {
+    s = withLog(s, "event",
+      "Your card declined at the printer. Then at the gas station. Then, memorably, at the open house you were catering.");
+    s = { ...s, gameOver: true };
+  }
+
+  const summary = {
+    week: state.week, moneyIn: money_in, moneyOut: money_out, events,
+    net: s.cash - startCash, promo: promo ? promo.name : null, brag: bragFor(s),
+  };
+  return { ...s, summary, promo: promo ? promo.name : null };
+}
+
+function applyEvent(state, id) {
+  let s = state, cashDelta = 0, label = "";
+  const activeLeads = s.leads;
+  switch (id) {
+    case "ghosted": {
+      const l = pick(activeLeads); const a = arch(l.archetypeId);
+      s = { ...s, leads: s.leads.filter((x) => x.id !== l.id),
+        counters: { ...s.counters, leadsLost: s.counters.leadsLost + 1 } };
+      s = withLog(s, "event", l.clientName + " " + pick(a.ghosts));
+      label = "Client vanished"; break;
+    }
+    case "lockbox": {
+      const l = pick(activeLeads.filter((x) => x.stage === "shown"));
+      s = { ...s, cash: s.cash - 50,
+        leads: s.leads.map((x) => (x.id === l.id ? { ...x, patience: Math.max(0, x.patience - 1) } : x)) };
+      cashDelta = -50;
+      s = withLog(s, "event", "The lockbox ate the key with " + l.clientName
+        + " standing in the rain behind you. A locksmith arrived, judged you, and charged you.");
+      label = "Locksmith"; break;
+    }
+    case "poached": {
+      const l = pick(activeLeads.filter((x) => x.stage === "ready"));
+      s = { ...s, leads: s.leads.filter((x) => x.id !== l.id),
+        counters: { ...s.counters, leadsLost: s.counters.leadsLost + 1 } };
+      s = withLog(s, "event", "Chadwick Sterling III took " + l.clientName
+        + " to lunch, said the words “boutique white-glove experience,” and walked out with your deal. His teeth are fake. Everyone knows.");
+      label = "Poached by Chadwick"; break;
+    }
+    case "referral": {
+      const lead = { ...makeLead(s), referralBonus: true };
+      s = { ...s, leads: [...s.leads, lead] };
+      s = withLog(s, "event", "A past client told " + lead.clientName
+        + " you were “actually normal,” which in this industry is a rave review. They arrived pre-sold.");
+      label = "Referral"; break;
+    }
+    case "hotMarket": {
+      s = { ...s, activeModifiers: [...s.activeModifiers, { closeChanceDelta: 0.10, expiresWeek: s.week + 2 }] };
+      s = withLog(s, "event", "The market went feral. Buyers are waiving inspections and apologizing to sellers for existing.");
+      label = "Hot market"; break;
+    }
+    case "rateSpike": {
+      s = { ...s, activeModifiers: [...s.activeModifiers, { closeChanceDelta: -0.10, expiresWeek: s.week + 2 }] };
+      s = withLog(s, "event", "Rates jumped. Every buyer in town suddenly wants to “watch it for a bit.”");
+      label = "Rate spike"; break;
+    }
+    case "lostPaperwork": {
+      s = { ...s, cash: s.cash - 100 }; cashDelta = -100;
+      s = withLog(s, "money", "The registry misplaced a form and fined you. They asked you to fax the replacement. In 2026. They had a fax. It worked.");
+      label = "Paperwork fine"; break;
+    }
+    case "openHouseDisaster": {
+      s = { ...s, cash: s.cash - 150, permBonuses: { ...s.permBonuses, hustle: s.permBonuses.hustle + 1 } };
+      cashDelta = -150;
+      s = withLog(s, "event", "At the open house, " + pick(DISASTER_FLAVORS)
+        + ". You cleaned it up, paid for it, and came out slightly harder to rattle.");
+      label = "Open house disaster"; break;
+    }
+    case "fiveStarReview": {
+      const capped = deriveStats(s).swagger >= 10;
+      s = { ...s, cash: s.cash + 200 };
+      if (!capped) s = { ...s, permBonuses: { ...s.permBonuses, swagger: s.permBonuses.swagger + 1 } };
+      cashDelta = 200;
+      s = withLog(s, "money", "A past client left five stars and a paragraph about your “calming energy.” The brokerage sent a bonus and printed the quote on a wall.");
+      label = "Five-star review"; break;
+    }
+    case "cringeEvent": {
+      s = { ...s, cash: s.cash - 100 }; cashDelta = -100;
+      if (s.leads.length) {
+        const l = pick(s.leads);
+        s = { ...s, leads: s.leads.filter((x) => x.id !== l.id),
+          counters: { ...s.counters, leadsLost: s.counters.leadsLost + 1 } };
+        s = withLog(s, "event", "Your motivational video went viral for the wrong reasons. " + pick(CRINGE_QUOTES)
+          + " " + l.clientName + " saw it, watched it twice, and stopped replying. Also, the videographer invoiced you.");
+      } else {
+        s = withLog(s, "event", "Your motivational video went viral for the wrong reasons. " + pick(CRINGE_QUOTES)
+          + " The comments are a crime scene. Also, the videographer invoiced you.");
+      }
+      label = "Went viral (badly)"; break;
+    }
+    default: break;
+  }
+  return { state: s, cashDelta, label };
+}
+
+/* ------------------------------------------------------------------- UI */
+function Pips({ ap }) {
+  return <div className="res-pips" aria-label={ap + " action points left"}>
+    {Array.from({ length: AP_PER_WEEK }).map((_, i) =>
+      <div key={i} className={"res-pip" + (i < ap ? " on" : "")} />)}
+  </div>;
+}
+
+function ActionButton({ title, ap, desc, reason, onClick }) {
+  return <button className="res-btn" disabled={!!reason} onClick={onClick} title={reason || desc}>
+    <div className="t"><span>{title}</span><span className="ap">{ap} AP</span></div>
+    <div className="d">{reason || desc}</div>
+  </button>;
+}
+
+function LeadCard({ lead, state, dispatch }) {
+  const a = arch(lead.archetypeId);
+  const justSold = !!lead.sold;
+  const pct = Math.max(0, (lead.patience / lead.maxPatience) * 100);
+  const noAp = state.ap < 1;
+  const junior = rankIndex(state.rank) >= rankIndex("junior");
+  return <div className="res-lead">
+    {justSold && <div className="res-sold">SOLD</div>}
+    <div className="n">{lead.clientName}</div>
+    <div className="a">{a.label}</div>
+    <div className="p">{money(lead.salePrice)}</div>
+    <div className="q">{lead.intro}</div>
+    <div className="res-fuse"><i className={pct <= 34 ? "low" : ""} style={{ width: pct + "%" }} /></div>
+    <div className="a">{lead.patience} week{lead.patience === 1 ? "" : "s"} of goodwill left</div>
+    <div className="res-mini">
+      {justSold && <div style={{ fontSize: 12, fontStyle: "italic", color: "#6b6f7d" }}>
+        Signed, sealed, and already being posted about.</div>}
+      {!justSold && lead.stage !== "ready" &&
+        <button disabled={noAp || !junior}
+          title={!junior ? "Junior Showing Assistant and up only" : noAp ? "No action points left" : ""}
+          onClick={() => dispatch({ type: "RUN_SHOWING", leadId: lead.id })}>Run Showing</button>}
+      {!justSold && lead.stage === "ready" &&
+        <button disabled={noAp || !junior}
+          title={!junior ? "Junior Showing Assistant and up only" : noAp ? "No action points left" : ""}
+          onClick={() => dispatch({ type: "ATTEMPT_CLOSE", leadId: lead.id })}>
+          {state.rank === "junior" ? "Close (Referral Cut)" : "Attempt Close"}</button>}
+    </div>
+  </div>;
+}
+
+function RankTrack({ state }) {
+  const cur = rankIndex(state.rank);
+  return <div className="res-rank-track">
+    {RANKS.map((r, i) => {
+      const cls = i === cur ? "cur" : i < cur ? "done" : "";
+      const req = i <= cur ? r.blurb :
+        [r.req.earnings ? money(r.req.earnings) + " career" : null,
+         r.req.showings ? r.req.showings + " showings" : null,
+         r.req.deals ? r.req.deals + " deals" : null].filter(Boolean).join(" · ");
+      return <div key={r.id} className={"res-rt " + cls}>
+        <span className="num">{r.n}</span><span>{r.name}</span><span className="req">{req}</span>
+      </div>;
+    })}
+    {LOCKED_RANKS.map((n, i) =>
+      <div key={n} className="res-rt lock" title="Coming in a future update.">
+        <span className="num">{5 + i}</span><span>{n}</span><span className="req">Locked</span>
+      </div>)}
+  </div>;
+}
+
+function StatChips({ it }) {
+  return <div>
+    {it.hustle ? <span className="res-stat">HUS +{it.hustle}</span> : null}
+    {it.swagger ? <span className="res-stat">SWA +{it.swagger}</span> : null}
+    {it.ego ? <span className="res-stat e">EGO +{it.ego}</span> : null}
+    {it.upkeep ? <span className="res-stat">{money(it.upkeep)}/wk</span> : null}
+  </div>;
+}
+
+function RealEstateSim() {
+  const [state, dispatch] = useReducer(reducer, undefined, () => loadSave() || initialState());
+  const [tab, setTab] = useState("office");
+  const [showSummary, setShowSummary] = useState(false);
+  const [confetti, setConfetti] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [exported, setExported] = useState("");
+  const [bump, setBump] = useState(false);
+  const prevCash = useRef(state.cash);
+
+  useEffect(() => { writeSave(state); }, [state]);
+  useEffect(() => {
+    if (state.cash !== prevCash.current) {
+      prevCash.current = state.cash; setBump(true);
+      const t = setTimeout(() => setBump(false), 460); return () => clearTimeout(t);
+    }
+  }, [state.cash]);
+  useEffect(() => { if (state.summary) setShowSummary(true); }, [state.summary]);
+  useEffect(() => {
+    if (state.promo) { setConfetti(true); const t = setTimeout(() => setConfetti(false), 2600); return () => clearTimeout(t); }
+  }, [state.promo]);
+
+  const st = state.stats;
+  const junior = rankIndex(state.rank) >= rankIndex("junior");
+  const buyerPlus = rankIndex(state.rank) >= rankIndex("buyerAgent");
+  const noAp = state.ap < 1;
+  const modDelta = activeModifierDelta(state);
+  const bragStrip = useMemo(() => {
+    const out = []; for (let i = 0; i < 6; i++) out.push(bragFor(state));
+    return out;
+  }, [state.week, state.rank]);
+
+  const byStage = { new: [], shown: [], ready: [] };
+  state.leads.forEach((l) => byStage[l.stage].push(l));
+
+  const doExport = () => {
+    const { summary, promo, ...rest } = state;
+    const s = JSON.stringify(rest);
+    setExported(s);
+    try { navigator.clipboard && navigator.clipboard.writeText(s); } catch (e) {}
+  };
+  const doImport = () => {
+    try {
+      const parsed = JSON.parse(importText);
+      if (parsed && parsed.version === 1) { dispatch({ type: "IMPORT_SAVE", state: parsed }); setImportText(""); }
+      else alert("That doesn't look like a Real Estate Simulator save.");
+    } catch (e) { alert("That save wouldn't parse. Check the paste."); }
+  };
+
+  if (state.gameOver) {
+    return <div><style>{CSS}</style><div className="res-app">
+      <div className="res-modal"><div className="res-card">
+        <h2 className="res-display">MOVED BACK IN WITH YOUR PARENTS</h2>
+        <p style={{ fontSize: 13.5, lineHeight: 1.6 }}>
+          Your mother has put the bus bench ad in the garage. Your father keeps calling it
+          “the realtor thing.” The gold, such as it was, has been repossessed.
+        </p>
+        <div className="res-line"><span>Weeks survived</span><b>{state.week}</b></div>
+        <div className="res-line"><span>Career earnings</span><b>{money(state.careerEarnings)}</b></div>
+        <div className="res-line"><span>Deals closed</span><b>{state.counters.dealsClosed}</b></div>
+        <div className="res-line"><span>Showings run</span><b>{state.counters.showingsRun}</b></div>
+        <div className="res-line"><span>Clients lost</span><b>{state.counters.leadsLost}</b></div>
+        <div className="res-line"><span>Final rank</span><b>{rankOf(state.rank).name}</b></div>
+        <button className="res-go" onClick={() => dispatch({ type: "RESTART" })}>Start Over (Humbly)</button>
+      </div></div>
+    </div></div>;
+  }
+
+  return <div>
+    <style>{CSS}</style>
+    <div className="res-app">
+      <header className="res-header">
+        <div className="res-hrow">
+          <div>
+            <div className={"res-cash res-display" + (bump ? " bump" : "")}>{money(state.cash)}</div>
+            <div className="res-meta">Week {state.week} · <span className="res-rank">{rankOf(state.rank).name}</span></div>
+          </div>
+          <Pips ap={state.ap} />
+          <div className="res-chips">
+            <span className="res-chip">Hustle<b>{st.hustle}</b></span>
+            <span className="res-chip">Swagger<b>{st.swagger}</b></span>
+            <span className={"res-chip" + (st.ego >= 8 ? " warn" : "")}>Ego<b>{st.ego}</b></span>
+          </div>
+        </div>
+      </header>
+
+      <div className="res-ticker">
+        <div className="res-ticker-inner">
+          {bragStrip.concat(bragStrip).map((b, i) => <span key={i}>{b}</span>)}
+        </div>
+      </div>
+
+      {modDelta !== 0 && <div className="res-banner" style={{ marginTop: 10 }}>
+        {modDelta > 0
+          ? "🔥 HOT MARKET — buyers are making offers on houses they've only seen from the car."
+          : "🧊 RATE SPIKE — everybody suddenly wants to “wait and see.”"}
+      </div>}
+      {rankIndex(state.rank) >= rankIndex("sellerAgent") && state.cash >= 100000 &&
+        <div className="res-banner">🏆 Seller's Agent with six figures liquid. <b>To Be Continued in Phase 2.</b> Keep playing.</div>}
+
+      <nav className="res-tabs">
+        {[["office", "Office"], ["leads", "Leads"], ["closet", "Closet"], ["log", "Log"]].map(([id, label]) =>
+          <button key={id} className={"res-tab" + (tab === id ? " on" : "")} onClick={() => setTab(id)}>
+            {label}{id === "leads" && state.leads.length ? " (" + state.leads.length + ")" : ""}
+          </button>)}
+      </nav>
+
+      {tab === "office" && <>
+        <div className="res-panel dark">
+          <h3 className="res-h2 res-display">This Week's Work</h3>
+          <div className="res-grid">
+            <ActionButton title="Work the Phones" ap={1}
+              desc={"Dial strangers until leads happen. Hustle " + st.hustle + " means more names."}
+              reason={!junior ? "Locked — nobody gives the receptionist a phone list." : noAp ? "No action points left this week." : null}
+              onClick={() => dispatch({ type: "WORK_PHONES" })} />
+            <ActionButton title="Assist a Showing" ap={1}
+              desc="Hold the sign, refill the cookies, learn the trade. Flat $100."
+              reason={state.rank !== "receptionist" ? "You're past this. Mostly." : noAp ? "No action points left this week." : null}
+              onClick={() => dispatch({ type: "ASSIST_SHOWING" })} />
+            <ActionButton title="Side Hustle" ap={1}
+              desc="Photos, staging, drone work, aggressive nodding. $150–$400."
+              reason={noAp ? "No action points left this week." : null}
+              onClick={() => dispatch({ type: "SIDE_HUSTLE" })} />
+            <ActionButton title="Run a Showing" ap={1}
+              desc={junior ? "Head to the Leads tab and pick a client." : "Locked."}
+              reason={!junior ? "Unlocks at Junior Showing Assistant." :
+                state.leads.some((l) => l.stage !== "ready") ? "Open the Leads tab to choose a client." : "No lead is waiting on a showing."}
+              onClick={() => setTab("leads")} />
+            <ActionButton title="Attempt a Close" ap={1}
+              desc={buyerPlus ? "Full split. Leads tab." : "Referral cut only until Buyer's Agent."}
+              reason={!junior ? "Unlocks at Junior Showing Assistant." :
+                byStage.ready.length ? "Open the Leads tab to close." : "Nobody's ready to sign."}
+              onClick={() => setTab("leads")} />
+          </div>
+        </div>
+        <div className="res-panel">
+          <h3 className="res-h2 res-display">The Ladder</h3>
+          <RankTrack state={state} />
+          <div style={{ fontSize: 12, color: "#5e6270", marginTop: 10 }}>
+            Career earnings {money(state.careerEarnings)} · {state.counters.showingsRun} showings · {state.counters.dealsClosed} deals · weekly overhead {money(weeklyExpenses(state))}
+          </div>
+        </div>
+        <div className="res-panel dark">
+          <h3 className="res-h2 res-display">Settings</h3>
+          <div className="res-mini" style={{ marginBottom: 8 }}>
+            <button onClick={doExport}>Export Save</button>
+            <button onClick={doImport} disabled={!importText.trim()}>Import Save</button>
+          </div>
+          {exported && <textarea className="res-ta" readOnly value={exported}
+            onFocus={(e) => e.target.select()} />}
+          <textarea className="res-ta" placeholder="Paste a save here, then hit Import Save."
+            value={importText} onChange={(e) => setImportText(e.target.value)} />
+        </div>
+      </>}
+
+      {tab === "leads" && <div className="res-panel dark">
+        <h3 className="res-h2 res-display">Pipeline</h3>
+        {!state.leads.length && <div style={{ fontSize: 13, color: "var(--muted)" }}>
+          Nobody's in the pipeline. The phone is right there, and it is not going to ring on its own.
+        </div>}
+        <div className="res-cols">
+          {[["new", "New"], ["shown", "Shown"], ["ready", "Ready to Close"]].map(([k, label]) =>
+            <div className="res-col" key={k}>
+              <h3>{label} ({byStage[k].length})</h3>
+              {byStage[k].map((l) => <LeadCard key={l.id} lead={l} state={state} dispatch={dispatch} />)}
+            </div>)}
+        </div>
+      </div>}
+
+      {tab === "closet" && <div className="res-panel dark">
+        <h3 className="res-h2 res-display">The Closet</h3>
+        {SLOTS.map((slot) => <div key={slot.id} style={{ marginBottom: 16 }}>
+          <div className="res-meta" style={{ marginBottom: 6 }}>{slot.label}</div>
+          <div className="res-grid">
+            {SWAG.filter((i) => i.slot === slot.id).map((it) => {
+              const owned = state.ownedSwagIds.includes(it.id);
+              const eq = state.equipped[slot.id] === it.id;
+              const locked = rankIndex(state.rank) < rankIndex(it.unlockRank);
+              const afford = state.cash >= it.price;
+              return <div key={it.id} className={"res-item" + (eq ? " eq" : "") + (locked ? " lock" : "")}>
+                <div className="nm">{it.name}</div>
+                <div className="res-price">{money(it.price)}</div>
+                <StatChips it={it} />
+                <div className="fl">{it.flavor}</div>
+                {locked
+                  ? <div className="res-meta">Unlocks at {rankOf(it.unlockRank).name}</div>
+                  : owned
+                    ? <div className="res-mini"><button onClick={() => dispatch({ type: "EQUIP_SWAG", itemId: it.id })}>
+                        {eq ? "Equipped — Take Off" : "Equip"}</button></div>
+                    : <div className="res-mini"><button disabled={!afford}
+                        title={afford ? "" : "You cannot afford this. Yet."}
+                        onClick={() => dispatch({ type: "BUY_SWAG", itemId: it.id })}>Buy</button></div>}
+              </div>;
+            })}
+          </div>
+        </div>)}
+      </div>}
+
+      {tab === "log" && <div className="res-panel">
+        <h3 className="res-h2 res-display">The Record</h3>
+        <ul className="res-log">
+          {state.log.map((e, i) => <li key={i}>
+            <span className="w">Wk {e.week}</span><span className={e.kind}>{e.text}</span>
+          </li>)}
+        </ul>
+      </div>}
+
+      <button className="res-end res-display" onClick={() => dispatch({ type: "END_WEEK" })}>
+        END WEEK {state.week}
+      </button>
+
+      {showSummary && state.summary && <div className="res-modal" onClick={() => setShowSummary(false)}>
+        <div className="res-card" onClick={(e) => e.stopPropagation()}>
+          <h2 className="res-display">WEEK {state.summary.week} — IN REVIEW</h2>
+          <div className="res-meta" style={{ marginBottom: 10 }}>{rankOf(state.rank).name}</div>
+          {state.summary.promo && <div className="res-banner" style={{ color: "#14161f", background: "#f0e2ad", borderColor: "#c9a227" }}>
+            🎉 PROMOTED TO {state.summary.promo.toUpperCase()} — certificate suitable for framing.
+          </div>}
+          {state.summary.moneyIn.map(([l, v], i) => <div className="res-line" key={"i" + i}>
+            <span>{l}</span><b style={{ color: "var(--mint)" }}>+{money(v)}</b></div>)}
+          {state.summary.moneyOut.map(([l, v], i) => <div className="res-line" key={"o" + i}>
+            <span>{l}</span><b style={{ color: "var(--sold)" }}>-{money(v)}</b></div>)}
+          <div className="res-line"><span><b>Net for the week</b></span>
+            <b style={{ color: state.summary.net >= 0 ? "var(--mint)" : "var(--sold)" }}>
+              {state.summary.net >= 0 ? "+" : ""}{money(state.summary.net)}</b></div>
+          <div className="res-line"><span>On hand</span><b>{money(state.cash)}</b></div>
+          {!!state.summary.events.length && <div style={{ fontSize: 12.5, marginTop: 10, color: "#5e6270" }}>
+            This week's incidents: {state.summary.events.join(", ")}. Details in the Log.
+          </div>}
+          <div className="res-brag"><b style={{ color: "var(--brass)" }}>Your post:</b><br />{state.summary.brag}</div>
+          <button className="res-go" onClick={() => setShowSummary(false)}>Back to the Grind</button>
+        </div>
+      </div>}
+
+      {confetti && <div className="res-confetti">
+        {Array.from({ length: 60 }).map((_, i) =>
+          <i key={i} style={{ left: (i * 1.7) % 100 + "%", animationDelay: (i % 12) * 0.09 + "s",
+            background: i % 3 === 0 ? "#f5f2ea" : "#c9a227" }} />)}
+      </div>}
+    </div>
+  </div>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<RealEstateSim />);
+</script>
+</body>
+</html>
