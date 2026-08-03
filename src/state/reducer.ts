@@ -25,7 +25,16 @@ import {
   vrboDue,
 } from '../logic/events'
 import { arch, closeChance, makeLead } from '../logic/leads'
-import { fillPool } from '../logic/portfolio'
+import { P3 } from '../data/p3'
+import {
+  clamp,
+  fillPool,
+  hasFreeMortgageSlot,
+  nicknameFor,
+  occupiedUnitCount,
+  purchaseBaseValue,
+  typeOf,
+} from '../logic/portfolio'
 import { withLog } from '../logic/log'
 import {
   activeChannels,
@@ -35,7 +44,7 @@ import {
   weeklyChannelRep,
   weeklyChannelSpend,
 } from '../logic/marketing'
-import { chance, money, pick, randInt } from '../logic/rand'
+import { chance, money, pick, randInt, roundTo } from '../logic/rand'
 import { INBOUND_LINES } from '../data/marketing'
 import {
   REP_DECAY_PER_WEEK,
@@ -47,8 +56,10 @@ import type {
   Action,
   GameState,
   Lead,
+  Property,
   RankDef,
   SummaryLine,
+  UnitState,
   WeekSummary,
 } from './types'
 
@@ -111,6 +122,34 @@ export function initialState(): GameState {
 function spendAp(state: GameState, n: number): GameState {
   return { ...state, ap: state.ap - n }
 }
+
+/** Replaces one property in place. Every property action goes through this so
+ *  no case has to hand-roll an array map. */
+function patchProperty(
+  state: GameState,
+  propertyId: string,
+  fn: (p: Property) => Property,
+): GameState {
+  return {
+    ...state,
+    properties: state.properties.map((p) => (p.id === propertyId ? fn(p) : p)),
+  }
+}
+
+function patchUnit(
+  state: GameState,
+  propertyId: string,
+  unitId: string,
+  fn: (u: UnitState) => UnitState,
+): GameState {
+  return patchProperty(state, propertyId, (p) => ({
+    ...p,
+    units: p.units.map((u) => (u.id === unitId ? fn(u) : u)),
+  }))
+}
+
+const propertyOf = (s: GameState, id: string): Property | undefined =>
+  s.properties.find((p) => p.id === id)
 
 /** Stats are derived, so every state change re-syncs them. */
 function sync(state: GameState): GameState {
@@ -461,6 +500,195 @@ export function reducer(state: GameState, action: Action): GameState {
           break
       }
       return sync(s)
+    }
+    case 'BUY_PROPERTY': {
+      const l = state.marketPool.find((x) => x.id === action.listingId)
+      if (!l) return state
+      const financed = action.downPct < 1
+      if (action.downPct < P3.DOWN_MIN || action.downPct > 1)
+        return withLog(
+          state,
+          'flavor',
+          'The bank laughed. Twenty percent down is the floor, not an opening bid.',
+        )
+      if (financed && !hasFreeMortgageSlot(state))
+        return withLog(
+          state,
+          'flavor',
+          'The underwriter counted your mortgages, then counted them again. No.',
+        )
+      const down = Math.round(l.askPrice * action.downPct)
+      if (state.cash < down)
+        return withLog(
+          state,
+          'flavor',
+          "You ran the numbers twice and got the same answer twice. You can't cover the down payment.",
+        )
+      const id = 'P' + state.nextPropertyId
+      const type = typeOf(l.typeId)!
+      const property: Property = {
+        id,
+        typeId: l.typeId,
+        nickname: nicknameFor(l.typeId),
+        baseValue: purchaseBaseValue(l),
+        condition: l.condition,
+        mortgage: financed ? { balance: l.askPrice - down } : null,
+        units: Array.from({ length: type.units }, (_, i) => ({
+          id: id + '-u' + i,
+          tenant: null,
+          rentR: 1.0,
+          openIssue: null,
+          evictionWeeksLeft: null,
+        })),
+        renovation: null,
+        listedForSale: false,
+        boughtWeek: state.week,
+        isVrbo: false,
+        vrboProfitStreak: 0,
+        vrboRenoDone: false,
+      }
+      let s: GameState = {
+        ...state,
+        cash: state.cash - down,
+        properties: [...state.properties, property],
+        marketPool: state.marketPool.filter((x) => x.id !== l.id),
+        nextPropertyId: state.nextPropertyId + 1,
+      }
+      s = fillPool(s)
+      return sync(
+        withLog(
+          s,
+          'money',
+          'Purchased ' +
+            property.nickname +
+            ' for ' +
+            money(l.askPrice) +
+            '. ' +
+            (financed
+              ? 'The bank owns most of it. You own the vibes.'
+              : "Cash. The seller's agent looked frightened."),
+        ),
+      )
+    }
+    case 'RENAME_PROPERTY': {
+      if (!propertyOf(state, action.propertyId)) return state
+      const nickname = action.nickname.slice(0, 24).trim()
+      if (!nickname) return state
+      return patchProperty(state, action.propertyId, (p) => ({ ...p, nickname }))
+    }
+    case 'SET_RENT': {
+      const p = propertyOf(state, action.propertyId)
+      const u = p?.units.find((x) => x.id === action.unitId)
+      if (!p || !u) return state
+      const stepped = roundTo(action.r / P3.RENT_R_STEP, 1) * P3.RENT_R_STEP
+      const r = clamp(
+        Math.round(stepped * 100) / 100,
+        P3.RENT_R_MIN,
+        P3.RENT_R_MAX,
+      )
+      let s = patchUnit(state, p.id, u.id, (x) => ({ ...x, rentR: r }))
+      if (u.tenant && r - u.rentR > 0.1)
+        s = withLog(
+          s,
+          'flavor',
+          'You raised the rent. ' +
+            u.tenant.name +
+            ' left a review of your character in the group chat.',
+        )
+      return s
+    }
+    case 'LIST_FOR_SALE': {
+      const p = propertyOf(state, action.propertyId)
+      if (!p || p.listedForSale) return state
+      if (state.ap < 1) return state
+      if (p.renovation)
+        return withLog(
+          state,
+          'flavor',
+          'Nobody buys a house with the drywall off. Finish the job first.',
+        )
+      const s = patchProperty(spendAp(state, 1), p.id, (x) => ({
+        ...x,
+        listedForSale: true,
+      }))
+      return sync(
+        withLog(
+          s,
+          'flavor',
+          'You listed ' +
+            p.nickname +
+            '. The photos make the hallway look longer than it is. That is the job.',
+        ),
+      )
+    }
+    case 'DELIST': {
+      const p = propertyOf(state, action.propertyId)
+      if (!p || !p.listedForSale) return state
+      const s = patchProperty(state, p.id, (x) => ({
+        ...x,
+        listedForSale: false,
+      }))
+      return sync(
+        withLog(
+          s,
+          'flavor',
+          'You pulled ' +
+            p.nickname +
+            ' off the market. Timing, you tell people.',
+        ),
+      )
+    }
+    case 'PAY_PRINCIPAL': {
+      const p = propertyOf(state, action.propertyId)
+      if (!p || !p.mortgage) return state
+      const pay = Math.min(P3.PRINCIPAL_CHUNK, p.mortgage.balance)
+      if (state.cash < pay)
+        return withLog(
+          state,
+          'flavor',
+          'You looked at the balance, then at your account, then away.',
+        )
+      const remaining = p.mortgage.balance - pay
+      let s = patchProperty({ ...state, cash: state.cash - pay }, p.id, (x) => ({
+        ...x,
+        mortgage: remaining > 0 ? { balance: remaining } : null,
+      }))
+      s = withLog(
+        s,
+        'money',
+        remaining > 0
+          ? 'You put ' +
+              money(pay) +
+              ' straight at the principal on ' +
+              p.nickname +
+              '. The balance moved. Slightly.'
+          : 'One deed, fully yours. You read it twice.',
+      )
+      return sync(s)
+    }
+    case 'TOGGLE_PROPCO': {
+      if (!state.propCoActive) {
+        if (occupiedUnitCount(state) < P3.PROPCO_MIN_OCCUPIED_UNITS)
+          return withLog(
+            state,
+            'flavor',
+            'PropCo has a minimum. Three occupied units, or they "can’t build a relationship."',
+          )
+        return sync(
+          withLog(
+            { ...state, propCoActive: true },
+            'flavor',
+            "PropCo answered on the first ring: 'so here's the thing…'",
+          ),
+        )
+      }
+      return sync(
+        withLog(
+          { ...state, propCoActive: false },
+          'flavor',
+          "You cancelled PropCo. They said 'so here's the thing—' and you hung up for the last time.",
+        ),
+      )
     }
     case 'END_WEEK':
       return endWeek(state)
