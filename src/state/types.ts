@@ -279,6 +279,8 @@ export type ChoiceEventId =
 /** Every answer a choice modal can produce. The reducer switches on these. */
 export type ChoiceKey =
   | 'decline'
+  | 'declineForever'
+  | 'buyVrbo'
   | 'humble'
   | 'ego'
   | 'cease'

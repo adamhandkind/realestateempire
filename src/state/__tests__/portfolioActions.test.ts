@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
+import { applyEvent } from '../../logic/events'
 import { setSeed } from '../../logic/rand'
 import { initialState, reducer } from '../reducer'
-import type { GameState, Listing, Property } from '../types'
+import type {
+  GameState,
+  Listing,
+  PortfolioChoice,
+  Property,
+} from '../types'
 
 const listing = (over: Partial<Listing> = {}): Listing => ({
   id: 'LST1',
@@ -465,5 +471,229 @@ describe('EVICT', () => {
       unitId: 'P1-u0',
     })
     expect(again.cash).toBe(started.cash)
+  })
+})
+
+describe('the VRBO offer conversion', () => {
+  it('offers only decline while under three prior offers', () => {
+    const s = base({
+      rank: 'topProducer',
+      gagCounters: { ...initialState().gagCounters, vrboOffers: 1 },
+    })
+    const out = applyEvent(s, 'vrboSpam').state
+    expect(out.pendingChoice!.options.map((o) => o.key)).toEqual(['decline'])
+  })
+
+  it('adds decline-forever and buy at three offers as Top Producer', () => {
+    const s = base({
+      rank: 'topProducer',
+      gagCounters: { ...initialState().gagCounters, vrboOffers: 3 },
+    })
+    const out = applyEvent(s, 'vrboSpam').state
+    expect(out.pendingChoice!.options.map((o) => o.key)).toEqual([
+      'decline',
+      'declineForever',
+      'buyVrbo',
+    ])
+    expect(out.pendingChoice!.body).toContain('MACHINE waiting for an operator')
+  })
+
+  it('stays a one-button gag below Top Producer', () => {
+    const s = base({
+      rank: 'sellerAgent',
+      gagCounters: { ...initialState().gagCounters, vrboOffers: 5 },
+    })
+    expect(applyEvent(s, 'vrboSpam').state.pendingChoice!.options).toHaveLength(
+      1,
+    )
+  })
+
+  it('stops offering once declined forever', () => {
+    const s = base({
+      rank: 'topProducer',
+      gagCounters: {
+        ...initialState().gagCounters,
+        vrboOffers: 5,
+        vrboDeclinedForever: true,
+      },
+    })
+    expect(applyEvent(s, 'vrboSpam').state.pendingChoice!.options).toHaveLength(
+      1,
+    )
+  })
+})
+
+describe('RESOLVE_CHOICE_EVENT: the two new VRBO keys', () => {
+  it('declineForever sets the flag and mourns', () => {
+    const s = base({
+      rank: 'topProducer',
+      gagCounters: { ...initialState().gagCounters, vrboOffers: 3 },
+    })
+    const offered = applyEvent(s, 'vrboSpam').state
+    const out = reducer(offered, {
+      type: 'RESOLVE_CHOICE_EVENT',
+      key: 'declineForever',
+    })
+    expect(out.gagCounters.vrboDeclinedForever).toBe(true)
+    expect(out.log[0].text).toContain("You'll always wonder.")
+  })
+
+  it('buyVrbo queues a vrboBuy choice', () => {
+    const s = base({
+      rank: 'topProducer',
+      gagCounters: { ...initialState().gagCounters, vrboOffers: 3 },
+    })
+    const offered = applyEvent(s, 'vrboSpam').state
+    const out = reducer(offered, {
+      type: 'RESOLVE_CHOICE_EVENT',
+      key: 'buyVrbo',
+    })
+    expect(out.pendingChoice).toBeNull()
+    expect(out.pendingChoices[0].kind).toBe('vrboBuy')
+  })
+})
+
+describe('BUY_VRBO', () => {
+  const offering = (over: Partial<GameState> = {}) =>
+    base({
+      rank: 'topProducer',
+      cash: 200000,
+      pendingChoices: [
+        {
+          id: 'C1',
+          kind: 'vrboBuy',
+          title: 'THE 424/7 VRBO',
+          body: 'x',
+          options: [],
+          payload: {},
+        } as PortfolioChoice,
+      ],
+      ...over,
+    })
+
+  it('creates the property, takes the slot, and clears the choice', () => {
+    const s = reducer(offering(), { type: 'BUY_VRBO', downPct: 0.2 })
+    expect(s.cash).toBe(200000 - 96000)
+    const v = s.properties[0]
+    expect(v.typeId).toBe('vrbo')
+    expect(v.nickname).toBe('The 424/7 VRBO')
+    expect(v.baseValue).toBe(480000)
+    expect(v.condition).toBe(70)
+    expect(v.units).toEqual([])
+    expect(v.isVrbo).toBe(true)
+    expect(v.mortgage).toEqual({ balance: 384000 })
+    expect(s.gagCounters.vrboOwned).toBe(true)
+    expect(s.pendingChoices).toHaveLength(0)
+  })
+
+  it('refuses a second VRBO', () => {
+    const once = reducer(offering(), { type: 'BUY_VRBO', downPct: 0.2 })
+    const twice = reducer(
+      { ...once, pendingChoices: offering().pendingChoices },
+      { type: 'BUY_VRBO', downPct: 0.2 },
+    )
+    expect(twice.properties).toHaveLength(1)
+  })
+})
+
+describe('RESOLVE_PORTFOLIO_CHOICE', () => {
+  const lowball = (): PortfolioChoice => ({
+    id: 'C1',
+    kind: 'lowball',
+    title: 'Offer on Starter Home on Dundurn',
+    body: 'A buyer offers $170,000.',
+    options: [
+      { label: 'Take the money', actionTag: 'accept' },
+      { label: 'Hold firm', actionTag: 'reject' },
+    ],
+    payload: { propertyId: 'P1', offerAmount: 170000 },
+  })
+
+  it('accepting sells at the offer and settles the mortgage', () => {
+    const s = base({
+      cash: 1000,
+      properties: [
+        owned({ mortgage: { balance: 100000 }, listedForSale: true }),
+      ],
+      pendingChoices: [lowball()],
+    })
+    const out = reducer(s, {
+      type: 'RESOLVE_PORTFOLIO_CHOICE',
+      choiceId: 'C1',
+      actionTag: 'accept',
+    })
+    expect(out.cash).toBe(1000 + 70000)
+    expect(out.properties).toHaveLength(0)
+    expect(out.pendingChoices).toHaveLength(0)
+  })
+
+  it('rejecting keeps the property and pops the queue', () => {
+    const s = base({
+      properties: [owned({ listedForSale: true })],
+      pendingChoices: [lowball()],
+    })
+    const out = reducer(s, {
+      type: 'RESOLVE_PORTFOLIO_CHOICE',
+      choiceId: 'C1',
+      actionTag: 'reject',
+    })
+    expect(out.properties).toHaveLength(1)
+    expect(out.pendingChoices).toHaveLength(0)
+  })
+
+  const renewalState = () =>
+    base({
+      properties: [
+        owned({
+          units: [
+            {
+              id: 'P1-u0',
+              tenant: {
+                archetypeId: 'lateLenny',
+                name: 'Lenny Pham',
+                tenancyWeeks: 12,
+                plannedStayWeeks: 25,
+                owed: 0,
+              },
+              rentR: 1.0,
+              openIssue: null,
+              evictionWeeksLeft: null,
+            },
+          ],
+        }),
+      ],
+      pendingChoices: [
+        {
+          id: 'C1',
+          kind: 'renewal',
+          title: 'Lease renewal',
+          body: 'x',
+          options: [
+            { label: 'Raise rent 10%', actionTag: 'raise' },
+            { label: 'Keep them happy', actionTag: 'keep' },
+          ],
+          payload: { propertyId: 'P1', unitId: 'P1-u0' },
+        } as PortfolioChoice,
+      ],
+    })
+
+  it('a renewal raise bumps rentR by 0.10', () => {
+    setSeed(11)
+    const out = reducer(renewalState(), {
+      type: 'RESOLVE_PORTFOLIO_CHOICE',
+      choiceId: 'C1',
+      actionTag: 'raise',
+    })
+    setSeed(null)
+    expect(out.properties[0].units[0].rentR).toBeCloseTo(1.1, 5)
+  })
+
+  it('keeping them happy adds four weeks of tenancy', () => {
+    const out = reducer(renewalState(), {
+      type: 'RESOLVE_PORTFOLIO_CHOICE',
+      choiceId: 'C1',
+      actionTag: 'keep',
+    })
+    expect(out.properties[0].units[0].tenant!.plannedStayWeeks).toBe(29)
   })
 })

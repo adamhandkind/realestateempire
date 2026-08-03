@@ -39,8 +39,14 @@ import {
   renoCost,
   renoOf,
   renoWeeks,
+  tenantOf,
   typeOf,
 } from '../logic/portfolio'
+import {
+  VRBO_DECLINE_FOREVER_LINE,
+  VRBO_NICKNAME,
+  VRBO_OFFER_BODY,
+} from '../data/vrbo'
 import { RENO_OCCUPIED_REFUSAL } from '../data/properties'
 import { TENANT_FIX_LINES } from '../data/tenantEvents'
 import { withLog } from '../logic/log'
@@ -448,6 +454,37 @@ export function reducer(state: GameState, action: Action): GameState {
             'You declined the 424/7 VRBO. He said “for now?” You said nothing. He wrote “for now” on his hand.',
           )
           break
+        case 'declineForever':
+          s = {
+            ...s,
+            gagCounters: { ...s.gagCounters, vrboDeclinedForever: true },
+          }
+          s = withLog(
+            s,
+            'flavor',
+            'You told him never to call again. He said "respect" and meant it. ' +
+              VRBO_DECLINE_FOREVER_LINE,
+          )
+          break
+        case 'buyVrbo': {
+          const id = 'C' + s.nextChoiceId
+          s = {
+            ...s,
+            nextChoiceId: s.nextChoiceId + 1,
+            pendingChoices: [
+              ...s.pendingChoices,
+              {
+                id,
+                kind: 'vrboBuy',
+                title: 'THE 424/7 VRBO',
+                body: VRBO_OFFER_BODY,
+                options: [],
+                payload: { askPrice: P3.VRBO.PRICE },
+              },
+            ],
+          }
+          break
+        }
         case 'humble':
           s = { ...s, reputation: clampRep(s.reputation + 8) }
           s = withLog(
@@ -839,6 +876,150 @@ export function reducer(state: GameState, action: Action): GameState {
           "You cancelled PropCo. They said 'so here's the thing—' and you hung up for the last time.",
         ),
       )
+    }
+    case 'BUY_VRBO': {
+      if (state.gagCounters.vrboOwned) return state
+      const financed = action.downPct < 1
+      if (action.downPct < P3.DOWN_MIN || action.downPct > 1) return state
+      if (financed && !hasFreeMortgageSlot(state))
+        return withLog(
+          state,
+          'flavor',
+          'The underwriter looked at the words "short-term rental" and stopped reading.',
+        )
+      const down = Math.round(P3.VRBO.PRICE * action.downPct)
+      if (state.cash < down)
+        return withLog(
+          state,
+          'flavor',
+          'You cannot cover the down payment on the MACHINE. The MACHINE waits.',
+        )
+      const id = 'P' + state.nextPropertyId
+      const property: Property = {
+        id,
+        typeId: 'vrbo',
+        nickname: VRBO_NICKNAME,
+        baseValue: P3.VRBO.PRICE,
+        condition: 70,
+        mortgage: financed ? { balance: P3.VRBO.PRICE - down } : null,
+        units: [],
+        renovation: null,
+        listedForSale: false,
+        boughtWeek: state.week,
+        isVrbo: true,
+        vrboProfitStreak: 0,
+        vrboRenoDone: false,
+      }
+      let s: GameState = {
+        ...state,
+        cash: state.cash - down,
+        properties: [...state.properties, property],
+        nextPropertyId: state.nextPropertyId + 1,
+        gagCounters: { ...state.gagCounters, vrboOwned: true },
+        pendingChoices: state.pendingChoices.filter((c) => c.kind !== 'vrboBuy'),
+      }
+      s = withLog(
+        s,
+        'money',
+        'You bought the 424/7 VRBO for ' +
+          money(P3.VRBO.PRICE) +
+          '. The wholesaler wept and immediately posted about it.',
+      )
+      return sync(s)
+    }
+    case 'RESOLVE_PORTFOLIO_CHOICE': {
+      const c = state.pendingChoices.find((x) => x.id === action.choiceId)
+      if (!c) return state
+      let s: GameState = {
+        ...state,
+        pendingChoices: state.pendingChoices.filter((x) => x.id !== c.id),
+      }
+      if (c.kind === 'lowball' && action.actionTag === 'accept') {
+        const p = propertyOf(s, c.payload.propertyId as string)
+        if (p) {
+          const price = c.payload.offerAmount as number
+          const proceeds = price - (p.mortgage?.balance ?? 0)
+          s = {
+            ...s,
+            cash: s.cash + proceeds,
+            properties: s.properties.filter((x) => x.id !== p.id),
+          }
+          s = withLog(
+            s,
+            'money',
+            'SOLD: ' +
+              p.nickname +
+              ' for ' +
+              money(price) +
+              '. Larry shook your hand with both of his.',
+          )
+        }
+      } else if (c.kind === 'lowball') {
+        s = withLog(
+          s,
+          'flavor',
+          'You held firm. The offer expired and so did the small talk.',
+        )
+      } else if (c.kind === 'renewal') {
+        const propertyId = c.payload.propertyId as string
+        const unitId = c.payload.unitId as string
+        const p = propertyOf(s, propertyId)
+        const u = p?.units.find((x) => x.id === unitId)
+        if (p && u && u.tenant) {
+          if (action.actionTag === 'raise') {
+            const r = clamp(
+              Math.round((u.rentR + P3.RENEWAL_RAISE) * 100) / 100,
+              P3.RENT_R_MIN,
+              P3.RENT_R_MAX,
+            )
+            s = patchUnit(s, p.id, u.id, (x) => ({ ...x, rentR: r }))
+            if (chance(P3.RENEWAL_LEAVE_CHANCE)) {
+              const a = tenantOf(u.tenant.archetypeId)
+              s = patchUnit(s, p.id, u.id, (x) => ({
+                ...x,
+                tenant: null,
+                openIssue: null,
+                evictionWeeksLeft: null,
+              }))
+              s = withLog(
+                s,
+                'event',
+                interp(pick(a.leave), {
+                  name: u.tenant.name,
+                  owed: String(Math.round(u.tenant.owed)),
+                  nickname: p.nickname,
+                }),
+              )
+            } else {
+              s = withLog(
+                s,
+                'money',
+                u.tenant.name +
+                  ' signed the higher number, slowly, while maintaining eye contact.',
+              )
+            }
+          } else {
+            s = patchUnit(s, p.id, u.id, (x) => ({
+              ...x,
+              tenant: x.tenant
+                ? {
+                    ...x.tenant,
+                    plannedStayWeeks:
+                      x.tenant.plannedStayWeeks + P3.RENEWAL_STAY_BONUS_WEEKS,
+                  }
+                : null,
+            }))
+            s = withLog(
+              s,
+              'flavor',
+              'You kept the rent where it was. ' +
+                u.tenant.name +
+                ' is staying, and said so twice.',
+            )
+          }
+        }
+      }
+      return sync(s)
     }
     case 'END_WEEK':
       return endWeek(state)

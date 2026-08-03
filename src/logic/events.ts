@@ -14,8 +14,15 @@ import {
   VRBO_PITCHES,
 } from '../data/events'
 import { ALGORITHM_MUTE_WEEKS } from '../data/marketing'
+import { P3 } from '../data/p3'
 import { REP_CRINGE_PENALTY, REP_CRINGE_SCALES_AT } from '../data/reputation'
-import type { EventDef, EventId, GameState } from '../state/types'
+import { VRBO_OFFER_BODY } from '../data/vrbo'
+import type {
+  EventDef,
+  EventId,
+  GameState,
+  PendingChoice,
+} from '../state/types'
 import { atLeastRank, clampRep, deriveStats } from './economy'
 import { arch, makeLead } from './leads'
 import { withLog } from './log'
@@ -306,20 +313,42 @@ export function applyEvent(state: GameState, id: EventId): EventResult {
     }
     case 'vrboSpam': {
       const n = s.gagCounters.vrboOffers
+      const converts =
+        n >= P3.VRBO.MIN_DECLINES &&
+        s.rank === 'topProducer' &&
+        !s.gagCounters.vrboOwned &&
+        !s.gagCounters.vrboDeclinedForever
+      const options: PendingChoice['options'] = [
+        {
+          key: 'decline',
+          label: 'Decline (for now)',
+          hint: converts
+            ? 'The word “for now” is doing a lot of work.'
+            : 'There is no other button. There will be, one day.',
+        },
+      ]
+      if (converts) {
+        options.push({
+          key: 'declineForever',
+          label: 'Decline (forever)',
+          hint: 'He never calls again. You never find out.',
+        })
+        options.push({
+          key: 'buyVrbo',
+          label: 'Buy it — $480,000',
+          hint: 'A MACHINE waiting for an operator.',
+        })
+      }
       s = {
         ...s,
         gagCounters: { ...s.gagCounters, vrboOffers: n + 1 },
         pendingChoice: {
           id: 'vrboSpam',
           title: 'THE 424/7 VRBO',
-          body: VRBO_PITCHES[Math.min(n, VRBO_PITCHES.length - 1)],
-          options: [
-            {
-              key: 'decline',
-              label: 'Decline (for now)',
-              hint: 'There is no other button. There will be, one day.',
-            },
-          ],
+          body: converts
+            ? VRBO_OFFER_BODY
+            : VRBO_PITCHES[Math.min(n, VRBO_PITCHES.length - 1)],
+          options,
         },
       }
       label = 'The 424/7 VRBO'
