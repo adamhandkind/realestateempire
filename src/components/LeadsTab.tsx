@@ -1,3 +1,4 @@
+import { districtOrFirst } from '../data/districts'
 import type { Dispatch } from 'react'
 import { hasFlag } from '../logic/characters'
 import { atLeastRank } from '../logic/economy'
@@ -23,7 +24,9 @@ function LeadCard({
     <div className="res-lead">
       {justSold && <div className="res-sold">SOLD</div>}
       <div className="n">{lead.clientName}</div>
-      <div className="a">{a.label}</div>
+      <div className="a">
+        {a.label} · {districtOrFirst(lead.districtId).name}
+      </div>
       <div className="p">{money(lead.salePrice)}</div>
       <div className="q">{lead.intro}</div>
       <div className="res-fuse">

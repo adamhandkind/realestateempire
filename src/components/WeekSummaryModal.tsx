@@ -67,6 +67,26 @@ export default function WeekSummaryModal({
             ))}
           </>
         )}
+        {(summary.territory?.rows.length > 0 ||
+          summary.territory?.rivalMoves.length > 0) && (
+          <>
+            <h3>Territory</h3>
+            {summary.territory.rows.map((r) => (
+              <div key={r.name} className="res-line">
+                <span>{r.name}</span>
+                <b className={r.delta >= 0 ? 'res-mint' : 'res-loss'}>
+                  {r.delta >= 0 ? '+' : ''}
+                  {r.delta.toFixed(1)}% · {r.holder}
+                </b>
+              </div>
+            ))}
+            {summary.territory.rivalMoves.map((m, i) => (
+              <div key={i} className="res-meta">
+                {m}
+              </div>
+            ))}
+          </>
+        )}
         <div className="res-line">
           <span>
             <b>Net for the week</b>

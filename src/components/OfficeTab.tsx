@@ -1,5 +1,8 @@
-import type { Dispatch } from 'react'
+import { useState, type Dispatch } from 'react'
 import { CHARACTERS } from '../data/characters'
+import { DISTRICTS } from '../data/districts'
+import { channelOf, isChannelLocked } from '../logic/marketing'
+import { TARGETABLE_CHANNEL_IDS } from '../logic/territoryWeek'
 import { atLeastRank, weeklyExpenses } from '../logic/economy'
 import { byStage } from '../logic/leads'
 import { money } from '../logic/rand'
@@ -56,6 +59,7 @@ export default function OfficeTab({
   onImport: () => void
   onNewGame: () => void
 }) {
+  const [debugDistrict, setDebugDistrict] = useState(DISTRICTS[0].id)
   const st = state.stats
   const junior = atLeastRank(state.rank, 'junior')
   const buyerPlus = atLeastRank(state.rank, 'buyerAgent')
@@ -171,6 +175,56 @@ export default function OfficeTab({
         />
       </div>
 
+      {/* Phase 2 shipped its channel logic but not its channel cards, so the
+          three targetable formats get their switch and their dropdown here
+          until that tab exists. */}
+      <div className="res-panel dark">
+        <h3 className="res-h2 res-display">Big-Format Advertising</h3>
+        {TARGETABLE_CHANNEL_IDS.map((id) => {
+          const c = channelOf(id)
+          if (!c) return null
+          const on = state.activeChannelIds.includes(c.id)
+          const locked = isChannelLocked(state, c)
+          return (
+            <div key={c.id} style={{ marginBottom: 10 }}>
+              <button
+                className={'res-tab' + (on ? ' on' : '')}
+                disabled={!on && locked}
+                title={locked && !on ? 'Not available at your rank yet' : c.flavor}
+                onClick={() =>
+                  dispatch({ type: 'TOGGLE_CHANNEL', channelId: c.id })
+                }
+              >
+                {on ? '● ' : '○ '}
+                {c.name} · {money(c.weeklyCost)}/wk
+              </button>
+              {on && (
+                <label className="res-target">
+                  Aim it at
+                  <select
+                    value={state.channelTargets[c.id] ?? ''}
+                    onChange={(e) =>
+                      dispatch({
+                        type: 'SET_CHANNEL_TARGET',
+                        channelId: c.id,
+                        districtId: e.target.value || null,
+                      })
+                    }
+                  >
+                    <option value="">The whole city</option>
+                    {DISTRICTS.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
       <div className="res-panel dark">
         <h3 className="res-h2 res-display">Cheat Codes (We Won't Tell)</h3>
         <div className="res-actions">
@@ -213,6 +267,64 @@ export default function OfficeTab({
           </label>
           <button className="res-tab" onClick={onNewGame}>
             New Game (pick an agent)
+          </button>
+          {/* ---- phase 6 ---- */}
+          <label className="res-chip">
+            District
+            <select
+              value={debugDistrict}
+              onChange={(e) => setDebugDistrict(e.target.value)}
+            >
+              {DISTRICTS.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            className="res-tab"
+            onClick={() =>
+              dispatch({ type: 'DEBUG_ADD_SHARE', districtId: debugDistrict })
+            }
+          >
+            +10% share
+          </button>
+          <button
+            className="res-tab"
+            onClick={() =>
+              dispatch({
+                type: 'DEBUG_SET_SHARES',
+                districtId: debugDistrict,
+                shares: { player: 60, chadwick: 10, zambonis: 10, krystal: 0 },
+              })
+            }
+          >
+            Set shares: dominant
+          </button>
+          <button
+            className="res-tab"
+            onClick={() =>
+              dispatch({
+                type: 'DEBUG_SET_SHARES',
+                districtId: debugDistrict,
+                shares: { player: 80, chadwick: 5, zambonis: 5, krystal: 5 },
+              })
+            }
+          >
+            Set shares: locked
+          </button>
+          <button
+            className="res-tab"
+            onClick={() => dispatch({ type: 'DEBUG_FORCE_SHOWDOWN' })}
+          >
+            Force showdown
+          </button>
+          <button
+            className="res-tab"
+            onClick={() => dispatch({ type: 'DEBUG_KING_CHECK' })}
+          >
+            King of Brantford check
           </button>
           {(['cold', 'normal', 'hot'] as const).map((m) => (
             <button
