@@ -165,6 +165,7 @@ const prop = (over: Partial<Property> = {}): Property => ({
   id: 'P1',
   typeId: 'starter',
   nickname: 'Starter Home on Dundurn',
+  districtId: 'northEnd',
   baseValue: 200000,
   condition: 70,
   mortgage: null,

@@ -93,6 +93,7 @@ describe('closeChance and ego affinity', () => {
   const otisLead = (): Lead => ({
     id: 'L1',
     archetypeId: 'oldMoneyOtis',
+    districtId: 'dufferin',
     clientName: 'Otis Whitcombe',
     stage: 'ready',
     salePrice: 800000,
@@ -126,6 +127,7 @@ describe('closeChance and ego affinity', () => {
     const cleoLead = (): Lead => ({
       id: 'L2',
       archetypeId: 'celebrityCleo',
+      districtId: 'tutelaHeights',
       clientName: 'Cleo Marchetti',
       stage: 'ready',
       salePrice: 1000000,

@@ -19,6 +19,7 @@ const listing: Listing = {
   condition: 60,
   askPrice: Math.round(200000 * conditionFactor(60)),
   blurb: 'Good bones. The bones are load-bearing wallpaper.',
+  districtId: 'northEnd',
 }
 
 /** Ends a week, clearing any queued decision first — END_WEEK refuses to run

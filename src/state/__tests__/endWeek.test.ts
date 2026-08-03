@@ -161,6 +161,7 @@ describe('End Week — reputation from closed deals', () => {
         {
           id: 'L1',
           archetypeId: 'firstTimer',
+          districtId: 'northEnd',
           clientName: 'Test Client',
           stage: 'ready',
           salePrice: 200000,
@@ -231,6 +232,7 @@ describe('END_WEEK v3', () => {
           id: 'P1',
           typeId: 'starter',
           nickname: 'Starter Home on Dundurn',
+          districtId: 'northEnd',
           baseValue: 200000,
           condition: 100,
           mortgage: { balance: 100000 },

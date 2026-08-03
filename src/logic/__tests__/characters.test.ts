@@ -40,6 +40,7 @@ const leadOf = (archetypeId: string): Lead => ({
   retriedClose: false,
   createdWeek: 1,
   intro: '…',
+  districtId: 'northEnd',
   referralBonus: false,
 })
 

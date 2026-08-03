@@ -18,7 +18,7 @@ import type {
 import { hasFlag } from './characters'
 import { rankIndex } from './economy'
 import { DISTRICTS } from '../data/districts'
-import { districtsForType, isDominant, perkActive, priceMultOf } from './territory'
+import { districtsForType, perkActive, priceMultOf } from './territory'
 import { pick, rand, randInt, roundTo, weightedPick } from './rand'
 
 export const clamp = (n: number, lo: number, hi: number): number =>
