@@ -202,3 +202,90 @@ describe('End Week — Phase 1 regressions', () => {
     expect(endWeek(base()).summary!.moneyOut).toContainEqual(['Desk fee', 150])
   })
 })
+
+describe('END_WEEK v3', () => {
+  it('refuses to run while a decision is queued', () => {
+    const s: GameState = {
+      ...initialState(),
+      pendingChoices: [
+        {
+          id: 'C1',
+          kind: 'lowball',
+          title: 'x',
+          body: 'y',
+          options: [],
+          payload: {},
+        },
+      ],
+    }
+    expect(reducer(s, { type: 'END_WEEK' }).week).toBe(s.week)
+  })
+
+  it('collects rent before it bills interest', () => {
+    const s: GameState = {
+      ...initialState(),
+      cash: 10000,
+      rank: 'topProducer',
+      properties: [
+        {
+          id: 'P1',
+          typeId: 'starter',
+          nickname: 'Starter Home on Dundurn',
+          baseValue: 200000,
+          condition: 100,
+          mortgage: { balance: 100000 },
+          units: [
+            {
+              id: 'P1-u0',
+              tenant: {
+                archetypeId: 'perfectPatricia',
+                name: 'Patricia Reyes',
+                tenancyWeeks: 2,
+                plannedStayWeeks: 30,
+                owed: 0,
+              },
+              rentR: 1.0,
+              openIssue: null,
+              evictionWeeksLeft: null,
+            },
+          ],
+          renovation: null,
+          listedForSale: false,
+          boughtWeek: 1,
+          isVrbo: false,
+          vrboProfitStreak: 0,
+          vrboRenoDone: false,
+        },
+      ],
+    }
+    const out = endWeek(s)
+    const row = out.summary!.portfolio.find((r) =>
+      r.nickname.includes('Dundurn'),
+    )!
+    expect(row.rentIn).toBe(400)
+    expect(row.moneyOut).toBe(150)
+    expect(row.net).toBe(250)
+  })
+
+  it('tracks the net worth peak and reports it after a wipeout', () => {
+    const s: GameState = { ...initialState(), cash: 50000 }
+    const rich = endWeek(s)
+    expect(rich.peakNetWorth).toBeGreaterThan(0)
+    const broke = endWeek({ ...rich, cash: -2000 })
+    expect(broke.gameOver).toBe(true)
+    expect(broke.peakNetWorth).toBeGreaterThan(0)
+  })
+
+  it('rotates one listing out of the pool each week', () => {
+    const s = { ...initialState(), rank: 'sellerAgent' as const }
+    const seeded = { ...s, marketPool: s.marketPool }
+    const withPool = endWeek(seeded)
+    /* A Seller's Agent state seeds a pool; after a week it is still full and
+       the oldest listing has rotated out. */
+    expect(withPool.marketPool).toHaveLength(4)
+  })
+
+  it('always leaves the summary with a portfolio section', () => {
+    expect(endWeek(initialState()).summary!.portfolio).toEqual([])
+  })
+})

@@ -32,6 +32,7 @@ import {
   fillPool,
   hasFreeMortgageSlot,
   interp,
+  netWorth,
   nicknameFor,
   occupiedUnitCount,
   purchaseBaseValue,
@@ -42,6 +43,19 @@ import {
   tenantOf,
   typeOf,
 } from '../logic/portfolio'
+import {
+  billPortfolio,
+  checkMilestones,
+  collectRent,
+  newWeekCtx,
+  resolveVrbo,
+  rollApplicants,
+  rollFlips,
+  rollTenantEvents,
+  rotatePool,
+  tickMarket,
+  tickProperties,
+} from '../logic/portfolioWeek'
 import {
   VRBO_DECLINE_FOREVER_LINE,
   VRBO_NICKNAME,
@@ -1022,6 +1036,9 @@ export function reducer(state: GameState, action: Action): GameState {
       return sync(s)
     }
     case 'END_WEEK':
+      /* Unresolved decisions block the week. The button is disabled too, but
+         the reducer is the source of truth. */
+      if (state.pendingChoices.length > 0) return state
       return endWeek(state)
     case 'IMPORT_SAVE':
       return sync({
@@ -1089,6 +1106,19 @@ export function endWeek(state: GameState): GameState {
   })
   s = { ...s, leads: survivors }
 
+  /* 4-9. the portfolio week */
+  const ctx = newWeekCtx()
+  s = collectRent(s, ctx)
+  s = rollApplicants(s, ctx)
+  s = rollTenantEvents(s, ctx)
+  s = resolveVrbo(s, ctx)
+  s = rollFlips(s, ctx)
+  s = tickProperties(s, ctx)
+
+  /* 10. market transition / crash countdown */
+  const market = tickMarket(s)
+  s = market.state
+
   /* 1b. marketing: bill, produce inbound leads, move reputation */
   const repBefore = s.reputation
   const spend = weeklyChannelSpend(s)
@@ -1145,6 +1175,9 @@ export function endWeek(state: GameState): GameState {
     s = withLog(s, 'event', t.toast)
   })
 
+  /* 12. pool rotation — skipped when step 10 already rebuilt the pool */
+  s = rotatePool(s, market.regenerated)
+
   /* 2. expenses */
   const desk = s.rank === 'receptionist' ? 0 : DESK_FEE
   const upkeep = weeklyUpkeep(s)
@@ -1166,6 +1199,11 @@ export function endWeek(state: GameState): GameState {
       "Insurance, storage, and dry cleaning on the image. Looking like this isn't free.",
     )
   }
+
+  /* 13b. portfolio billing */
+  const bills = billPortfolio(s, ctx)
+  s = bills.state
+  bills.lines.forEach((l) => money_out.push(l))
 
   /* 3. random event (30%) */
   const chosen = selectEvent(s)
@@ -1195,6 +1233,12 @@ export function endWeek(state: GameState): GameState {
   /* 5. promotion. Unlike the inbound gate above, this reads reputation AFTER
         this week's channel gain — promotion has always used live earnings and
         deals, and reputation is no different. */
+  /* 16. milestones come before promotions — a mortgage slot earned this week
+     is available the moment the player looks at the market. */
+  const ms = checkMilestones(s)
+  s = ms.state
+  ms.unlocked.forEach((m) => events.push(m.label))
+
   let promo: RankDef | null = null
   const nxt = nextRank(s)
   if (nxt) {
@@ -1218,13 +1262,20 @@ export function endWeek(state: GameState): GameState {
   }
   s = sync(s)
 
-  /* 7. lose check */
+  /* 17. peak first, so the recap can show what it was worth at its best */
+  s = { ...s, peakNetWorth: Math.max(s.peakNetWorth, netWorth(s)) }
   if (s.cash < LOSE_AT) {
     s = withLog(
       s,
       'event',
       'Your card declined at the printer. Then at the gas station. Then, memorably, at the open house you were catering.',
     )
+    if (s.properties.some((p) => p.mortgage))
+      s = withLog(
+        s,
+        'event',
+        'The leverage worked until it didn’t. A wholesaler is already calling about your portfolio.',
+      )
     s = { ...s, gameOver: true }
   }
 
@@ -1241,8 +1292,7 @@ export function endWeek(state: GameState): GameState {
     net: s.cash - startCash,
     promo: promo ? promo.name : null,
     brag: bragFor(s),
-    /* Filled in by the Phase 3 portfolio pass; empty until then. */
-    portfolio: [],
+    portfolio: Array.from(ctx.rows.values()),
   }
   return { ...s, summary, promo: promo ? promo.name : null }
 }
