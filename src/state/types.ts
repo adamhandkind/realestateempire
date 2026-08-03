@@ -268,6 +268,7 @@ export type EventId =
   | 'algorithmChange'
   | 'copycatAgent'
   | 'charityGala'
+  | 'marketCrash'
 
 /** The events that pause End Week for a player decision. */
 export type ChoiceEventId =

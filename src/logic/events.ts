@@ -26,6 +26,7 @@ import type {
 import { atLeastRank, clampRep, deriveStats } from './economy'
 import { arch, makeLead } from './leads'
 import { withLog } from './log'
+import { regeneratePool } from './portfolio'
 import { chance, pick, rand, randInt } from './rand'
 
 export interface EventResult {
@@ -424,6 +425,22 @@ export function applyEvent(state: GameState, id: EventId): EventResult {
         },
       }
       label = 'Charity gala'
+      break
+    }
+    case 'marketCrash': {
+      s = {
+        ...s,
+        crash: { weeksLeft: P3.CRASH.duration, lastCrashWeek: s.week },
+        marketState: 'cold',
+        nextMarketState: 'cold',
+      }
+      s = regeneratePool(s)
+      s = withLog(
+        s,
+        'event',
+        "MARKET CRASH. A man in a rented Lamborghini calls it 'a generational buying opportunity.' He is selling a course. He is also, annoyingly, correct.",
+      )
+      label = 'Market crash'
       break
     }
     default:
