@@ -59,6 +59,8 @@ export interface SwagItem {
   upkeep: number
   unlockRank: RankId
   flavor: string
+  /** Never rendered in the shop. Only a character's starting kit grants it. */
+  shopHidden?: boolean
 }
 
 export interface SlotDef {
@@ -250,6 +252,85 @@ export interface PortfolioSummaryRow {
   occupancyPct?: number
 }
 
+/* ------------------------------------------------------------- phase 5a */
+
+/** Minimal seed; expanded to a full Property at init. */
+export interface StartingProperty {
+  typeId: PropertyTypeId
+  street: string
+  baseValue: number
+  condition: number
+  mortgageBalance: number | null
+  /** One entry per unit. `null` is a vacancy. */
+  tenants: (null | { archetypeId: string; rentR: number })[]
+}
+
+export type CharFlag =
+  /** badReview's event condition returns false. */
+  | 'badReviewImmune'
+  /** EVICT costs $0 (still 1 AP) and skips the guilt modal entirely. */
+  | 'freeEvictions'
+  /** nextMarketState visible from week 1, same UI as the $500k milestone. */
+  | 'marketInsight'
+  /** Cold markets (and a crash) contribute 0 to her saleChance. */
+  | 'flipColdImmune'
+  /** UI: exact close % on Ready lead cards; tenant payChance % on unit rows. */
+  | 'showRawNumbers'
+  /** Cannot EQUIP swag with ego >= 2. Buying stays legal. */
+  | 'noHighEgoSwag'
+  /** A failed close costs 1 Swagger for a week. */
+  | 'accentSlip'
+  /** influencerIzzy leads ghost at P5.IZZY_ALLERGY_GHOST. */
+  | 'izzyAllergy'
+  /** TikTok's unlockRank evaluates as 'junior' for this character. */
+  | 'tiktokEarly'
+
+export interface CharacterDef {
+  id: string
+  name: string
+  /** One-liner under the name on the card. */
+  tagline: string
+  /** 2–3 sentences, select screen detail panel. */
+  bio: string
+  portrait: { initials: string; accent: string; emoji: string }
+  start: {
+    cash: number
+    rank: RankId
+    reputation: number
+    /** Starting items BYPASS rank/tier unlock checks. */
+    ownedSwagIds: string[]
+    equipped: Partial<Record<Slot, string>>
+    properties: StartingProperty[]
+  }
+  /** Default 5; used everywhere AP_PER_WEEK was used. */
+  apPerWeek: number
+  /** Added inside deriveStats, before caps. */
+  statMods: { hustle: number; swagger: number; ego: number }
+  /** Overrides the ego stat cap when lower. */
+  egoCap: number | null
+  closeGlobalDelta: number
+  /** archetypeId -> delta, added in closeChance. */
+  closePerArchetype: Record<string, number>
+  /** Multiplies reqEarnings in nextRank. */
+  promotionEarningsMult: number
+  cringeChanceDelta: number
+  /** Multiplies channel weeklyCost at billing. */
+  marketingCostMult: number
+  repDecayMult: number
+  flags: CharFlag[]
+  /** Exactly 4. Joins the brag rotation at ALL ranks. */
+  brags: string[]
+  /** Special log lines, keyed per character. */
+  lines: Record<string, string>
+}
+
+export interface StatModifier {
+  stat: 'hustle' | 'swagger' | 'ego'
+  delta: number
+  expiresWeek: number
+  label: string
+}
+
 export type EventId =
   | 'ghosted'
   | 'lockbox'
@@ -371,7 +452,7 @@ export interface WeekSummary {
 }
 
 export interface GameState {
-  version: 3
+  version: 4
   week: number
   cash: number
   careerEarnings: number
@@ -385,6 +466,10 @@ export interface GameState {
   equipped: Partial<Record<Slot, string>>
   counters: Counters
   activeModifiers: ActiveModifier[]
+  /** Temporary stat swings. Expired entries drop in the END_WEEK expiry step. */
+  statModifiers: StatModifier[]
+  /** The chosen agent. Unknown ids fall back to 'you' via getChar. */
+  characterId: string
   log: LogEntry[]
   gameOver: boolean
   /** Transient UI state — stripped before persisting, never in a save file. */
@@ -401,6 +486,14 @@ export interface GameState {
     vrboOwned: boolean
     /** Set by "Decline (forever)". Stops all future offers. */
     vrboDeclinedForever: boolean
+    /* Phase 5A gag bookkeeping. Optional so a state literal built before the
+       roster existed still type-checks; every read defaults. */
+    /** The suppressed-bad-review line fires once per run. */
+    daveReviewLine?: boolean
+    /** Ranks the committee has already complained about. */
+    chipPromoRanks?: string[]
+    /** True while mid-dry-spell, so the fade line fires once per spell. */
+    blaineDrySpell?: boolean
   }
   /** channelId → the week number at which it starts producing again. */
   channelMuteUntil: Record<string, number>
@@ -442,6 +535,7 @@ export type Action =
   | { type: 'END_WEEK' }
   | { type: 'IMPORT_SAVE'; state: GameState }
   | { type: 'RESTART' }
+  | { type: 'NEW_GAME'; characterId: string }
   | { type: 'BUY_PROPERTY'; listingId: string; downPct: number }
   | { type: 'SET_RENT'; propertyId: string; unitId: string; r: number }
   | { type: 'RENAME_PROPERTY'; propertyId: string; nickname: string }
@@ -459,3 +553,5 @@ export type Action =
   | { type: 'DEBUG_FORCE_CRASH' }
   | { type: 'DEBUG_FILL_VACANCIES' }
   | { type: 'DEBUG_CASH' }
+  /** Testing tool only — swaps the active character live. */
+  | { type: 'DEBUG_SET_CHARACTER'; characterId: string }

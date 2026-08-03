@@ -1,6 +1,7 @@
 import type { Dispatch } from 'react'
+import { hasFlag } from '../logic/characters'
 import { atLeastRank } from '../logic/economy'
-import { arch, byStage, fusePct } from '../logic/leads'
+import { arch, byStage, closeChance, fusePct } from '../logic/leads'
 import { money } from '../logic/rand'
 import type { Action, GameState, Lead, Stage } from '../state/types'
 
@@ -52,6 +53,14 @@ function LeadCard({
             Run Showing
           </button>
         )}
+        {/* Some agents sell dreams. Some send the actual number. */}
+        {!justSold &&
+          lead.stage === 'ready' &&
+          hasFlag(state, 'showRawNumbers') && (
+            <span className="res-chip">
+              {Math.round(closeChance(state, lead) * 100)}%
+            </span>
+          )}
         {!justSold && lead.stage === 'ready' && (
           <button
             disabled={noAp || !junior}

@@ -2,8 +2,10 @@ import { useState } from 'react'
 import { P3 } from '../../data/p3'
 import { RENO_PROGRESS_LINE } from '../../data/properties'
 import { VRBO_TOOLTIP } from '../../data/vrbo'
+import { hasFlag } from '../../logic/characters'
 import {
   displayedValue,
+  evictCost,
   interp,
   labelOf,
   renoBlockReason,
@@ -44,6 +46,13 @@ export default function PropertyCard({
   const evictArch = evicting?.tenant
     ? tenantOf(evicting.tenant.archetypeId)
     : null
+
+  /* Some landlords get a modal about how they feel. Some just nod. */
+  const askToEvict = (u: UnitState) => {
+    if (hasFlag(state, 'freeEvictions'))
+      dispatch({ type: 'EVICT', propertyId: p.id, unitId: u.id })
+    else setEvicting(u)
+  }
 
   return (
     <div className={'res-card' + (p.isVrbo ? ' res-vrbo' : '')}>
@@ -183,10 +192,11 @@ export default function PropertyCard({
       {p.units.map((u) => (
         <UnitRow
           key={u.id}
+          state={state}
           property={p}
           unit={u}
           dispatch={dispatch}
-          onEvict={setEvicting}
+          onEvict={askToEvict}
         />
       ))}
 
@@ -200,7 +210,7 @@ export default function PropertyCard({
             </p>
             <div className="res-line">
               <span>Filing cost</span>
-              <b>{money(P3.EVICT_COST)}</b>
+              <b>{money(evictCost(state))}</b>
             </div>
             <div className="res-line">
               <span>Weeks without rent</span>

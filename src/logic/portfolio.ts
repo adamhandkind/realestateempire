@@ -15,6 +15,7 @@ import type {
   TenantArchetype,
   UnitState,
 } from '../state/types'
+import { hasFlag } from './characters'
 import { rankIndex } from './economy'
 import { pick, rand, randInt, roundTo, weightedPick } from './rand'
 
@@ -206,11 +207,17 @@ export function makeTenant(
 
 /* ---------------------------------------------------------------- flips */
 
+/** Cold markets — and the crash's implied cold — never slow HER sales. Note
+ *  this is the SPEED of a sale only; crash price multipliers still apply, so
+ *  she sells faster in a downturn, not for more. */
+export const flipMarketDelta = (s: GameState): number => {
+  const raw = P3.FLIP_DELTA[s.marketState]
+  return hasFlag(s, 'flipColdImmune') ? Math.max(0, raw) : raw
+}
+
 export const saleChance = (s: GameState): number =>
   clamp(
-    P3.FLIP_BASE +
-      s.reputation * P3.FLIP_REP_FACTOR +
-      P3.FLIP_DELTA[s.marketState],
+    P3.FLIP_BASE + s.reputation * P3.FLIP_REP_FACTOR + flipMarketDelta(s),
     P3.FLIP_MIN,
     P3.FLIP_MAX,
   )
@@ -225,6 +232,10 @@ export const renoWeeks = (s: GameState, id: RenoProjectId): number =>
     1,
     renoOf(id).weeks - (s.milestonesUnlocked.includes('genWealth') ? 1 : 0),
   )
+
+/** Filing costs money, unless you are the kind of landlord who simply nods. */
+export const evictCost = (s: GameState): number =>
+  hasFlag(s, 'freeEvictions') ? 0 : P3.EVICT_COST
 
 export const allUnitsVacant = (p: Property): boolean =>
   p.units.every((u) => u.tenant === null)
@@ -295,8 +306,10 @@ export function newMilestones(s: GameState): typeof MILESTONES {
   )
 }
 
+/** Earned at $500k net worth — or simply known, if you have been doing this
+ *  since 1983. */
 export const hasMarketInsight = (s: GameState): boolean =>
-  s.milestonesUnlocked.includes('portfolioGuy')
+  s.milestonesUnlocked.includes('portfolioGuy') || hasFlag(s, 'marketInsight')
 
 /* -------------------------------------------------------- market cycle */
 

@@ -1,12 +1,13 @@
-import { AP_PER_WEEK, isEgoDangerous, rankOf } from '../logic/economy'
+import { getChar } from '../logic/characters'
+import { isEgoDangerous, rankOf } from '../logic/economy'
 import { hasMarketInsight, netWorth } from '../logic/portfolio'
 import { money } from '../logic/rand'
 import type { GameState } from '../state/types'
 
-function Pips({ ap }: { ap: number }) {
+function Pips({ ap, max }: { ap: number; max: number }) {
   return (
     <div className="res-pips" aria-label={ap + ' action points left'}>
-      {Array.from({ length: AP_PER_WEEK }).map((_, i) => (
+      {Array.from({ length: max }).map((_, i) => (
         <div key={i} className={'res-pip' + (i < ap ? ' on' : '')} />
       ))}
     </div>
@@ -21,6 +22,7 @@ export default function Header({
   bump: boolean
 }) {
   const st = state.stats
+  const char = getChar(state)
   return (
     <header className="res-header">
       <div className="res-hrow">
@@ -31,6 +33,10 @@ export default function Header({
           <div className="res-meta">
             Week {state.week} ·{' '}
             <span className="res-rank">{rankOf(state.rank).name}</span>
+            {' · '}
+            <span title={char.tagline}>
+              {char.portrait.emoji} {char.name}
+            </span>
           </div>
         </div>
         <div>
@@ -53,7 +59,7 @@ export default function Header({
             </span>
           ))}
         </div>
-        <Pips ap={state.ap} />
+        <Pips ap={state.ap} max={char.apPerWeek} />
         <div className="res-chips">
           <span className="res-chip">
             Hustle<b>{st.hustle}</b>

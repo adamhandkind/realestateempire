@@ -9,6 +9,7 @@ import {
   commissionFor,
   crossedThresholds,
   deriveStats,
+  gatedOnMultipliedEarnings,
   nextRank,
   PRESET_SLOTS,
   rankIndex,
@@ -24,14 +25,16 @@ import {
   shouldCringe,
   vrboDue,
 } from '../logic/events'
-import { arch, closeChance, makeLead } from '../logic/leads'
+import { arch, closeChance, ghostChanceFor, makeLead } from '../logic/leads'
 import { P3 } from '../data/p3'
 import {
   anyUnitOccupied,
   clamp,
+  evictCost,
   fillPool,
   hasFreeMortgageSlot,
   interp,
+  labelOf,
   makeTenant,
   netWorth,
   nicknameFor,
@@ -71,10 +74,21 @@ import {
   activeChannels,
   channelOf,
   isChannelLocked,
+  repDecayFor,
   rollInbound,
   weeklyChannelRep,
   weeklyChannelSpend,
 } from '../logic/marketing'
+import {
+  FALLBACK_CHARACTER,
+  characterOf,
+  charLine,
+  getChar,
+  hasFlag,
+  pushStatModifier,
+} from '../logic/characters'
+import { DEFAULT_CHARACTER_ID, P5 } from '../data/p5'
+import { UNKNOWN_CHARACTER_LINE } from '../data/characters'
 import { chance, money, pick, randInt, roundTo } from '../logic/rand'
 import { INBOUND_LINES } from '../data/marketing'
 import {
@@ -89,6 +103,8 @@ import type {
   Lead,
   Property,
   RankDef,
+  StartingProperty,
+  SwagItem,
   SummaryLine,
   UnitState,
   WeekSummary,
@@ -96,7 +112,7 @@ import type {
 
 export function initialState(): GameState {
   const base: GameState = {
-    version: 3,
+    version: 4,
     week: 1,
     cash: START_CASH,
     careerEarnings: 0,
@@ -109,6 +125,8 @@ export function initialState(): GameState {
     equipped: {},
     counters: { showingsRun: 0, dealsClosed: 0, leadsLost: 0 },
     activeModifiers: [],
+    statModifiers: [],
+    characterId: DEFAULT_CHARACTER_ID,
     log: [
       {
         week: 1,
@@ -127,6 +145,9 @@ export function initialState(): GameState {
       nextVrboWeek: 6,
       vrboOwned: false,
       vrboDeclinedForever: false,
+      daveReviewLine: false,
+      chipPromoRanks: [],
+      blaineDrySpell: false,
     },
     channelMuteUntil: {},
     pendingChoice: null,
@@ -148,6 +169,79 @@ export function initialState(): GameState {
      never empty. Nothing unlocks below Seller Agent, so a week-one game keeps
      an empty pool and nextListingId 1 until the first listing is drawn. */
   return fillPool(base)
+}
+
+/** Expands a StartingProperty seed into a real Property. Tenants move in with
+ *  a fresh tenancy, nothing owed, and no issues; the mortgage is as given. */
+function expandStartingProperty(
+  seed: StartingProperty,
+  id: string,
+  week: number,
+): Property {
+  return {
+    id,
+    typeId: seed.typeId,
+    nickname: labelOf(seed.typeId) + ' on ' + seed.street,
+    baseValue: seed.baseValue,
+    condition: seed.condition,
+    mortgage:
+      seed.mortgageBalance === null ? null : { balance: seed.mortgageBalance },
+    units: seed.tenants.map((t, i) => ({
+      id: id + '-u' + i,
+      tenant: t ? makeTenant(tenantOf(t.archetypeId)) : null,
+      rentR: t ? t.rentR : 1.0,
+      openIssue: null,
+      evictionWeeksLeft: null,
+    })),
+    renovation: null,
+    listedForSale: false,
+    boughtWeek: week,
+    isVrbo: false,
+    vrboProfitStreak: 0,
+    vrboRenoDone: false,
+  }
+}
+
+/**
+ * A fresh game as `characterId`. Phase 1's initial state is built first, then
+ * the character's `start` block is laid over it. Starting swag bypasses the
+ * rank/tier/shopHidden gates — that bypass exists HERE and nowhere else.
+ */
+export function newGame(characterId: string): GameState {
+  const char = characterOf(characterId) ?? FALLBACK_CHARACTER
+  const base = initialState()
+  let nextPropertyId = base.nextPropertyId
+  const properties = char.start.properties.map((seed) =>
+    expandStartingProperty(seed, 'P' + nextPropertyId++, base.week),
+  )
+  const opening =
+    char.id === DEFAULT_CHARACTER_ID
+      ? base.log
+      : [
+          {
+            week: 1,
+            kind: 'flavor' as const,
+            text: 'Week 1. ' + char.tagline,
+          },
+          ...base.log,
+        ]
+  const s: GameState = {
+    ...base,
+    characterId: char.id,
+    statModifiers: [],
+    cash: char.start.cash,
+    rank: char.start.rank,
+    reputation: char.start.reputation,
+    ownedSwagIds: [...char.start.ownedSwagIds],
+    equipped: { ...char.start.equipped },
+    properties,
+    nextPropertyId,
+    ap: char.apPerWeek,
+    peakNetWorth: char.start.cash,
+    log: opening,
+  }
+  /* Rank can start above Receptionist, which changes what's for sale. */
+  return sync(fillPool({ ...s, peakNetWorth: Math.max(s.cash, netWorth(s)) }))
 }
 
 function spendAp(state: GameState, n: number): GameState {
@@ -181,6 +275,31 @@ function patchUnit(
 
 const propertyOf = (s: GameState, id: string): Property | undefined =>
   s.properties.find((p) => p.id === id)
+
+/** A failed close costs the accent, and the accent was the swagger. Does not
+ *  stack: a slip while one is already live is a no-op. */
+function applyAccentSlip(state: GameState): GameState {
+  if (!hasFlag(state, 'accentSlip')) return state
+  const pushed = pushStatModifier(state, {
+    stat: 'swagger',
+    delta: -1,
+    expiresWeek: state.week + P5.ACCENT_SLIP_WEEKS,
+    label: 'Accent Slip',
+  })
+  if (!pushed) return state
+  const line = charLine(state, 'accentSlip')
+  return line ? withLog(pushed, 'event', line) : pushed
+}
+
+/** Why this character will not put this on, or null if they will. Some people
+ *  have been doing this too long to wear a boa. */
+function equipRefusal(state: GameState, it: SwagItem): string | null {
+  if (!hasFlag(state, 'noHighEgoSwag') || it.ego < 2) return null
+  return (
+    charLine(state, 'boaRefusal', { itemName: it.name }) ??
+    'That is not going to happen.'
+  )
+}
 
 /** Stats are derived, so every state change re-syncs them. */
 function sync(state: GameState): GameState {
@@ -290,6 +409,7 @@ export function reducer(state: GameState, action: Action): GameState {
       let s = spendAp(state, 1)
       const success = chance(closeChance(state, lead))
       if (!success) {
+        s = applyAccentSlip(s)
         if (lead.retriedClose) {
           s = {
             ...s,
@@ -348,7 +468,8 @@ export function reducer(state: GameState, action: Action): GameState {
     }
     case 'BUY_SWAG': {
       const it = swagOf(action.itemId)
-      if (!it || state.ownedSwagIds.includes(it.id)) return state
+      if (!it || it.shopHidden || state.ownedSwagIds.includes(it.id))
+        return state
       if (rankIndex(state.rank) < rankIndex(it.unlockRank)) return state
       if (state.cash < it.price) return state
       let s = {
@@ -356,6 +477,16 @@ export function reducer(state: GameState, action: Action): GameState {
         cash: state.cash - it.price,
         ownedSwagIds: [...state.ownedSwagIds, it.id],
       }
+      /* Buying is always legal; wearing it is a separate opinion. */
+      const refusal = equipRefusal(s, it)
+      if (refusal)
+        return sync(
+          withLog(
+            withLog(s, 'money', 'You bought the ' + it.name + '. ' + it.flavor),
+            'flavor',
+            refusal,
+          ),
+        )
       s = { ...s, equipped: { ...s.equipped, [it.slot]: it.id } }
       return sync(
         withLog(
@@ -372,6 +503,8 @@ export function reducer(state: GameState, action: Action): GameState {
       const it = swagOf(action.itemId)
       if (!it || !state.ownedSwagIds.includes(it.id)) return state
       const already = state.equipped[it.slot] === it.id
+      const refusal = already ? null : equipRefusal(state, it)
+      if (refusal) return sync(withLog(state, 'flavor', refusal))
       const equipped = { ...state.equipped }
       if (already) delete equipped[it.slot]
       else equipped[it.slot] = it.id
@@ -446,7 +579,11 @@ export function reducer(state: GameState, action: Action): GameState {
       const equipped: GameState['equipped'] = {}
       SLOTS.forEach((slot) => {
         const id = preset.equipped[slot.id]
-        if (id && state.ownedSwagIds.includes(id)) equipped[slot.id] = id
+        const it = swagOf(id)
+        if (!id || !it || !state.ownedSwagIds.includes(id)) return
+        /* The same refusal applies to a saved look as to a single item. */
+        if (equipRefusal(state, it)) return
+        equipped[slot.id] = id
       })
       return sync(
         withLog(
@@ -840,7 +977,8 @@ export function reducer(state: GameState, action: Action): GameState {
       const u = p?.units.find((x) => x.id === action.unitId)
       if (!p || !u || !u.tenant || u.evictionWeeksLeft !== null) return state
       if (state.ap < 1) return state
-      if (state.cash < P3.EVICT_COST)
+      const cost = evictCost(state)
+      if (state.cash < cost)
         return withLog(
           state,
           'flavor',
@@ -852,21 +990,25 @@ export function reducer(state: GameState, action: Action): GameState {
           : P3.EVICT_WEEKS
       const name = u.tenant.name
       let s = patchUnit(
-        spendAp({ ...state, cash: state.cash - P3.EVICT_COST }, 1),
+        spendAp({ ...state, cash: state.cash - cost }, 1),
         p.id,
         u.id,
         (x) => ({ ...x, evictionWeeksLeft: weeks }),
       )
+      const free = hasFlag(state, 'freeEvictions')
+        ? charLine(state, 'evict', { tenantName: name })
+        : null
       s = withLog(
         s,
         'money',
-        'You filed on ' +
-          name +
-          '. ' +
-          money(P3.EVICT_COST) +
-          ' in paper and ' +
-          weeks +
-          ' weeks of both of you pretending not to see each other.',
+        free ??
+          'You filed on ' +
+            name +
+            '. ' +
+            money(cost) +
+            ' in paper and ' +
+            weeks +
+            ' weeks of both of you pretending not to see each other.',
       )
       return sync(s)
     }
@@ -1069,13 +1211,22 @@ export function reducer(state: GameState, action: Action): GameState {
     }
     case 'DEBUG_CASH':
       return sync({ ...state, cash: state.cash + 100000 })
-    case 'IMPORT_SAVE':
-      return sync({
+    case 'DEBUG_SET_CHARACTER':
+      return sync({ ...state, characterId: action.characterId })
+    case 'IMPORT_SAVE': {
+      const s = sync({
         ...initialState(),
         ...action.state,
         summary: null,
         promo: null,
       })
+      /* An imported save keeps its characterId; getChar decides what it means. */
+      return characterOf(s.characterId)
+        ? s
+        : withLog(s, 'flavor', UNKNOWN_CHARACTER_LINE)
+    }
+    case 'NEW_GAME':
+      return newGame(action.characterId)
     case 'RESTART':
       return initialState()
     default:
@@ -1110,8 +1261,14 @@ export function endWeek(state: GameState): GameState {
   const survivors: Lead[] = []
   s.leads.forEach((l) => {
     const a = arch(l.archetypeId)
-    if (a.ghostChance > 0 && chance(a.ghostChance)) {
-      s = withLog(s, 'event', l.clientName + ' ' + pick(a.ghosts))
+    const ghostChance = ghostChanceFor(s, l)
+    if (ghostChance > 0 && chance(ghostChance)) {
+      /* An allergic character gets her own line instead of the archetype's. */
+      const own =
+        l.archetypeId === 'influencerIzzy' && hasFlag(s, 'izzyAllergy')
+          ? charLine(s, 'izzyGhost')
+          : null
+      s = withLog(s, 'event', own ?? l.clientName + ' ' + pick(a.ghosts))
       s = {
         ...s,
         counters: { ...s.counters, leadsLost: s.counters.leadsLost + 1 },
@@ -1189,7 +1346,7 @@ export function endWeek(state: GameState): GameState {
   const repGain = weeklyChannelRep(s)
   if (repGain) s = { ...s, reputation: clampRep(s.reputation + repGain) }
   if (s.activeChannelIds.length === 0) {
-    const decayed = clampRep(s.reputation - REP_DECAY_PER_WEEK)
+    const decayed = clampRep(s.reputation - repDecayFor(s, REP_DECAY_PER_WEEK))
     if (decayed < s.reputation) {
       s = { ...s, reputation: decayed }
       s = withLog(
@@ -1198,6 +1355,12 @@ export function endWeek(state: GameState): GameState {
         'Nobody saw your face anywhere this week. Out of sight, out of mind, out of the group chat.',
       )
     }
+    /* One fade line per dry spell, not one per silent week. */
+    const fade = s.gagCounters.blaineDrySpell ? null : charLine(s, 'fade')
+    if (fade) s = withLog(s, 'flavor', fade)
+    s = { ...s, gagCounters: { ...s.gagCounters, blaineDrySpell: true } }
+  } else if (s.gagCounters.blaineDrySpell) {
+    s = { ...s, gagCounters: { ...s.gagCounters, blaineDrySpell: false } }
   }
 
   crossedThresholds(repBefore, s.reputation).forEach((t) => {
@@ -1234,6 +1397,18 @@ export function endWeek(state: GameState): GameState {
   s = bills.state
   bills.lines.forEach((l) => money_out.push(l))
 
+  /* 3b. the review that never arrives. Logged once, the first week a bad
+     review would otherwise have been on the table. */
+  if (
+    hasFlag(s, 'badReviewImmune') &&
+    !s.gagCounters.daveReviewLine &&
+    s.counters.dealsClosed >= 3
+  ) {
+    const line = charLine(s, 'review')
+    if (line) s = withLog(s, 'event', line)
+    s = { ...s, gagCounters: { ...s.gagCounters, daveReviewLine: true } }
+  }
+
   /* 3. random event (30%) */
   const chosen = selectEvent(s)
   if (chosen) {
@@ -1268,6 +1443,22 @@ export function endWeek(state: GameState): GameState {
   s = ms.state
   ms.unlocked.forEach((m) => events.push(m.label))
 
+  /* The committee. Fires once per rank, and only when the character's own
+     earnings multiplier is the single thing standing in the way. */
+  const gated = gatedOnMultipliedEarnings(s)
+  const complained = s.gagCounters.chipPromoRanks ?? []
+  if (gated && !complained.includes(gated.id)) {
+    const line = charLine(s, 'promoGrind')
+    if (line) s = withLog(s, 'event', line)
+    s = {
+      ...s,
+      gagCounters: {
+        ...s.gagCounters,
+        chipPromoRanks: [...complained, gated.id],
+      },
+    }
+  }
+
   let promo: RankDef | null = null
   const nxt = nextRank(s)
   if (nxt) {
@@ -1286,8 +1477,9 @@ export function endWeek(state: GameState): GameState {
   s = {
     ...s,
     activeModifiers: s.activeModifiers.filter((m) => m.expiresWeek > s.week),
+    statModifiers: s.statModifiers.filter((m) => m.expiresWeek > s.week),
     week: s.week + 1,
-    ap: AP_PER_WEEK,
+    ap: getChar(s).apPerWeek,
   }
   s = sync(s)
 

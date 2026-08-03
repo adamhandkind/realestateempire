@@ -1,3 +1,4 @@
+import { hasFlag } from '../logic/characters'
 import type { EventDef } from '../state/types'
 
 /* NOTE ON THE `condition` FIELDS
@@ -35,7 +36,13 @@ export const EVENTS: EventDef[] = [
     weight: 6,
     condition: (s) => s.activeChannelIds.length > 0,
   },
-  { id: 'badReview', weight: 8, condition: (s) => s.counters.dealsClosed >= 3 },
+  {
+    id: 'badReview',
+    weight: 8,
+    /* Some people are simply not reviewable. */
+    condition: (s) =>
+      s.counters.dealsClosed >= 3 && !hasFlag(s, 'badReviewImmune'),
+  },
   { id: 'tvInterview', weight: 5, condition: (s) => s.reputation >= 50 },
   {
     id: 'algorithmChange',
@@ -79,6 +86,8 @@ export const CRINGE_QUOTES: string[] = [
 
 /** The badReview weight before Community Sponsorship halves it. */
 export const BAD_REVIEW_BASE_WEIGHT = 8
+/** The weekly cringe roll, once ego is at the threshold. */
+export const CRINGE_WEEKLY_CHANCE = 0.2
 /** Guaranteed VRBO cadence, in weeks. */
 export const VRBO_MIN_GAP = 6
 export const VRBO_MAX_GAP = 9

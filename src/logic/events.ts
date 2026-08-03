@@ -1,6 +1,7 @@
 import {
   BAD_REVIEW_BASE_WEIGHT,
   BAD_REVIEW_LINES,
+  CRINGE_WEEKLY_CHANCE,
   COPYCAT_LINES,
   CRINGE_HIGH_FAME,
   CRINGE_QUOTES,
@@ -23,6 +24,7 @@ import type {
   GameState,
   PendingChoice,
 } from '../state/types'
+import { getChar } from './characters'
 import { atLeastRank, clampRep, deriveStats } from './economy'
 import { arch, makeLead } from './leads'
 import { withLog } from './log'
@@ -83,9 +85,13 @@ export function scheduleNextVrbo(state: GameState): GameState {
   }
 }
 
-/** Fires independently of the 30% roll, once ego gets loud enough. */
+/** Fires independently of the 30% roll, once ego gets loud enough. The ego
+ *  threshold never moves; only the character's chance modifier does. */
 export function shouldCringe(state: GameState): boolean {
-  return deriveStats(state).ego >= 8 && chance(0.2)
+  return (
+    deriveStats(state).ego >= 8 &&
+    chance(CRINGE_WEEKLY_CHANCE + getChar(state).cringeChanceDelta)
+  )
 }
 
 export function applyEvent(state: GameState, id: EventId): EventResult {
