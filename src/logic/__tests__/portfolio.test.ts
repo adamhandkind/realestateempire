@@ -8,6 +8,7 @@ import { TENANTS } from '../../data/tenants'
 import { TENANT_EVENTS } from '../../data/tenantEvents'
 import { MILESTONES } from '../../data/milestones'
 import { VRBO_EVENTS } from '../../data/vrbo'
+import { CRASH_BRAGS, LANDLORD_BRAGS, VRBO_BRAGS } from '../../data/brags'
 
 describe('property data', () => {
   it('lists the six buyable types and no vrbo entry', () => {
@@ -119,5 +120,16 @@ describe('milestone and vrbo data', () => {
       'influencerSummit',
       'plumbingCatastrophe',
     ])
+  })
+})
+
+describe('phase 3 brag sets', () => {
+  it('ships six landlord brags, three vrbo brags, two crash brags', () => {
+    expect(LANDLORD_BRAGS).toHaveLength(6)
+    expect(VRBO_BRAGS).toHaveLength(3)
+    expect(CRASH_BRAGS).toHaveLength(2)
+  })
+  it('interpolates the door count', () => {
+    expect(LANDLORD_BRAGS.some((b) => b.includes('{properties}'))).toBe(true)
   })
 })
