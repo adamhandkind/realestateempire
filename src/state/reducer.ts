@@ -32,10 +32,13 @@ import {
   fillPool,
   hasFreeMortgageSlot,
   interp,
+  makeTenant,
   netWorth,
   nicknameFor,
   occupiedUnitCount,
+  pickApplicant,
   purchaseBaseValue,
+  regeneratePool,
   renoBlockReason,
   renoCost,
   renoOf,
@@ -1040,6 +1043,32 @@ export function reducer(state: GameState, action: Action): GameState {
          the reducer is the source of truth. */
       if (state.pendingChoices.length > 0) return state
       return endWeek(state)
+    case 'DEBUG_SET_MARKET':
+      return sync(
+        regeneratePool({
+          ...state,
+          marketState: action.marketState,
+          nextMarketState: action.marketState,
+        }),
+      )
+    case 'DEBUG_FORCE_CRASH':
+      return sync(applyEvent(state, 'marketCrash').state)
+    case 'DEBUG_FILL_VACANCIES': {
+      let s = state
+      state.properties.forEach((p) => {
+        if (p.isVrbo) return
+        p.units.forEach((u) => {
+          if (u.tenant) return
+          const a = pickApplicant(p, u.rentR)
+          if (!a) return
+          const tenant = makeTenant(a)
+          s = patchUnit(s, p.id, u.id, (x) => ({ ...x, tenant }))
+        })
+      })
+      return sync(s)
+    }
+    case 'DEBUG_CASH':
+      return sync({ ...state, cash: state.cash + 100000 })
     case 'IMPORT_SAVE':
       return sync({
         ...initialState(),

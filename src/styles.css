@@ -146,3 +146,9 @@ body{margin:0;background:var(--ink);color:var(--marble);
 .res-mint { color: #7fd1a8; }
 .res-loss { color: #d98c8c; }
 @keyframes res-pulse { 0%,100% { opacity: 1 } 50% { opacity: .55 } }
+.res-dial { display: flex; gap: 4px; font-size: 11px; letter-spacing: .08em; }
+.res-dial-seg { padding: 2px 8px; border: 1px solid #2a2722; opacity: .4; }
+.res-dial-seg.on { opacity: 1; border-color: #c9a227; color: #c9a227; }
+.res-dial-seg.next { border-style: dashed; opacity: .75; }
+.res-crash { background: #3a1d1d; border-color: #8c2b2b; }
+.res-summary-row { margin-bottom: 8px; }

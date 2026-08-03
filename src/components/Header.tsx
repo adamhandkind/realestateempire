@@ -1,4 +1,5 @@
 import { AP_PER_WEEK, isEgoDangerous, rankOf } from '../logic/economy'
+import { hasMarketInsight, netWorth } from '../logic/portfolio'
 import { money } from '../logic/rand'
 import type { GameState } from '../state/types'
 
@@ -31,6 +32,26 @@ export default function Header({
             Week {state.week} ·{' '}
             <span className="res-rank">{rankOf(state.rank).name}</span>
           </div>
+        </div>
+        <div>
+          <div className="res-meta">Net worth</div>
+          <div className="res-display res-brass">{money(netWorth(state))}</div>
+        </div>
+        <div className="res-dial" aria-label={'market: ' + state.marketState}>
+          {(['cold', 'normal', 'hot'] as const).map((m) => (
+            <span
+              key={m}
+              className={
+                'res-dial-seg' +
+                (state.marketState === m ? ' on' : '') +
+                (hasMarketInsight(state) && state.nextMarketState === m
+                  ? ' next'
+                  : '')
+              }
+            >
+              {m}
+            </span>
+          ))}
         </div>
         <Pips ap={state.ap} />
         <div className="res-chips">

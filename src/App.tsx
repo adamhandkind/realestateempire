@@ -5,6 +5,7 @@ import Header from './components/Header'
 import LeadsTab from './components/LeadsTab'
 import LogTab from './components/LogTab'
 import OfficeTab from './components/OfficeTab'
+import PortfolioChoiceModal from './components/PortfolioChoiceModal'
 import PortfolioTab from './components/PortfolioTab'
 import WeekSummaryModal from './components/WeekSummaryModal'
 import { activeModifierDelta, isPhase2Teaser, rankOf } from './logic/economy'
@@ -146,6 +147,12 @@ export default function App() {
             : '🧊 RATE SPIKE — everybody suddenly wants to “wait and see.”'}
         </div>
       )}
+      {state.crash.weeksLeft > 0 && (
+        <div className="res-banner res-crash">
+          📉 MARKET CRASH — {state.crash.weeksLeft} weeks left. Everything is
+          worth less. Everything is also cheaper.
+        </div>
+      )}
       {isPhase2Teaser(state) && (
         <div className="res-banner">
           🏆 Seller's Agent with six figures liquid.{' '}
@@ -187,10 +194,16 @@ export default function App() {
 
       <button
         className="res-end res-display"
+        disabled={state.pendingChoices.length > 0}
+        title={state.pendingChoices.length > 0 ? 'Decisions await' : ''}
         onClick={() => dispatch({ type: 'END_WEEK' })}
       >
-        END WEEK {state.week}
+        {state.pendingChoices.length > 0
+          ? 'DECISIONS AWAIT'
+          : 'END WEEK ' + state.week}
       </button>
+
+      <PortfolioChoiceModal state={state} dispatch={dispatch} />
 
       {showSummary && (
         <WeekSummaryModal state={state} onClose={() => setShowSummary(false)} />
