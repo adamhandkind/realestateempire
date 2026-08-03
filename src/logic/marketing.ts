@@ -60,12 +60,15 @@ export function rollInbound(state: GameState, channel: Channel): Lead | null {
   if (isChannelMuted(state, channel.id)) return null
   if (!chance(channel.inboundChance)) return null
 
+  /* A channel aimed at a district produces leads from it — no roll. */
+  const target = state.channelTargets[channel.id]
+
   if (channel.id === 'tiktok' && chance(TIKTOK_GHOST_RATE))
-    return makeLead(state, arch('ghostGary'), channel.id)
+    return makeLead(state, arch('ghostGary'), channel.id, target)
 
   const legal = legalArchetypes(state)
   if (!legal.length) return null
   const skewed = legal.filter((a) => channel.leadPool.includes(a.id))
   const from = skewed.length && chance(LEAD_POOL_SKEW) ? skewed : legal
-  return makeLead(state, pick(from), channel.id)
+  return makeLead(state, pick(from), channel.id, target)
 }

@@ -1,3 +1,4 @@
+import { districtOrFirst } from '../../data/districts'
 import { labelOf } from '../../logic/portfolio'
 import { money } from '../../logic/rand'
 import type { GameState, Listing } from '../../state/types'
@@ -18,6 +19,7 @@ export default function ListingCard({
         <div className="res-ribbon">CRASH PRICING</div>
       )}
       <h3>{labelOf(listing.typeId)}</h3>
+      <div className="res-meta">{districtOrFirst(listing.districtId).name}</div>
       <p className="res-blurb">{listing.blurb}</p>
       <div className="res-bar" aria-label="condition">
         <i

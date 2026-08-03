@@ -8,7 +8,15 @@ import {
 } from './economy'
 import { getChar, hasFlag } from './characters'
 import { P5 } from '../data/p5'
-import { pick, rand, randInt } from './rand'
+import { pick, rand, randInt, roundTo, weightedPick } from './rand'
+import { PRICE_ROUND } from '../data/p3'
+import {
+  archetypeWeight,
+  hasPresence,
+  perkActive,
+  pickLeadDistrict,
+  priceMultOf,
+} from './territory'
 
 export const arch = (id: string): Archetype =>
   ARCHETYPES.find((a) => a.id === id)!
@@ -27,25 +35,47 @@ export function makeName(a: Archetype): string {
   return pick(FIRST_NAMES) + ' ' + pick(a.surnames)
 }
 
+/** Uniform until the `luxPipeline` perk wakes up, at which point the estate
+ *  crowd is twice as likely to call. */
+function drawArchetype(state: GameState): Archetype {
+  const legal = legalArchetypes(state)
+  return (
+    weightedPick(legal, (a) => archetypeWeight(state, a.id)) ??
+    legal[0] ??
+    pick(ARCHETYPES)
+  )
+}
+
+/**
+ * A new lead. `forcedDistrict` is only passed by a marketing channel that has
+ * been aimed somewhere — every other lead rolls for its district, weighted by
+ * the share you already hold there.
+ */
 export function makeLead(
   state: GameState,
   forcedArch?: Archetype,
   channelId?: string,
+  forcedDistrict?: string,
 ): Lead {
-  const a = forcedArch || pick(legalArchetypes(state))
-  const raw = randInt(a.price[0], a.price[1])
+  const a = forcedArch || drawArchetype(state)
+  const districtId = forcedDistrict ?? pickLeadDistrict(state, a.id)
+  const raw = randInt(a.price[0], a.price[1]) * priceMultOf(districtId)
+  /* Everyone at the rink vouched for you, so they arrive with more rope. */
+  const extra =
+    districtId === 'northEnd' && perkActive(state, 'firstNamesBasis') ? 1 : 0
   return {
     id: 'L' + Date.now().toString(36) + Math.floor(rand() * 1e6).toString(36),
     archetypeId: a.id,
     clientName: makeName(a),
     stage: 'new',
-    salePrice: Math.round(raw / 5000) * 5000,
-    patience: a.patience,
-    maxPatience: a.patience,
+    salePrice: roundTo(raw, PRICE_ROUND),
+    patience: a.patience + extra,
+    maxPatience: a.patience + extra,
     retriedClose: false,
     createdWeek: state.week,
     intro: pick(a.intros),
     referralBonus: false,
+    districtId,
     ...(channelId ? { channelId } : {}),
   }
 }
@@ -72,6 +102,8 @@ export function closeChance(state: GameState, lead: Lead): number {
   let c = 0.35 + st.swagger * 0.05 + a.closeMod + st.ego * a.egoAffinity * 0.01
   c += activeModifierDelta(state)
   c += char.closeGlobalDelta + (char.closePerArchetype[lead.archetypeId] ?? 0)
+  /* Presence is the only share-to-close link. Dominance pays out in perks. */
+  if (hasPresence(state, lead.districtId)) c += 0.05
   if (lead.referralBonus) c += 0.1
   return Math.max(0.1, Math.min(0.9, c))
 }

@@ -7,7 +7,9 @@ import { DEFAULT_CHARACTER_ID } from '../data/p5'
 import { RANKS } from '../data/ranks'
 import { PRESET_SLOTS } from '../data/swag'
 import { fillPool } from '../logic/portfolio'
-import { initialState } from './reducer'
+import { districtForType, initialState } from './reducer'
+import { gain, initialTerritory, pickLeadDistrict } from '../logic/territory'
+import { P6, PLAYER } from '../data/p6'
 import type { GameState } from './types'
 
 interface AnySave {
@@ -23,7 +25,7 @@ const num = (v: unknown, fallback: number): number =>
 export function migrate(raw: unknown): GameState | null {
   if (!raw || typeof raw !== 'object') return null
   const s = raw as AnySave
-  if (typeof s.version !== 'number' || s.version < 1 || s.version > 4)
+  if (typeof s.version !== 'number' || s.version < 1 || s.version > 5)
     return null
 
   const base = initialState()
@@ -45,9 +47,17 @@ export function migrate(raw: unknown): GameState | null {
   const week = num(s.week, base.week)
   const cash = num(s.cash, base.cash)
 
+  const rivalEffects = s.rivalEffects as
+    | {
+        undercutWeeksLeft?: number
+        lastDefense?: Record<string, number>
+        lastLock?: Record<string, number>
+      }
+    | undefined
+
   const out: GameState = {
     ...merged,
-    version: 4,
+    version: 5,
     permBonuses: {
       hustle: s.permBonuses?.hustle ?? base.permBonuses.hustle,
       swagger: s.permBonuses?.swagger ?? base.permBonuses.swagger,
@@ -127,8 +137,65 @@ export function migrate(raw: unknown): GameState | null {
     nextChoiceId: num(s.nextChoiceId, 1),
     peakNetWorth: num(s.peakNetWorth, cash),
     firstP3Week: num(s.firstP3Week, week),
+    /* ---- phase 6 ---- a pre-map save has never heard of a district ---- */
+    territory:
+      s.territory && typeof s.territory === 'object'
+        ? (s.territory as GameState['territory'])
+        : initialTerritory(),
+    rivalEffects: {
+      undercutWeeksLeft: num(rivalEffects?.undercutWeeksLeft, 0),
+      lastDefense: rivalEffects?.lastDefense ?? {},
+      lastLock: rivalEffects?.lastLock ?? {},
+    },
+    chadwickIntel:
+      (s.chadwickIntel as GameState['chadwickIntel'] | undefined) ?? null,
+    kingOfBrantford: s.kingOfBrantford === true,
+    channelTargets:
+      s.channelTargets && typeof s.channelTargets === 'object'
+        ? (s.channelTargets as Record<string, string>)
+        : {},
+    weekDealDistricts: [],
+    weekFarmedDistricts: [],
   }
 
   /* A v1/v2 save arrives with an empty pool; a v3 save keeps the one it had. */
-  return fillPool(out)
+  return fillPool(placeOnTheMap(out, typeof s.territory === 'object'))
+}
+
+/**
+ * Gives every pre-Phase-6 entity a district, then pays the career its
+ * retroactive credit: +1.0 where you already own a door, and the deals you have
+ * already closed spread across the districts a career plausibly started in.
+ * Skipped entirely for a save that already has territory.
+ */
+function placeOnTheMap(s: GameState, alreadyMapped: boolean): GameState {
+  let out: GameState = {
+    ...s,
+    properties: s.properties.map((p) =>
+      p.districtId
+        ? p
+        : { ...p, districtId: p.isVrbo ? 'downtown' : districtForType(p.typeId) },
+    ),
+    marketPool: s.marketPool.map((l) =>
+      l.districtId ? l : { ...l, districtId: districtForType(l.typeId) },
+    ),
+  }
+  /* Leads roll for a district the same way a new lead would. */
+  out = {
+    ...out,
+    leads: out.leads.map((l) =>
+      l.districtId ? l : { ...l, districtId: pickLeadDistrict(out, l.archetypeId) },
+    ),
+  }
+  if (alreadyMapped) return out
+
+  for (const p of out.properties)
+    out = gain(out, p.districtId, PLAYER, P6.GAIN_PROPERTY_BUY)
+
+  /* Deals have no stored district, so the credit lands where an early career
+     plausibly happened, capped so a long save doesn't wake up as King. */
+  const credit = Math.min(out.counters.dealsClosed * P6.GAIN_DEAL, 24)
+  const early = ['northEnd', 'westBrant', 'downtown']
+  for (const id of early) out = gain(out, id, PLAYER, credit / early.length)
+  return out
 }

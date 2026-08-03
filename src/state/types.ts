@@ -214,6 +214,8 @@ export interface Property {
   /** Empty for the VRBO. */
   units: UnitState[]
   renovation: { projectId: RenoProjectId; weeksLeft: number } | null
+  /** Phase 6. Inherited from the listing it was bought as. */
+  districtId: string
   listedForSale: boolean
   boughtWeek: number
   isVrbo: boolean
@@ -229,13 +231,15 @@ export interface Listing {
   condition: number
   askPrice: number
   blurb: string
+  /** Phase 6. Chosen from the districts whose propertyTypes include typeId. */
+  districtId: string
 }
 
 /** The generic choice queue. Distinct from Phase 2's `PendingChoice`, which is
  *  the single-slot choice-EVENT modal and is unchanged. */
 export interface PortfolioChoice {
   id: string
-  kind: 'lowball' | 'renewal' | 'vrboBuy'
+  kind: 'lowball' | 'renewal' | 'vrboBuy' | 'showdown'
   title: string
   body: string
   options: { label: string; actionTag: string }[]
@@ -324,6 +328,65 @@ export interface CharacterDef {
   lines: Record<string, string>
 }
 
+/* -------------------------------------------------------------- phase 6 */
+
+/** Which listing types generate in a district, and who lives there. */
+export interface DistrictDef {
+  id: string
+  name: string
+  blurb: string
+  /** Multiplies every sale price and intrinsic value rolled here. */
+  priceMult: number
+  /** SVG polygon points, in the 1000x700 map viewBox. */
+  polygon: string
+  labelPos: { x: number; y: number }
+  /** archetypeId -> multiplier on its base weight. Unlisted is 1; 0 is never. */
+  leadAffinity: Record<string, number>
+  propertyTypes: PropertyTypeId[]
+  /** Active while the player holds >= P6.THRESH_DOMINANT share here. */
+  dominantPerk: { id: DistrictPerkId; text: string }
+  /** Exactly 2. One is logged per FARM_DISTRICT. */
+  farmLines: string[]
+}
+
+export type DistrictPerkId =
+  | 'saleBoost'
+  | 'luxPipeline'
+  | 'referralNetwork'
+  | 'tradeRates'
+  | 'benchmark'
+  | 'roomForRent'
+  | 'localsDeal'
+  | 'firstNamesBasis'
+
+export interface RivalDef {
+  id: string
+  name: string
+  firm: string
+  /** Their fill colour wherever they hold the plurality. */
+  color: string
+  /** Read against the player's Swagger stat in a showdown. */
+  swagger: number
+  homeDistrict: string
+  focusDistricts: string[]
+  /** Weekly share points, inclusive. */
+  aggression: { min: number; max: number }
+  lines: {
+    gain: string
+    defense: string
+    showdownWin: string
+    showdownLoss: string
+    locked: string
+    poach: string
+  }
+}
+
+/** One district's ownership split. Keys: 'player', 'indies', each rivalId.
+ *  Always sums to exactly P6.SHARE_TOTAL. */
+export interface DistrictShareState {
+  shares: Record<string, number>
+}
+
 export interface StatModifier {
   stat: 'hustle' | 'swagger' | 'ego'
   delta: number
@@ -350,6 +413,10 @@ export type EventId =
   | 'copycatAgent'
   | 'charityGala'
   | 'marketCrash'
+  | 'showdown'
+  | 'fruitBasket'
+  | 'undercut'
+  | 'krystalViral'
 
 /** The events that pause End Week for a player decision. */
 export type ChoiceEventId =
@@ -403,6 +470,8 @@ export interface Lead {
   referralBonus: boolean
   /** Set when the lead arrived via a marketing channel — drives the badge. */
   channelId?: string
+  /** Phase 6. Every lead belongs to a district; the card shows its chip. */
+  districtId: string
   /** Set on a successful close so the card can show its SOLD stamp for the
    *  rest of the week. Archived at the top of the next End Week. */
   sold?: boolean
@@ -446,13 +515,18 @@ export interface WeekSummary {
     repChange: number
   }
   portfolio: PortfolioSummaryRow[]
+  /** Phase 6. One row per district that moved, plus the rival headlines. */
+  territory: {
+    rows: { name: string; delta: number; holder: string }[]
+    rivalMoves: string[]
+  }
   net: number
   promo: string | null
   brag: string
 }
 
 export interface GameState {
-  version: 4
+  version: 5
   week: number
   cash: number
   careerEarnings: number
@@ -515,6 +589,28 @@ export interface GameState {
   peakNetWorth: number
   /** The week Phase 3 state was first created. Gates the crash event. */
   firstP3Week: number
+
+  /* ------------------------------------------------------------ phase 6 */
+
+  /** districtId -> share split. Every district is always present. */
+  territory: Record<string, DistrictShareState>
+  rivalEffects: {
+    /** Zamboni undercut countdown. 0 means no discount is active. */
+    undercutWeeksLeft: number
+    /** rivalId -> the week their defense line last fired. */
+    lastDefense: Record<string, number>
+    /** districtId -> the week its lockout line last fired. */
+    lastLock: Record<string, number>
+  }
+  /** The fruit-basket reveal. Renders as a pulse for one week, then clears. */
+  chadwickIntel: { district: string; week: number } | null
+  kingOfBrantford: boolean
+  /** channelId -> districtId. Only billboard/benchDomination/tvCommercial. */
+  channelTargets: Record<string, string>
+  /** Districts the player did something in this week. Cleared at week end. */
+  weekDealDistricts: string[]
+  /** Districts farmed this week. Cleared at week end alongside the above. */
+  weekFarmedDistricts: string[]
 }
 
 /* --------------------------------------------------------------- actions */
@@ -555,3 +651,14 @@ export type Action =
   | { type: 'DEBUG_CASH' }
   /** Testing tool only — swaps the active character live. */
   | { type: 'DEBUG_SET_CHARACTER'; characterId: string }
+  /* ---- phase 6 ---- */
+  | { type: 'FARM_DISTRICT'; districtId: string }
+  | { type: 'SET_CHANNEL_TARGET'; channelId: string; districtId: string | null }
+  | { type: 'DEBUG_ADD_SHARE'; districtId: string }
+  | {
+      type: 'DEBUG_SET_SHARES'
+      districtId: string
+      shares: Record<string, number>
+    }
+  | { type: 'DEBUG_FORCE_SHOWDOWN' }
+  | { type: 'DEBUG_KING_CHECK' }

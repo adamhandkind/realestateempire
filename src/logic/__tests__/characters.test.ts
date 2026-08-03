@@ -40,6 +40,7 @@ const leadOf = (archetypeId: string): Lead => ({
   retriedClose: false,
   createdWeek: 1,
   intro: '…',
+  districtId: 'northEnd',
   referralBonus: false,
 })
 
@@ -438,7 +439,7 @@ describe('terri', () => {
 describe('saves and brags', () => {
   it('migrates a pre-roster save to "you" with no modifiers', () => {
     const out = migrate({ version: 3, week: 4, cash: 900, rank: 'junior' })!
-    expect(out.version).toBe(4)
+    expect(out.version).toBe(5)
     expect(out.characterId).toBe('you')
     expect(out.statModifiers).toEqual([])
   })

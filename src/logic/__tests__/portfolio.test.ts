@@ -165,6 +165,7 @@ const prop = (over: Partial<Property> = {}): Property => ({
   id: 'P1',
   typeId: 'starter',
   nickname: 'Starter Home on Dundurn',
+  districtId: 'northEnd',
   baseValue: 200000,
   condition: 70,
   mortgage: null,
@@ -295,8 +296,8 @@ describe('saleChance', () => {
 
 describe('renovation cost and duration', () => {
   it('charges a percentage of current baseValue', () => {
-    expect(renoCost(prop({ baseValue: 300000 }), 'full')).toBe(60000)
-    expect(renoCost(prop({ baseValue: 300000 }), 'cosmetic')).toBe(24000)
+    expect(renoCost(st(), prop({ baseValue: 300000 }), 'full')).toBe(60000)
+    expect(renoCost(st(), prop({ baseValue: 300000 }), 'cosmetic')).toBe(24000)
   })
   it('takes a week off once generational wealth lands', () => {
     expect(renoWeeks(st(), 'full')).toBe(5)

@@ -1,4 +1,7 @@
 import { P3 } from '../data/p3'
+import { rivalOf } from '../data/rivals'
+import { hasFlag } from '../logic/characters'
+import { showdownWinChance } from '../logic/territoryWeek'
 import { VRBO_NICKNAME } from '../data/vrbo'
 import type { Action, GameState } from '../state/types'
 import BuyModal from './portfolio/BuyModal'
@@ -32,11 +35,25 @@ export default function PortfolioChoiceModal({
     )
   }
 
+  /* Terri does not do "a good feeling about it." Terri does percentages. */
+  const rival =
+    c.kind === 'showdown' ? rivalOf(c.payload.rivalId as string) : null
+  const odds =
+    rival && hasFlag(state, 'showRawNumbers')
+      ? Math.round(showdownWinChance(state, rival) * 100)
+      : null
+
   return (
     <div className="res-modal">
       <div className="res-card">
         <h2 className="res-display">{c.title}</h2>
         <p className="res-blurb">{c.body}</p>
+        {odds !== null && (
+          <div className="res-line">
+            <span>Your odds head-to-head</span>
+            <b>{odds}%</b>
+          </div>
+        )}
         {c.options.map((o) => (
           <button
             key={o.actionTag}

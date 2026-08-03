@@ -33,6 +33,11 @@ export default function Header({
           <div className="res-meta">
             Week {state.week} ·{' '}
             <span className="res-rank">{rankOf(state.rank).name}</span>
+            {state.kingOfBrantford && (
+              <span className="res-kingcrown" title="King of Brantford">
+                ♛
+              </span>
+            )}
             {' · '}
             <span title={char.tagline}>
               {char.portrait.emoji} {char.name}

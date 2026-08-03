@@ -1,3 +1,4 @@
+import { districtOrFirst } from '../../data/districts'
 import { useState } from 'react'
 import { P3 } from '../../data/p3'
 import { RENO_PROGRESS_LINE } from '../../data/properties'
@@ -82,7 +83,9 @@ export default function PropertyCard({
           )}
         </h3>
       )}
-      <div className="res-meta">{labelOf(p.typeId)}</div>
+      <div className="res-meta">
+        {labelOf(p.typeId)} · {districtOrFirst(p.districtId).name}
+      </div>
 
       <div className="res-bar" aria-label="condition">
         <i
@@ -161,7 +164,7 @@ export default function PropertyCard({
                   })
                 }
               >
-                {renoOf(id).label} · {money(renoCost(p, id))} ·{' '}
+                {renoOf(id).label} · {money(renoCost(state, p, id))} ·{' '}
                 {renoWeeks(state, id)} wks
               </button>
             )

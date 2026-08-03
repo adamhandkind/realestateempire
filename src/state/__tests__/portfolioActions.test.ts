@@ -16,6 +16,7 @@ const listing = (over: Partial<Listing> = {}): Listing => ({
   condition: 60,
   askPrice: 180000,
   blurb: 'Good bones. The bones are load-bearing wallpaper.',
+  districtId: 'northEnd',
   ...over,
 })
 
@@ -23,6 +24,7 @@ const owned = (over: Partial<Property> = {}): Property => ({
   id: 'P1',
   typeId: 'starter',
   nickname: 'Starter Home on Dundurn',
+  districtId: 'northEnd',
   baseValue: 180000,
   condition: 60,
   mortgage: null,

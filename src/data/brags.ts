@@ -78,3 +78,18 @@ export const CRASH_BRAGS: string[] = [
   'Buying opportunities everywhere if you know where to look 👀 (down. look down. prices are down.)',
   'Warren Buffett said be greedy when others are fearful. Anyway I bought a duplex.',
 ]
+
+/** Joins the rotation permanently once the crown lands. */
+export const KING_BRAGS: string[] = [
+  'Eight neighbourhoods. One crown. Zero humility. 👑',
+  "They said you can't own a whole city. The paperwork disagrees.",
+  'Brantford wakes up and thinks of me. I know because the benches face the sunrise.',
+]
+
+/** In rotation while the player is dominant anywhere. `{district}` is filled
+ *  with a currently-dominant district. */
+export const TERRITORY_BRAGS: string[] = [
+  'Dominant in {district}. The casseroles were worth it.',
+  'My territory map is mostly gold now. My accountant is mostly concerned.',
+  'Farming {district} like the Grand carved the valley: slowly, then all at once.',
+]

@@ -1,4 +1,6 @@
 import { hasFlag } from '../logic/characters'
+import { pluralityOwner, showdownDistrict } from '../logic/territory'
+import { DISTRICT_IDS } from './districts'
 import type { EventDef } from '../state/types'
 
 /* NOTE ON THE `condition` FIELDS
@@ -22,6 +24,21 @@ export const EVENTS: EventDef[] = [
     condition: (s) => s.leads.some((l) => l.stage === 'ready'),
   },
   { id: 'referral', weight: 8, condition: (s) => s.counters.dealsClosed >= 1 },
+  /* ---- phase 6: the rivals ---- */
+  {
+    id: 'showdown',
+    weight: 6,
+    condition: (s) => showdownDistrict(s) !== null,
+  },
+  { id: 'fruitBasket', weight: 4, condition: (s) => s.week >= 6 },
+  {
+    id: 'undercut',
+    weight: 5,
+    condition: (s) =>
+      s.rivalEffects.undercutWeeksLeft === 0 &&
+      DISTRICT_IDS.some((d) => pluralityOwner(s, d) === 'zambonis'),
+  },
+  { id: 'krystalViral', weight: 5, condition: () => true },
   { id: 'hotMarket', weight: 6, condition: (s) => s.week >= 4 },
   { id: 'rateSpike', weight: 6, condition: (s) => s.week >= 4 },
   { id: 'lostPaperwork', weight: 8, condition: () => true },
