@@ -25,6 +25,7 @@ import {
   vrboDue,
 } from '../logic/events'
 import { arch, closeChance, makeLead } from '../logic/leads'
+import { fillPool } from '../logic/portfolio'
 import { withLog } from '../logic/log'
 import {
   activeChannels,
@@ -52,8 +53,8 @@ import type {
 } from './types'
 
 export function initialState(): GameState {
-  return {
-    version: 2,
+  const base: GameState = {
+    version: 3,
     week: 1,
     cash: START_CASH,
     careerEarnings: 0,
@@ -79,10 +80,32 @@ export function initialState(): GameState {
     reputation: 0,
     activeChannelIds: [],
     outfitPresets: Array(PRESET_SLOTS).fill(null),
-    gagCounters: { vrboOffers: 0, nextVrboWeek: 6 },
+    gagCounters: {
+      vrboOffers: 0,
+      nextVrboWeek: 6,
+      vrboOwned: false,
+      vrboDeclinedForever: false,
+    },
     channelMuteUntil: {},
     pendingChoice: null,
+    properties: [],
+    marketPool: [],
+    marketState: 'normal',
+    nextMarketState: 'normal',
+    crash: { weeksLeft: 0, lastCrashWeek: -999 },
+    milestonesUnlocked: [],
+    propCoActive: false,
+    pendingChoices: [],
+    nextPropertyId: 1,
+    nextListingId: 1,
+    nextChoiceId: 1,
+    peakNetWorth: START_CASH,
+    firstP3Week: 1,
   }
+  /* The pool is seeded as soon as anything is eligible so the Portfolio tab is
+     never empty. Nothing unlocks below Seller Agent, so a week-one game keeps
+     an empty pool and nextListingId 1 until the first listing is drawn. */
+  return fillPool(base)
 }
 
 function spendAp(state: GameState, n: number): GameState {
@@ -659,6 +682,8 @@ export function endWeek(state: GameState): GameState {
     net: s.cash - startCash,
     promo: promo ? promo.name : null,
     brag: bragFor(s),
+    /* Filled in by the Phase 3 portfolio pass; empty until then. */
+    portfolio: [],
   }
   return { ...s, summary, promo: promo ? promo.name : null }
 }

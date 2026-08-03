@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { migrate } from '../migrate'
+import { initialState } from '../reducer'
 
 /** A realistic mid-game Phase 1 save: no v2 fields anywhere. */
 const V1_SAVE = {
@@ -51,7 +52,7 @@ describe('migrate', () => {
 
   it('fills every new v2 field with a default', () => {
     const s = migrate(V1_SAVE)!
-    expect(s.version).toBe(2)
+    expect(s.version).toBe(3)
     expect(s.reputation).toBe(0)
     expect(s.activeChannelIds).toEqual([])
     expect(s.outfitPresets).toEqual([null, null, null])
@@ -107,7 +108,12 @@ describe('migrate', () => {
       null,
       null,
     ])
-    expect(s.gagCounters).toEqual({ vrboOffers: 5, nextVrboWeek: 30 })
+    expect(s.gagCounters).toEqual({
+      vrboOffers: 5,
+      nextVrboWeek: 30,
+      vrboOwned: false,
+      vrboDeclinedForever: false,
+    })
     expect(s.channelMuteUntil).toEqual({ radio: 10 })
   })
 
@@ -123,5 +129,68 @@ describe('migrate', () => {
     expect(() => migrate({ ...V1_SAVE, leads: null })).not.toThrow()
     const s = migrate({ ...V1_SAVE, leads: null })!
     expect(s.leads).toEqual([])
+  })
+})
+
+describe('v2 -> v3 migration', () => {
+  it('adds every Phase 3 field with its default', () => {
+    /* A genuine v2 save has none of the Phase 3 keys on it at all. Seller
+       Agent is the first rank with anything on the market, so this is the
+       earliest save that migrates into a full four-listing pool. */
+    const v2: Record<string, unknown> = {
+      ...initialState(),
+      version: 2,
+      week: 31,
+      cash: 42000,
+      rank: 'sellerAgent',
+    }
+    delete v2.peakNetWorth
+    delete v2.firstP3Week
+    const out = migrate(v2)!
+    expect(out.version).toBe(3)
+    expect(out.properties).toEqual([])
+    expect(out.marketState).toBe('normal')
+    expect(out.crash).toEqual({ weeksLeft: 0, lastCrashWeek: -999 })
+    expect(out.marketPool).toHaveLength(4)
+    expect(out.milestonesUnlocked).toEqual([])
+    expect(out.propCoActive).toBe(false)
+    expect(out.pendingChoices).toEqual([])
+    expect(out.nextPropertyId).toBe(1)
+    expect(out.nextChoiceId).toBe(1)
+    expect(out.peakNetWorth).toBe(42000)
+    expect(out.firstP3Week).toBe(31)
+    expect(out.gagCounters.vrboOwned).toBe(false)
+    expect(out.gagCounters.vrboDeclinedForever).toBe(false)
+  })
+
+  it('keeps Phase 2 progress intact', () => {
+    const v2 = {
+      ...initialState(),
+      version: 2,
+      reputation: 55,
+      activeChannelIds: ['tiktok'],
+      rank: 'topProducer',
+    }
+    const out = migrate(v2)!
+    expect(out.reputation).toBe(55)
+    expect(out.activeChannelIds).toEqual(['tiktok'])
+    expect(out.rank).toBe('topProducer')
+  })
+
+  it('chain-migrates a v1 save', () => {
+    const v1 = { version: 1, week: 3, cash: 900, rank: 'sellerAgent' }
+    const out = migrate(v1)!
+    expect(out.version).toBe(3)
+    expect(out.reputation).toBe(0)
+    expect(out.marketPool).toHaveLength(4)
+  })
+
+  it('rejects an unknown version', () => {
+    expect(migrate({ version: 9 })).toBeNull()
+  })
+
+  it('preserves an existing Phase 3 save', () => {
+    const v3 = { ...initialState(), milestonesUnlocked: ['mogul250'] }
+    expect(migrate(v3)!.milestonesUnlocked).toEqual(['mogul250'])
   })
 })

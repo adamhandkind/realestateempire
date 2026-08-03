@@ -129,8 +129,11 @@ export function makeListing(s: GameState, id: number): Listing {
   }
 }
 
-/** Tops the pool back up to MARKET_POOL_SIZE, advancing nextListingId. */
+/** Tops the pool back up to MARKET_POOL_SIZE, advancing nextListingId.
+ *  Nothing is for sale below Seller Agent, so a low-rank state keeps an empty
+ *  pool rather than asking makeListing to draw from no eligible types. */
 export function fillPool(s: GameState): GameState {
+  if (eligibleTypes(s).length === 0) return s
   let next = s.nextListingId
   const pool = [...s.marketPool]
   while (pool.length < P3.MARKET_POOL_SIZE) pool.push(makeListing(s, next++))
