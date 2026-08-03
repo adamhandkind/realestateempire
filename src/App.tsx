@@ -5,17 +5,19 @@ import Header from './components/Header'
 import LeadsTab from './components/LeadsTab'
 import LogTab from './components/LogTab'
 import OfficeTab from './components/OfficeTab'
+import PortfolioTab from './components/PortfolioTab'
 import WeekSummaryModal from './components/WeekSummaryModal'
 import { activeModifierDelta, isPhase2Teaser, rankOf } from './logic/economy'
 import { money } from './logic/rand'
 import { initialState, reducer } from './state/reducer'
 import { loadSave, parseImport, serialize, writeSave } from './state/save'
 
-type TabId = 'office' | 'leads' | 'closet' | 'log'
+type TabId = 'office' | 'leads' | 'portfolio' | 'closet' | 'log'
 
 const TABS: [TabId, string][] = [
   ['office', 'Office'],
   ['leads', 'Leads'],
+  ['portfolio', 'Portfolio'],
   ['closet', 'Closet'],
   ['log', 'Log'],
 ]
@@ -179,6 +181,7 @@ export default function App() {
         />
       )}
       {tab === 'leads' && <LeadsTab state={state} dispatch={dispatch} />}
+      {tab === 'portfolio' && <PortfolioTab state={state} dispatch={dispatch} />}
       {tab === 'closet' && <ClosetTab state={state} dispatch={dispatch} />}
       {tab === 'log' && <LogTab state={state} />}
 
