@@ -355,8 +355,13 @@ describe('resolveVrbo', () => {
   })
 
   it('wears the building down whether or not anyone books', () => {
+    /* Seeded past the 15% event roll: influencerSummit and plumbingCatastrophe
+       both move condition, which would mask the 1.5/week decay this pins. */
+    setSeed(3)
     const s = st({ properties: [vrbo({ condition: 50 })] })
-    expect(resolveVrbo(s, newWeekCtx()).properties[0].condition).toBe(48.5)
+    const out = resolveVrbo(s, newWeekCtx())
+    setSeed(null)
+    expect(out.properties[0].condition).toBe(48.5)
   })
 })
 
