@@ -55,6 +55,14 @@ export const EVENTS: EventDef[] = [
     weight: 10,
     condition: (s) => s.rank === 'sellerAgent' || s.rank === 'topProducer',
   },
+  {
+    id: 'marketCrash',
+    weight: 3,
+    condition: (s) =>
+      s.week >= s.firstP3Week + 8 &&
+      s.crash.weeksLeft === 0 &&
+      s.week - s.crash.lastCrashWeek >= 40,
+  },
 ]
 
 export const DISASTER_FLAVORS: string[] = [

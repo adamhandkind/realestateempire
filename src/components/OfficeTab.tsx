@@ -167,6 +167,41 @@ export default function OfficeTab({
           onChange={(e) => setImportText(e.target.value)}
         />
       </div>
+
+      <div className="res-panel dark">
+        <h3 className="res-h2 res-display">Cheat Codes (We Won't Tell)</h3>
+        <div className="res-actions">
+          <button
+            className="res-tab"
+            onClick={() => dispatch({ type: 'DEBUG_CASH' })}
+          >
+            +$100k
+          </button>
+          <button
+            className="res-tab"
+            onClick={() => dispatch({ type: 'DEBUG_FORCE_CRASH' })}
+          >
+            Force crash
+          </button>
+          <button
+            className="res-tab"
+            onClick={() => dispatch({ type: 'DEBUG_FILL_VACANCIES' })}
+          >
+            Fill vacancies
+          </button>
+          {(['cold', 'normal', 'hot'] as const).map((m) => (
+            <button
+              key={m}
+              className="res-tab"
+              onClick={() =>
+                dispatch({ type: 'DEBUG_SET_MARKET', marketState: m })
+              }
+            >
+              Market: {m}
+            </button>
+          ))}
+        </div>
+      </div>
     </>
   )
 }

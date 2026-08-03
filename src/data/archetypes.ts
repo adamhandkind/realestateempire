@@ -381,3 +381,9 @@ export const ARCHETYPES: Archetype[] = [
     ],
   },
 ]
+
+/** Every archetype surname, de-duplicated. Tenants draw from this pool —
+ *  they have no archetype-specific surnames of their own. */
+export const LAST_NAMES: string[] = Array.from(
+  new Set(ARCHETYPES.flatMap((a) => a.surnames)),
+)

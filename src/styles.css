@@ -127,3 +127,28 @@ body{margin:0;background:var(--ink);color:var(--marble);
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{animation:none!important;transition:none!important}
 }
+
+/* ---------------------------------------------------------- phase 3 UI */
+.res-listing { position: relative; }
+.res-ribbon { position: absolute; top: 8px; right: -6px; background: #8c2b2b; color: #f5f2ea; font-size: 11px; letter-spacing: .08em; padding: 3px 10px; }
+.res-blurb { font-size: 12.5px; line-height: 1.5; opacity: .85; }
+.res-bar { height: 8px; background: #2a2722; border-radius: 4px; overflow: hidden; margin: 8px 0; }
+.res-bar > i { display: block; height: 100%; background: #c9a227; }
+.res-bar > i.low { background: #8c2b2b; }
+.res-brass { color: #c9a227; }
+.res-warn { color: #d98c8c; font-size: 12.5px; }
+.res-slider-row { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; margin: 8px 0; }
+.res-vrbo { border: 1px solid #c9a227; background: linear-gradient(160deg, rgba(201,162,39,.18), transparent 65%); }
+.res-machine { color: #c9a227; font-weight: 700; }
+.res-unit { border-top: 1px solid #2a2722; padding-top: 8px; margin-top: 8px; }
+.res-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.res-chip.issue { background: #8c2b2b; color: #f5f2ea; animation: res-pulse 1.4s infinite; }
+.res-mint { color: #7fd1a8; }
+.res-loss { color: #d98c8c; }
+@keyframes res-pulse { 0%,100% { opacity: 1 } 50% { opacity: .55 } }
+.res-dial { display: flex; gap: 4px; font-size: 11px; letter-spacing: .08em; }
+.res-dial-seg { padding: 2px 8px; border: 1px solid #2a2722; opacity: .4; }
+.res-dial-seg.on { opacity: 1; border-color: #c9a227; color: #c9a227; }
+.res-dial-seg.next { border-style: dashed; opacity: .75; }
+.res-crash { background: #3a1d1d; border-color: #8c2b2b; }
+.res-summary-row { margin-bottom: 8px; }

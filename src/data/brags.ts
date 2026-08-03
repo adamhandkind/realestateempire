@@ -55,3 +55,26 @@ export const BRAG_TEMPLATES: Record<RankId, string[]> = {
     '🏆 Top Producer. I did not become this. I revealed this. 🙏 #blessed',
   ],
 }
+
+/** Joins the rotation at the first property. `{properties}` is the door count. */
+export const LANDLORD_BRAGS: string[] = [
+  'Blessed to provide housing 🙏 #passiveincome (I was awake at 3am about a pipe)',
+  'They pay ME to own things. Look it up.',
+  'Portfolio update: {properties} doors 🚪 (a duplex is two doors, this is legal)',
+  "Cash flow isn't a river. It's a MINDSET. 🌊",
+  'Just approved my own repair request. Synergy.',
+  'Property #{properties}. My grandkids will inherit these group chats.',
+]
+
+/** Joins the rotation at The Machine. */
+export const VRBO_BRAGS: string[] = [
+  'The Machine ran at 71% occupancy this week. The Machine does not sleep. 🏗️',
+  'People said 424 hours a week was impossible. The Machine said nothing. The Machine BOOKED.',
+  'Asked The Machine for a day off. Request denied. Respect.',
+]
+
+/** In the rotation only while a crash is active. */
+export const CRASH_BRAGS: string[] = [
+  'Buying opportunities everywhere if you know where to look 👀 (down. look down. prices are down.)',
+  'Warren Buffett said be greedy when others are fearful. Anyway I bought a duplex.',
+]
