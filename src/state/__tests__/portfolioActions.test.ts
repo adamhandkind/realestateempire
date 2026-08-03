@@ -232,3 +232,238 @@ describe('RENAME_PROPERTY', () => {
     expect(s.properties[0].nickname).toHaveLength(24)
   })
 })
+
+const tenant = (archetypeId: string, name = 'Dave Okafor') => ({
+  archetypeId,
+  name,
+  tenancyWeeks: 3,
+  plannedStayWeeks: 20,
+  owed: 0,
+})
+
+describe('START_RENOVATION', () => {
+  it('charges 20% of baseValue and starts a five-week full reno', () => {
+    const s = reducer(base({ properties: [owned({ baseValue: 200000 })] }), {
+      type: 'START_RENOVATION',
+      propertyId: 'P1',
+      projectId: 'full',
+    })
+    expect(s.cash).toBe(160000)
+    expect(s.properties[0].renovation).toEqual({
+      projectId: 'full',
+      weeksLeft: 5,
+    })
+  })
+  it('refuses a full reno while anybody is living there', () => {
+    const occupied = owned({
+      units: [
+        {
+          id: 'P1-u0',
+          tenant: tenant('lateLenny'),
+          rentR: 1,
+          openIssue: null,
+          evictionWeeksLeft: null,
+        },
+      ],
+    })
+    const s = reducer(base({ properties: [occupied] }), {
+      type: 'START_RENOVATION',
+      propertyId: 'P1',
+      projectId: 'full',
+    })
+    expect(s.properties[0].renovation).toBeNull()
+    expect(s.log[0].text).toContain("You can't gut it around Patricia.")
+  })
+  it('allows a cosmetic refresh with a tenant in place', () => {
+    const occupied = owned({
+      units: [
+        {
+          id: 'P1-u0',
+          tenant: tenant('lateLenny'),
+          rentR: 1,
+          openIssue: null,
+          evictionWeeksLeft: null,
+        },
+      ],
+    })
+    const s = reducer(base({ properties: [occupied] }), {
+      type: 'START_RENOVATION',
+      propertyId: 'P1',
+      projectId: 'cosmetic',
+    })
+    expect(s.properties[0].renovation).toEqual({
+      projectId: 'cosmetic',
+      weeksLeft: 2,
+    })
+  })
+  it('refuses the luxury package below Top Producer', () => {
+    const s = reducer(
+      base({
+        rank: 'sellerAgent',
+        properties: [owned({ typeId: 'townhouse' })],
+      }),
+      { type: 'START_RENOVATION', propertyId: 'P1', projectId: 'luxuryPkg' },
+    )
+    expect(s.properties[0].renovation).toBeNull()
+  })
+  it('refuses a project the type is not eligible for', () => {
+    const s = reducer(base({ rank: 'topProducer', properties: [owned()] }), {
+      type: 'START_RENOVATION',
+      propertyId: 'P1',
+      projectId: 'luxuryPkg',
+    })
+    expect(s.properties[0].renovation).toBeNull()
+  })
+})
+
+describe('EMERGENCY_REPAIR', () => {
+  it('costs 1 AP and $1,000 for +15 condition', () => {
+    const s = reducer(base({ properties: [owned({ condition: 30 })], ap: 5 }), {
+      type: 'EMERGENCY_REPAIR',
+      propertyId: 'P1',
+    })
+    expect(s.cash).toBe(199000)
+    expect(s.ap).toBe(4)
+    expect(s.properties[0].condition).toBe(45)
+  })
+  it('caps condition at 100', () => {
+    const s = reducer(base({ properties: [owned({ condition: 95 })] }), {
+      type: 'EMERGENCY_REPAIR',
+      propertyId: 'P1',
+    })
+    expect(s.properties[0].condition).toBe(100)
+  })
+  it('clears a rent strike once condition reaches 50', () => {
+    const striking = owned({
+      condition: 38,
+      units: [
+        {
+          id: 'P1-u0',
+          tenant: tenant('lateLenny'),
+          rentR: 1,
+          openIssue: { eventId: 'rentStrike', weeksOpen: 2, fixCost: 0 },
+          evictionWeeksLeft: null,
+        },
+      ],
+    })
+    const s = reducer(base({ properties: [striking] }), {
+      type: 'EMERGENCY_REPAIR',
+      propertyId: 'P1',
+    })
+    expect(s.properties[0].condition).toBe(53)
+    expect(s.properties[0].units[0].openIssue).toBeNull()
+  })
+})
+
+describe('HANDLE_ISSUE', () => {
+  it('pays the fix cost, closes the issue, and logs the fix line', () => {
+    const broken = owned({
+      units: [
+        {
+          id: 'P1-u0',
+          tenant: tenant('lateLenny'),
+          rentR: 1,
+          openIssue: { eventId: 'burstPipe', weeksOpen: 1, fixCost: 300 },
+          evictionWeeksLeft: null,
+        },
+      ],
+    })
+    const s = reducer(base({ properties: [broken], ap: 5 }), {
+      type: 'HANDLE_ISSUE',
+      propertyId: 'P1',
+      unitId: 'P1-u0',
+    })
+    expect(s.cash).toBe(199700)
+    expect(s.ap).toBe(4)
+    expect(s.properties[0].units[0].openIssue).toBeNull()
+    expect(s.log[0].text).toContain('You did not ask.')
+  })
+  it('restores condition to 60 when fixing a failed inspection', () => {
+    const failed = owned({
+      condition: 35,
+      units: [
+        {
+          id: 'P1-u0',
+          tenant: tenant('lateLenny'),
+          rentR: 1,
+          openIssue: { eventId: 'cityInspection', weeksOpen: 1, fixCost: 800 },
+          evictionWeeksLeft: null,
+        },
+      ],
+    })
+    const s = reducer(base({ properties: [failed] }), {
+      type: 'HANDLE_ISSUE',
+      propertyId: 'P1',
+      unitId: 'P1-u0',
+    })
+    expect(s.properties[0].condition).toBe(60)
+  })
+  it('refuses to fix a rent strike with money', () => {
+    const striking = owned({
+      condition: 30,
+      units: [
+        {
+          id: 'P1-u0',
+          tenant: tenant('lateLenny'),
+          rentR: 1,
+          openIssue: { eventId: 'rentStrike', weeksOpen: 1, fixCost: 0 },
+          evictionWeeksLeft: null,
+        },
+      ],
+    })
+    const s = reducer(base({ properties: [striking] }), {
+      type: 'HANDLE_ISSUE',
+      propertyId: 'P1',
+      unitId: 'P1-u0',
+    })
+    expect(s.properties[0].units[0].openIssue).not.toBeNull()
+  })
+})
+
+describe('EVICT', () => {
+  const withTenant = (archetypeId: string) =>
+    owned({
+      units: [
+        {
+          id: 'P1-u0',
+          tenant: tenant(archetypeId),
+          rentR: 1,
+          openIssue: null,
+          evictionWeeksLeft: null,
+        },
+      ],
+    })
+
+  it('costs 1 AP and $800 and starts a four-week clock', () => {
+    const s = reducer(base({ properties: [withTenant('lateLenny')], ap: 5 }), {
+      type: 'EVICT',
+      propertyId: 'P1',
+      unitId: 'P1-u0',
+    })
+    expect(s.cash).toBe(199200)
+    expect(s.ap).toBe(4)
+    expect(s.properties[0].units[0].evictionWeeksLeft).toBe(4)
+    expect(s.properties[0].units[0].tenant).not.toBeNull()
+  })
+  it('gives the Collector six weeks', () => {
+    const s = reducer(base({ properties: [withTenant('theHoarder')] }), {
+      type: 'EVICT',
+      propertyId: 'P1',
+      unitId: 'P1-u0',
+    })
+    expect(s.properties[0].units[0].evictionWeeksLeft).toBe(6)
+  })
+  it('does not restart a running eviction', () => {
+    const started = reducer(base({ properties: [withTenant('lateLenny')] }), {
+      type: 'EVICT',
+      propertyId: 'P1',
+      unitId: 'P1-u0',
+    })
+    const again = reducer(started, {
+      type: 'EVICT',
+      propertyId: 'P1',
+      unitId: 'P1-u0',
+    })
+    expect(again.cash).toBe(started.cash)
+  })
+})

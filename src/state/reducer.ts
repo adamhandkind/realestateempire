@@ -27,14 +27,22 @@ import {
 import { arch, closeChance, makeLead } from '../logic/leads'
 import { P3 } from '../data/p3'
 import {
+  anyUnitOccupied,
   clamp,
   fillPool,
   hasFreeMortgageSlot,
+  interp,
   nicknameFor,
   occupiedUnitCount,
   purchaseBaseValue,
+  renoBlockReason,
+  renoCost,
+  renoOf,
+  renoWeeks,
   typeOf,
 } from '../logic/portfolio'
+import { RENO_OCCUPIED_REFUSAL } from '../data/properties'
+import { TENANT_FIX_LINES } from '../data/tenantEvents'
 import { withLog } from '../logic/log'
 import {
   activeChannels,
@@ -663,6 +671,148 @@ export function reducer(state: GameState, action: Action): GameState {
               p.nickname +
               '. The balance moved. Slightly.'
           : 'One deed, fully yours. You read it twice.',
+      )
+      return sync(s)
+    }
+    case 'START_RENOVATION': {
+      const p = propertyOf(state, action.propertyId)
+      if (!p) return state
+      const proj = renoOf(action.projectId)
+      if (proj.requiresVacant && anyUnitOccupied(p))
+        return withLog(state, 'flavor', RENO_OCCUPIED_REFUSAL)
+      const blocked = renoBlockReason(state, p, action.projectId)
+      if (blocked) return withLog(state, 'flavor', blocked)
+      const cost = renoCost(p, action.projectId)
+      const weeks = renoWeeks(state, action.projectId)
+      const s = patchProperty(
+        { ...state, cash: state.cash - cost },
+        p.id,
+        (x) => ({
+          ...x,
+          renovation: { projectId: action.projectId, weeksLeft: weeks },
+        }),
+      )
+      return sync(
+        withLog(
+          s,
+          'money',
+          'You booked a ' +
+            proj.label +
+            ' at ' +
+            p.nickname +
+            ' for ' +
+            money(cost) +
+            '. ' +
+            weeks +
+            ' weeks of dust and one portable toilet.',
+        ),
+      )
+    }
+    case 'EMERGENCY_REPAIR': {
+      const p = propertyOf(state, action.propertyId)
+      if (!p || state.ap < 1) return state
+      if (state.cash < P3.EMERGENCY_REPAIR_COST)
+        return withLog(
+          state,
+          'flavor',
+          'The contractor wants a deposit. You want a miracle. Neither happens.',
+        )
+      const condition = Math.min(100, p.condition + P3.EMERGENCY_REPAIR_COND)
+      let s = patchProperty(
+        spendAp({ ...state, cash: state.cash - P3.EMERGENCY_REPAIR_COST }, 1),
+        p.id,
+        (x) => ({
+          ...x,
+          condition,
+          /* A rent strike ends the moment the building stops being like that. */
+          units:
+            condition >= P3.LOW_CONDITION
+              ? x.units.map((u) =>
+                  u.openIssue?.eventId === 'rentStrike'
+                    ? { ...u, openIssue: null }
+                    : u,
+                )
+              : x.units,
+        }),
+      )
+      s = withLog(
+        s,
+        'money',
+        'You threw money directly at the building. It absorbed it.',
+      )
+      return sync(s)
+    }
+    case 'HANDLE_ISSUE': {
+      const p = propertyOf(state, action.propertyId)
+      const u = p?.units.find((x) => x.id === action.unitId)
+      if (!p || !u || !u.openIssue || state.ap < 1) return state
+      /* A rent strike is not a receipt problem. Only condition clears it. */
+      if (u.openIssue.eventId === 'rentStrike')
+        return withLog(
+          state,
+          'flavor',
+          'You offered money. They wanted the building fixed. Those are different things.',
+        )
+      if (state.cash < u.openIssue.fixCost)
+        return withLog(
+          state,
+          'flavor',
+          'The trades want paying up front now. Word gets around.',
+        )
+      const eventId = u.openIssue.eventId
+      let s: GameState = { ...state, cash: state.cash - u.openIssue.fixCost }
+      s = patchUnit(spendAp(s, 1), p.id, u.id, (x) => ({
+        ...x,
+        openIssue: null,
+      }))
+      if (eventId === 'cityInspection')
+        s = patchProperty(s, p.id, (x) => ({
+          ...x,
+          condition: Math.max(x.condition, P3.INSPECTION_REPAIR_TO),
+        }))
+      s = withLog(
+        s,
+        'money',
+        interp(TENANT_FIX_LINES[eventId] ?? 'It is handled.', {
+          nickname: p.nickname,
+          name: u.tenant?.name ?? 'The tenant',
+          tenantName: u.tenant?.name ?? 'The tenant',
+        }),
+      )
+      return sync(s)
+    }
+    case 'EVICT': {
+      const p = propertyOf(state, action.propertyId)
+      const u = p?.units.find((x) => x.id === action.unitId)
+      if (!p || !u || !u.tenant || u.evictionWeeksLeft !== null) return state
+      if (state.ap < 1) return state
+      if (state.cash < P3.EVICT_COST)
+        return withLog(
+          state,
+          'flavor',
+          'Evictions cost money you do not have. They stay. For now.',
+        )
+      const weeks =
+        u.tenant.archetypeId === 'theHoarder'
+          ? P3.EVICT_WEEKS_HOARDER
+          : P3.EVICT_WEEKS
+      const name = u.tenant.name
+      let s = patchUnit(
+        spendAp({ ...state, cash: state.cash - P3.EVICT_COST }, 1),
+        p.id,
+        u.id,
+        (x) => ({ ...x, evictionWeeksLeft: weeks }),
+      )
+      s = withLog(
+        s,
+        'money',
+        'You filed on ' +
+          name +
+          '. ' +
+          money(P3.EVICT_COST) +
+          ' in paper and ' +
+          weeks +
+          ' weeks of both of you pretending not to see each other.',
       )
       return sync(s)
     }
