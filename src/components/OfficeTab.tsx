@@ -1,4 +1,5 @@
 import type { Dispatch } from 'react'
+import { CHARACTERS } from '../data/characters'
 import { atLeastRank, weeklyExpenses } from '../logic/economy'
 import { byStage } from '../logic/leads'
 import { money } from '../logic/rand'
@@ -43,6 +44,7 @@ export default function OfficeTab({
   exported,
   onExport,
   onImport,
+  onNewGame,
 }: {
   state: GameState
   dispatch: Dispatch<Action>
@@ -52,6 +54,7 @@ export default function OfficeTab({
   exported: string
   onExport: () => void
   onImport: () => void
+  onNewGame: () => void
 }) {
   const st = state.stats
   const junior = atLeastRank(state.rank, 'junior')
@@ -188,6 +191,28 @@ export default function OfficeTab({
             onClick={() => dispatch({ type: 'DEBUG_FILL_VACANCIES' })}
           >
             Fill vacancies
+          </button>
+          {/* Testing tool: swaps the active character live, mid-run. */}
+          <label className="res-chip">
+            Set Character
+            <select
+              value={state.characterId}
+              onChange={(e) =>
+                dispatch({
+                  type: 'DEBUG_SET_CHARACTER',
+                  characterId: e.target.value,
+                })
+              }
+            >
+              {CHARACTERS.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="res-tab" onClick={onNewGame}>
+            New Game (pick an agent)
           </button>
           {(['cold', 'normal', 'hot'] as const).map((m) => (
             <button

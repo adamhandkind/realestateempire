@@ -1,5 +1,6 @@
 import { useEffect, useReducer, useRef, useState } from 'react'
 import BragTicker from './components/BragTicker'
+import CharacterSelect from './components/CharacterSelect'
 import ClosetTab from './components/ClosetTab'
 import Header from './components/Header'
 import LeadsTab from './components/LeadsTab'
@@ -24,11 +25,15 @@ const TABS: [TabId, string][] = [
 ]
 
 export default function App() {
+  const saved = useRef(loadSave())
   const [state, dispatch] = useReducer(
     reducer,
     undefined,
-    () => loadSave() || initialState(),
+    () => saved.current || initialState(),
   )
+  /* No save means no agent has been chosen yet. Game over → New Game comes
+     back here too, so the next run can be somebody else entirely. */
+  const [choosing, setChoosing] = useState(!saved.current)
   const [tab, setTab] = useState<TabId>('office')
   const [showSummary, setShowSummary] = useState(false)
   const [confetti, setConfetti] = useState(false)
@@ -38,8 +43,8 @@ export default function App() {
   const prevCash = useRef(state.cash)
 
   useEffect(() => {
-    writeSave(state)
-  }, [state])
+    if (!choosing) writeSave(state)
+  }, [state, choosing])
 
   useEffect(() => {
     if (state.cash !== prevCash.current) {
@@ -88,6 +93,17 @@ export default function App() {
     }
   }
 
+  if (choosing) {
+    return (
+      <CharacterSelect
+        onStart={(characterId) => {
+          dispatch({ type: 'NEW_GAME', characterId })
+          setChoosing(false)
+        }}
+      />
+    )
+  }
+
   if (state.gameOver) {
     return (
       <div className="res-app">
@@ -123,11 +139,8 @@ export default function App() {
               <span>Final rank</span>
               <b>{rankOf(state.rank).name}</b>
             </div>
-            <button
-              className="res-go"
-              onClick={() => dispatch({ type: 'RESTART' })}
-            >
-              Start Over (Humbly)
+            <button className="res-go" onClick={() => setChoosing(true)}>
+              New Game (Humbly)
             </button>
           </div>
         </div>
@@ -185,6 +198,7 @@ export default function App() {
           exported={exported}
           onExport={doExport}
           onImport={doImport}
+          onNewGame={() => setChoosing(true)}
         />
       )}
       {tab === 'leads' && <LeadsTab state={state} dispatch={dispatch} />}

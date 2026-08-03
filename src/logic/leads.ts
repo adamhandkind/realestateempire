@@ -6,6 +6,8 @@ import {
   deriveStats,
   repUnlocked,
 } from './economy'
+import { getChar, hasFlag } from './characters'
+import { P5 } from '../data/p5'
 import { pick, rand, randInt } from './rand'
 
 export const arch = (id: string): Archetype =>
@@ -66,8 +68,17 @@ export function byStage(leads: Lead[]): Record<Stage, Lead[]> {
 export function closeChance(state: GameState, lead: Lead): number {
   const a = arch(lead.archetypeId)
   const st = deriveStats(state)
+  const char = getChar(state)
   let c = 0.35 + st.swagger * 0.05 + a.closeMod + st.ego * a.egoAffinity * 0.01
   c += activeModifierDelta(state)
+  c += char.closeGlobalDelta + (char.closePerArchetype[lead.archetypeId] ?? 0)
   if (lead.referralBonus) c += 0.1
   return Math.max(0.1, Math.min(0.9, c))
+}
+
+/** The archetype's ghost chance, unless this character repels this client. */
+export function ghostChanceFor(state: GameState, lead: Lead): number {
+  if (lead.archetypeId === 'influencerIzzy' && hasFlag(state, 'izzyAllergy'))
+    return P5.IZZY_ALLERGY_GHOST
+  return arch(lead.archetypeId).ghostChance
 }

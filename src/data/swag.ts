@@ -405,4 +405,19 @@ export const SWAG: SwagItem[] = [
     unlockRank: 'topProducer',
     flavor: 'Heavier than the door it hangs on.',
   },
+  /* Hunter's, and only Hunter's. Never in the shop, never purchasable. */
+  {
+    id: 'thePodcast',
+    name: 'The Podcast',
+    price: 0,
+    tier: 1,
+    slot: 'accessory',
+    hustle: 1,
+    swagger: 0,
+    ego: 2,
+    upkeep: 0,
+    unlockRank: 'receptionist',
+    shopHidden: true,
+    flavor: 'Two mics, one guest chair, zero guests to date.',
+  },
 ]

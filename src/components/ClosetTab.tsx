@@ -40,7 +40,13 @@ export default function ClosetTab({
             {slot.label}
           </div>
           <div className="res-grid">
-            {SWAG.filter((i) => i.slot === slot.id).map((it) => {
+            {SWAG.filter(
+              (i) =>
+                i.slot === slot.id &&
+                /* A character's own kit is never in the shop — but it is in
+                   the closet once they own it. */
+                (!i.shopHidden || isOwned(state, i)),
+            ).map((it) => {
               const owned = isOwned(state, it)
               const eq = isEquipped(state, it)
               const locked = isSwagLocked(it, state.rank)

@@ -3,6 +3,7 @@
    phase gets a default here, so a player who refreshes mid-game lands in v3
    with their progress intact and nothing to re-earn. */
 
+import { DEFAULT_CHARACTER_ID } from '../data/p5'
 import { RANKS } from '../data/ranks'
 import { PRESET_SLOTS } from '../data/swag'
 import { fillPool } from '../logic/portfolio'
@@ -22,7 +23,8 @@ const num = (v: unknown, fallback: number): number =>
 export function migrate(raw: unknown): GameState | null {
   if (!raw || typeof raw !== 'object') return null
   const s = raw as AnySave
-  if (s.version !== 1 && s.version !== 2 && s.version !== 3) return null
+  if (typeof s.version !== 'number' || s.version < 1 || s.version > 4)
+    return null
 
   const base = initialState()
   const merged = { ...base, ...s } as GameState
@@ -32,6 +34,9 @@ export function migrate(raw: unknown): GameState | null {
         nextVrboWeek?: number
         vrboOwned?: boolean
         vrboDeclinedForever?: boolean
+        daveReviewLine?: boolean
+        chipPromoRanks?: string[]
+        blaineDrySpell?: boolean
       }
     | undefined
   const crash = s.crash as
@@ -42,7 +47,7 @@ export function migrate(raw: unknown): GameState | null {
 
   const out: GameState = {
     ...merged,
-    version: 3,
+    version: 4,
     permBonuses: {
       hustle: s.permBonuses?.hustle ?? base.permBonuses.hustle,
       swagger: s.permBonuses?.swagger ?? base.permBonuses.swagger,
@@ -63,7 +68,20 @@ export function migrate(raw: unknown): GameState | null {
       nextVrboWeek: gag?.nextVrboWeek ?? week + 2,
       vrboOwned: gag?.vrboOwned ?? false,
       vrboDeclinedForever: gag?.vrboDeclinedForever ?? false,
+      daveReviewLine: gag?.daveReviewLine ?? false,
+      chipPromoRanks: Array.isArray(gag?.chipPromoRanks)
+        ? gag.chipPromoRanks
+        : [],
+      blaineDrySpell: gag?.blaineDrySpell ?? false,
     },
+    /* ---- phase 5a ---- a save from before the roster played as 'you' ---- */
+    characterId:
+      typeof s.characterId === 'string'
+        ? s.characterId
+        : DEFAULT_CHARACTER_ID,
+    statModifiers: Array.isArray(s.statModifiers)
+      ? (s.statModifiers as GameState['statModifiers'])
+      : [],
     channelMuteUntil:
       s.channelMuteUntil && typeof s.channelMuteUntil === 'object'
         ? (s.channelMuteUntil as Record<string, number>)

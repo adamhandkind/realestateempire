@@ -23,7 +23,14 @@ import type {
   Stats,
   SwagItem,
 } from '../state/types'
-import { money, pick } from './rand'
+import {
+  STAT_FLOOR,
+  egoCapFor,
+  getChar,
+  statModifierDelta,
+} from './characters'
+import { P5 } from '../data/p5'
+import { money, weightedPick } from './rand'
 
 export {
   AP_PER_WEEK,
@@ -83,8 +90,11 @@ export function crossedThresholds(from: number, to: number): RepThreshold[] {
 export const isPhase2Teaser = (state: GameState): boolean =>
   atLeastRank(state.rank, 'sellerAgent') && state.cash >= 100000
 
-/** Base 1/1/0, plus every equipped item, plus permanent event bonuses. */
+/** Base 1/1/0, plus every equipped item, plus permanent event bonuses, plus
+ *  live stat modifiers, plus the character's own permanent statMods. The
+ *  character's ego cap, when it has one, is applied on top of the global cap. */
 export function deriveStats(state: GameState): Stats {
+  const char = getChar(state)
   let hustle = 1,
     swagger = 1,
     ego = 0
@@ -100,10 +110,16 @@ export function deriveStats(state: GameState): Stats {
   hustle += state.permBonuses.hustle
   swagger += state.permBonuses.swagger
   ego += state.permBonuses.ego
+  hustle += statModifierDelta(state, 'hustle')
+  swagger += statModifierDelta(state, 'swagger')
+  ego += statModifierDelta(state, 'ego')
+  hustle += char.statMods.hustle
+  swagger += char.statMods.swagger
+  ego += char.statMods.ego
   return {
-    hustle: Math.max(1, Math.min(10, hustle)),
-    swagger: Math.max(1, Math.min(10, swagger)),
-    ego: Math.max(0, Math.min(15, ego)),
+    hustle: Math.max(STAT_FLOOR, Math.min(10, hustle)),
+    swagger: Math.max(STAT_FLOOR, Math.min(10, swagger)),
+    ego: Math.max(0, Math.min(egoCapFor(state, 15), ego)),
   }
 }
 
@@ -140,6 +156,26 @@ export function commissionFor(
   return { gross, earnings: Math.round(gross * splitFor(rankId)) }
 }
 
+/** The earnings bar for a rank, after the character's promotion multiplier.
+ *  Showings and deals requirements are never multiplied. */
+export const reqEarningsFor = (state: GameState, rank: RankDef): number =>
+  Math.round(rank.req.earnings * getChar(state).promotionEarningsMult)
+
+/** True when every requirement EXCEPT the multiplied earnings bar is met —
+ *  i.e. the character's own multiplier is the only thing in the way. */
+export function gatedOnMultipliedEarnings(state: GameState): RankDef | null {
+  const nxt = RANKS[rankIndex(state.rank) + 1]
+  if (!nxt) return null
+  const r = nxt.req
+  const others =
+    state.counters.showingsRun >= r.showings &&
+    state.counters.dealsClosed >= r.deals &&
+    state.reputation >= (r.rep ?? 0)
+  const meetsBase = state.careerEarnings >= r.earnings
+  const meetsMultiplied = state.careerEarnings >= reqEarningsFor(state, nxt)
+  return others && meetsBase && !meetsMultiplied ? nxt : null
+}
+
 /** Both thresholds must be met; checked at end of week. */
 export function nextRank(state: GameState): RankDef | null {
   const i = rankIndex(state.rank)
@@ -147,7 +183,7 @@ export function nextRank(state: GameState): RankDef | null {
   if (!nxt) return null
   const r = nxt.req
   const ok =
-    state.careerEarnings >= r.earnings &&
+    state.careerEarnings >= reqEarningsFor(state, nxt) &&
     state.counters.showingsRun >= r.showings &&
     state.counters.dealsClosed >= r.deals &&
     state.reputation >= (r.rep ?? 0)
@@ -155,11 +191,17 @@ export function nextRank(state: GameState): RankDef | null {
 }
 
 export function bragFor(state: GameState): string {
-  const pool = [...BRAG_TEMPLATES[state.rank]]
-  if (state.properties.length > 0) pool.push(...LANDLORD_BRAGS)
-  if (state.milestonesUnlocked.includes('theMachine')) pool.push(...VRBO_BRAGS)
-  if (state.crash.weeksLeft > 0) pool.push(...CRASH_BRAGS)
-  const t = pick(pool)
+  const pool = BRAG_TEMPLATES[state.rank].map((text) => ({ text, weight: 1 }))
+  const situational = (lines: string[]) =>
+    lines.forEach((text) => pool.push({ text, weight: 1 }))
+  if (state.properties.length > 0) situational(LANDLORD_BRAGS)
+  if (state.milestonesUnlocked.includes('theMachine')) situational(VRBO_BRAGS)
+  if (state.crash.weeksLeft > 0) situational(CRASH_BRAGS)
+  /* Character brags join the rotation at every rank, at double weight. */
+  getChar(state).brags.forEach((text) =>
+    pool.push({ text, weight: P5.BRAG_CHAR_WEIGHT }),
+  )
+  const t = (weightedPick(pool, (b) => b.weight) ?? pool[0]).text
   return t
     .replace('{week}', String(state.week))
     .replace('{cash}', money(state.cash))

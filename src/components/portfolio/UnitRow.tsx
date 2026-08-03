@@ -1,14 +1,22 @@
 import { P3 } from '../../data/p3'
-import { baseRentOf, chargedRent, tenantOf } from '../../logic/portfolio'
+import { hasFlag } from '../../logic/characters'
+import {
+  baseRentOf,
+  chargedRent,
+  evictCost,
+  tenantOf,
+} from '../../logic/portfolio'
 import { money } from '../../logic/rand'
-import type { Action, Property, UnitState } from '../../state/types'
+import type { Action, GameState, Property, UnitState } from '../../state/types'
 
 export default function UnitRow({
+  state,
   property,
   unit,
   dispatch,
   onEvict,
 }: {
+  state: GameState
   property: Property
   unit: UnitState
   dispatch: (a: Action) => void
@@ -17,6 +25,7 @@ export default function UnitRow({
   const t = unit.tenant
   const a = t ? tenantOf(t.archetypeId) : null
   const rent = chargedRent(property, unit, baseRentOf(property))
+  const rawNumbers = hasFlag(state, 'showRawNumbers')
 
   return (
     <div className="res-unit">
@@ -28,6 +37,11 @@ export default function UnitRow({
         <b>{money(rent)}/wk</b>
       </div>
 
+      {t && a && rawNumbers && (
+        <span className="res-chip">
+          Pays: {Math.round(a.payChance * 100)}%
+        </span>
+      )}
       {t && t.owed > 0 && (
         <span className="res-chip warn">owes {money(t.owed)}</span>
       )}
@@ -81,7 +95,7 @@ export default function UnitRow({
         )}
         {t && unit.evictionWeeksLeft === null && (
           <button className="res-tab" onClick={() => onEvict(unit)}>
-            Evict · {money(P3.EVICT_COST)} · 1 AP
+            Evict · {money(evictCost(state))} · 1 AP
           </button>
         )}
       </div>

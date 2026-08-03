@@ -2,7 +2,8 @@
    both. Every roll goes through logic/rand so a seeded run is reproducible. */
 
 import { CHANNELS, LEAD_POOL_SKEW, TIKTOK_GHOST_RATE } from '../data/marketing'
-import type { Channel, GameState, Lead } from '../state/types'
+import type { Channel, GameState, Lead, RankId } from '../state/types'
+import { getChar, hasFlag } from './characters'
 import { atLeastRank, repUnlocked } from './economy'
 import { arch, legalArchetypes, makeLead } from './leads'
 import { chance, pick } from './rand'
@@ -10,12 +11,27 @@ import { chance, pick } from './rand'
 export const channelOf = (id: string): Channel | undefined =>
   CHANNELS.find((c) => c.id === id)
 
+/** The rank a channel unlocks at FOR THIS CHARACTER. The data is never
+ *  mutated — Blaine simply reads TikTok's gate as Junior. */
+export function unlockRankFor(state: GameState, channel: Channel): RankId {
+  if (channel.id === 'tiktok' && hasFlag(state, 'tiktokEarly')) return 'junior'
+  return channel.unlockRank
+}
+
 export function isChannelLocked(state: GameState, channel: Channel): boolean {
   return (
-    !atLeastRank(state.rank, channel.unlockRank) ||
+    !atLeastRank(state.rank, unlockRankFor(state, channel)) ||
     !repUnlocked(state.reputation, channel.unlockRep)
   )
 }
+
+/** What one channel costs this character per week. */
+export const channelCost = (state: GameState, channel: Channel): number =>
+  Math.round(channel.weeklyCost * getChar(state).marketingCostMult)
+
+/** Rep lost this week when nothing at all is running. */
+export const repDecayFor = (state: GameState, base: number): number =>
+  base * getChar(state).repDecayMult
 
 /** Active channels, in table order, regardless of how they got toggled on. */
 export function activeChannels(state: GameState): Channel[] {
@@ -23,7 +39,7 @@ export function activeChannels(state: GameState): Channel[] {
 }
 
 export function weeklyChannelSpend(state: GameState): number {
-  return activeChannels(state).reduce((t, c) => t + c.weeklyCost, 0)
+  return activeChannels(state).reduce((t, c) => t + channelCost(state, c), 0)
 }
 
 export function weeklyChannelRep(state: GameState): number {
