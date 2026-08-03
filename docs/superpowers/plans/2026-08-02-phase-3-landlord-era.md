@@ -1808,6 +1808,10 @@ export function makeListing(s: GameState, id: number): Listing {
 
 /** Tops the pool back up to MARKET_POOL_SIZE, advancing nextListingId. */
 export function fillPool(s: GameState): GameState {
+  /* Nothing unlocks below Seller's Agent, so an early-career state has no
+     eligible types and no pool. Without this guard makeListing indexes an
+     empty array and throws on week one. */
+  if (eligibleTypes(s).length === 0) return s
   let next = s.nextListingId
   const pool = [...s.marketPool]
   while (pool.length < P3.MARKET_POOL_SIZE) pool.push(makeListing(s, next++))
