@@ -28,8 +28,21 @@ import { getChar } from './characters'
 import { atLeastRank, clampRep, deriveStats } from './economy'
 import { arch, makeLead } from './leads'
 import { withLog } from './log'
-import { regeneratePool } from './portfolio'
+import { interp, regeneratePool } from './portfolio'
 import { chance, pick, rand, randInt } from './rand'
+import { gain, perkActive, pluralityRival, showdownDistrict } from './territory'
+import { districtOrFirst } from '../data/districts'
+import { P6 } from '../data/p6'
+import {
+  FALLBACK_RIVAL,
+  FRUIT_BASKET_LINE,
+  KRYSTAL_VIRAL_LOSS,
+  KRYSTAL_VIRAL_WIN,
+  RIVALS,
+  SHOWDOWN_BODY,
+  SHOWDOWN_TITLE,
+  UNDERCUT_LINE,
+} from '../data/rivals'
 
 export interface EventResult {
   state: GameState
@@ -44,8 +57,13 @@ export interface EventResult {
 export function selectEvent(state: GameState): EventDef | null {
   if (!chance(0.3)) return null
   const pool = EVENTS.filter((e) => e.condition(state))
-  const weightOf = (e: EventDef): number =>
-    e.id === 'badReview' ? badReviewWeight(state) : e.weight
+  const weightOf = (e: EventDef): number => {
+    if (e.id === 'badReview') return badReviewWeight(state)
+    /* The Shellard Lane group chats have spoken. */
+    if (e.id === 'referral' && perkActive(state, 'referralNetwork'))
+      return e.weight * 2
+    return e.weight
+  }
   const total = pool.reduce((t, e) => t + weightOf(e), 0)
   if (total <= 0) return null
   let roll = rand() * total
@@ -134,6 +152,8 @@ export function applyEvent(state: GameState, id: EventId): EventResult {
     }
     case 'poached': {
       const l = pick(activeLeads.filter((x) => x.stage === 'ready'))
+      /* Whoever owns that block is whoever took the client. */
+      const thief = pluralityRival(s, l.districtId) ?? FALLBACK_RIVAL
       s = {
         ...s,
         leads: s.leads.filter((x) => x.id !== l.id),
@@ -142,11 +162,9 @@ export function applyEvent(state: GameState, id: EventId): EventResult {
       s = withLog(
         s,
         'event',
-        'Chadwick Sterling III took ' +
-          l.clientName +
-          ' to lunch, said the words “boutique white-glove experience,” and walked out with your deal. His teeth are fake. Everyone knows.',
+        interp(thief.lines.poach, { name: l.clientName }),
       )
-      label = 'Poached by Chadwick'
+      label = 'Poached by ' + thief.name
       break
     }
     case 'referral': {
@@ -431,6 +449,71 @@ export function applyEvent(state: GameState, id: EventId): EventResult {
         },
       }
       label = 'Charity gala'
+      break
+    }
+    /* ------------------------------------------------------- phase 6 ---- */
+    case 'showdown': {
+      const target = showdownDistrict(s)
+      if (!target) break
+      const name = districtOrFirst(target.districtId).name
+      const id = 'C' + s.nextChoiceId
+      s = {
+        ...s,
+        nextChoiceId: s.nextChoiceId + 1,
+        pendingChoices: [
+          ...s.pendingChoices,
+          {
+            id,
+            kind: 'showdown',
+            title: interp(SHOWDOWN_TITLE, { district: name }),
+            body: interp(SHOWDOWN_BODY, { rival: target.rival.name }),
+            options: [
+              {
+                label: 'Go head-to-head ($' + P6.SHOWDOWN_COST + ')',
+                actionTag: 'fight',
+              },
+              { label: 'Concede the block', actionTag: 'concede' },
+            ],
+            payload: { districtId: target.districtId, rivalId: target.rival.id },
+          },
+        ],
+      }
+      label = 'Open house showdown'
+      break
+    }
+    case 'fruitBasket': {
+      const district = pick(FALLBACK_RIVAL.focusDistricts)
+      s = { ...s, chadwickIntel: { district, week: s.week } }
+      s = withLog(
+        s,
+        'event',
+        interp(FRUIT_BASKET_LINE, { district: districtOrFirst(district).name }),
+      )
+      label = 'A fruit basket'
+      break
+    }
+    case 'undercut': {
+      s = {
+        ...s,
+        rivalEffects: {
+          ...s.rivalEffects,
+          undercutWeeksLeft: P6.UNDERCUT_WEEKS,
+        },
+      }
+      s = withLog(s, 'event', UNDERCUT_LINE)
+      label = 'The Zamboni discount'
+      break
+    }
+    case 'krystalViral': {
+      if (s.reputation >= 40) {
+        s = { ...s, reputation: clampRep(s.reputation + 3) }
+        s = withLog(s, 'event', KRYSTAL_VIRAL_WIN)
+      } else {
+        const krystal = RIVALS.find((r) => r.id === 'krystal')!
+        s = gain(s, krystal.homeDistrict, krystal.id, 3.0)
+        s = withLog(s, 'event', KRYSTAL_VIRAL_LOSS)
+      }
+      label = 'Krystal made a reel'
       break
     }
     case 'marketCrash': {

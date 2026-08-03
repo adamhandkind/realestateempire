@@ -1,9 +1,13 @@
 import {
   BRAG_TEMPLATES,
   CRASH_BRAGS,
+  KING_BRAGS,
   LANDLORD_BRAGS,
+  TERRITORY_BRAGS,
   VRBO_BRAGS,
 } from '../data/brags'
+import { districtOrFirst } from '../data/districts'
+import { dominantDistricts } from './territory'
 import {
   AP_PER_WEEK,
   COMMISSION_RATE,
@@ -30,7 +34,7 @@ import {
   statModifierDelta,
 } from './characters'
 import { P5 } from '../data/p5'
-import { money, weightedPick } from './rand'
+import { money, pick, weightedPick } from './rand'
 
 export {
   AP_PER_WEEK,
@@ -197,6 +201,9 @@ export function bragFor(state: GameState): string {
   if (state.properties.length > 0) situational(LANDLORD_BRAGS)
   if (state.milestonesUnlocked.includes('theMachine')) situational(VRBO_BRAGS)
   if (state.crash.weeksLeft > 0) situational(CRASH_BRAGS)
+  const dominant = dominantDistricts(state)
+  if (dominant.length > 0) situational(TERRITORY_BRAGS)
+  if (state.kingOfBrantford) situational(KING_BRAGS)
   /* Character brags join the rotation at every rank, at double weight. */
   getChar(state).brags.forEach((text) =>
     pool.push({ text, weight: P5.BRAG_CHAR_WEIGHT }),
@@ -210,4 +217,8 @@ export function bragFor(state: GameState): string {
     .replace('{showings}', String(state.counters.showingsRun))
     .replace('{leads}', String(state.leads.length))
     .replace('{properties}', String(state.properties.length))
+    .replace(
+      '{district}',
+      dominant.length ? districtOrFirst(pick(dominant)).name : 'Brantford',
+    )
 }

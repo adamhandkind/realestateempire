@@ -39,8 +39,10 @@ import type {
 } from '../state/types'
 import { clampRep } from './economy'
 import { withLog } from './log'
+import { perkActive } from './territory'
 import {
   anyUnitOccupied,
+  applicantBonusFor,
   applicantChance,
   baseRentOf,
   chargedRent,
@@ -198,7 +200,12 @@ export function rollApplicants(state: GameState, ctx: WeekCtx): GameState {
     if (p.isVrbo || p.renovation) continue
     for (const u of p.units) {
       if (u.tenant) continue
-      if (!chance(applicantChance(u.rentR, state.propCoActive))) continue
+      if (
+        !chance(
+          applicantChance(u.rentR, state.propCoActive, applicantBonusFor(s, p)),
+        )
+      )
+        continue
       const a = pickApplicant(p, u.rentR)
       if (!a) continue
       const tenant = makeTenant(a)
@@ -472,9 +479,15 @@ export function rollFlips(state: GameState, ctx: WeekCtx): GameState {
     const row = rowOf(ctx, current)
     if (chance(saleChance(s))) {
       const tenanted = anyUnitOccupied(current)
-      const price = tenanted
-        ? Math.round(displayedValue(s, current) * (1 - P3.TENANTED_SALE_PENALTY))
-        : displayedValue(s, current)
+      /* Old Brantford approves, and old Brantford pays a premium. */
+      const boost =
+        current.districtId === 'dufferin' && perkActive(s, 'saleBoost')
+          ? 1.05
+          : 1
+      const gross = displayedValue(s, current) * boost
+      const price = Math.round(
+        tenanted ? gross * (1 - P3.TENANTED_SALE_PENALTY) : gross,
+      )
       const proceeds = price - (current.mortgage?.balance ?? 0)
       s = {
         ...s,

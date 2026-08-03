@@ -90,6 +90,37 @@ import {
 import { DEFAULT_CHARACTER_ID, P5 } from '../data/p5'
 import { UNKNOWN_CHARACTER_LINE } from '../data/characters'
 import { chance, money, pick, randInt, roundTo } from '../logic/rand'
+import {
+  CONCEDE_LINE,
+  DISTRICTS,
+  districtOf,
+  districtOrFirst,
+  KING_TITLE,
+} from '../data/districts'
+import { P6, PLAYER } from '../data/p6'
+import { FALLBACK_RIVAL, rivalOf, UNDERCUT_SUFFIX } from '../data/rivals'
+import {
+  districtsForType,
+  gain,
+  initialTerritory,
+  perkActive,
+  pluralityOwner,
+  setShares,
+  transferShare,
+} from '../logic/territory'
+import {
+  checkKing,
+  isTargetable,
+  passivePropertyShare,
+  playerDecay,
+  playerShareSnapshot,
+  rivalMoves,
+  showdownWinChance,
+  snapshotThresholds,
+  targetedChannelShare,
+  territorySummary,
+  thresholdSweep,
+} from '../logic/territoryWeek'
 import { INBOUND_LINES } from '../data/marketing'
 import {
   REP_DECAY_PER_WEEK,
@@ -112,7 +143,7 @@ import type {
 
 export function initialState(): GameState {
   const base: GameState = {
-    version: 4,
+    version: 5,
     week: 1,
     cash: START_CASH,
     careerEarnings: 0,
@@ -164,6 +195,13 @@ export function initialState(): GameState {
     nextChoiceId: 1,
     peakNetWorth: START_CASH,
     firstP3Week: 1,
+    territory: initialTerritory(),
+    rivalEffects: { undercutWeeksLeft: 0, lastDefense: {}, lastLock: {} },
+    chadwickIntel: null,
+    kingOfBrantford: false,
+    channelTargets: {},
+    weekDealDistricts: [],
+    weekFarmedDistricts: [],
   }
   /* The pool is seeded as soon as anything is eligible so the Portfolio tab is
      never empty. Nothing unlocks below Seller Agent, so a week-one game keeps
@@ -194,12 +232,20 @@ function expandStartingProperty(
       evictionWeeksLeft: null,
     })),
     renovation: null,
+    districtId: districtForType(seed.typeId),
     listedForSale: false,
     boughtWeek: week,
     isVrbo: false,
     vrboProfitStreak: 0,
     vrboRenoDone: false,
   }
+}
+
+/** A district that actually has this kind of building. Used wherever a property
+ *  or listing needs a home and none was recorded. */
+export function districtForType(typeId: string): string {
+  const options = districtsForType(typeId)
+  return options.length ? pick(options) : DISTRICTS[0].id
 }
 
 /**
@@ -443,7 +489,14 @@ export function reducer(state: GameState, action: Action): GameState {
         )
       }
       const isReferralCut = state.rank === 'junior'
-      const { earnings } = commissionFor(lead.salePrice, state.rank)
+      const raw = commissionFor(lead.salePrice, state.rank).earnings
+      /* §9.6 — the Zambonis are undercutting, and it is their block. */
+      const undercut =
+        s.rivalEffects.undercutWeeksLeft > 0 &&
+        pluralityOwner(s, lead.districtId) === 'zambonis'
+      const earnings = undercut
+        ? Math.round(raw * P6.UNDERCUT_COMMISSION_MULT)
+        : raw
       s = {
         ...s,
         cash: s.cash + earnings,
@@ -451,7 +504,12 @@ export function reducer(state: GameState, action: Action): GameState {
         leads: s.leads.map((l) => (l.id === lead.id ? { ...l, sold: true } : l)),
         counters: { ...s.counters, dealsClosed: s.counters.dealsClosed + 1 },
         reputation: clampRep(s.reputation + REP_PER_DEAL),
+        /* Closing here is the loudest thing you can do here. */
+        weekDealDistricts: s.weekDealDistricts.includes(lead.districtId)
+          ? s.weekDealDistricts
+          : [...s.weekDealDistricts, lead.districtId],
       }
+      s = gain(s, lead.districtId, PLAYER, P6.GAIN_DEAL)
       const line =
         lead.clientName +
         ' ' +
@@ -464,7 +522,7 @@ export function reducer(state: GameState, action: Action): GameState {
             money(earnings) +
             ' and a compliment about your handwriting.'
           : 'your share came to ' + money(earnings) + '.')
-      return sync(withLog(s, 'deal', line))
+      return sync(withLog(s, 'deal', line + (undercut ? UNDERCUT_SUFFIX : '')))
     }
     case 'BUY_SWAG': {
       const it = swagOf(action.itemId)
@@ -740,6 +798,7 @@ export function reducer(state: GameState, action: Action): GameState {
           evictionWeeksLeft: null,
         })),
         renovation: null,
+        districtId: l.districtId,
         listedForSale: false,
         boughtWeek: state.week,
         isVrbo: false,
@@ -753,6 +812,8 @@ export function reducer(state: GameState, action: Action): GameState {
         marketPool: state.marketPool.filter((x) => x.id !== l.id),
         nextPropertyId: state.nextPropertyId + 1,
       }
+      /* Buying a door on a street is the fastest way onto that street. */
+      s = gain(s, l.districtId, PLAYER, P6.GAIN_PROPERTY_BUY)
       s = fillPool(s)
       return sync(
         withLog(
@@ -873,7 +934,7 @@ export function reducer(state: GameState, action: Action): GameState {
         return withLog(state, 'flavor', RENO_OCCUPIED_REFUSAL)
       const blocked = renoBlockReason(state, p, action.projectId)
       if (blocked) return withLog(state, 'flavor', blocked)
-      const cost = renoCost(p, action.projectId)
+      const cost = renoCost(state, p, action.projectId)
       const weeks = renoWeeks(state, action.projectId)
       const s = patchProperty(
         { ...state, cash: state.cash - cost },
@@ -1063,6 +1124,8 @@ export function reducer(state: GameState, action: Action): GameState {
         mortgage: financed ? { balance: P3.VRBO.PRICE - down } : null,
         units: [],
         renovation: null,
+        /* A short-term-rental MACHINE lives where the visitors are. */
+        districtId: 'downtown',
         listedForSale: false,
         boughtWeek: state.week,
         isVrbo: true,
@@ -1077,6 +1140,7 @@ export function reducer(state: GameState, action: Action): GameState {
         gagCounters: { ...state.gagCounters, vrboOwned: true },
         pendingChoices: state.pendingChoices.filter((c) => c.kind !== 'vrboBuy'),
       }
+      s = gain(s, 'downtown', PLAYER, P6.GAIN_PROPERTY_BUY)
       s = withLog(
         s,
         'money',
@@ -1093,7 +1157,32 @@ export function reducer(state: GameState, action: Action): GameState {
         ...state,
         pendingChoices: state.pendingChoices.filter((x) => x.id !== c.id),
       }
-      if (c.kind === 'lowball' && action.actionTag === 'accept') {
+      if (c.kind === 'showdown') {
+        const districtId = c.payload.districtId as string
+        const rival = rivalOf(c.payload.rivalId as string) ?? FALLBACK_RIVAL
+        const name = districtOrFirst(districtId).name
+        if (action.actionTag === 'fight') {
+          s = { ...s, cash: s.cash - P6.SHOWDOWN_COST }
+          const win = chance(showdownWinChance(s, rival))
+          if (win) {
+            s = gain(s, districtId, PLAYER, P6.SHOWDOWN_WIN_SHARE)
+            s = withLog(s, 'deal', rival.lines.showdownLoss)
+          } else {
+            s = gain(s, districtId, rival.id, P6.SHOWDOWN_LOSE_SHARE)
+            s = withLog(s, 'event', rival.lines.showdownWin)
+          }
+          /* You showed up on that block, win or lose. */
+          s = {
+            ...s,
+            weekFarmedDistricts: s.weekFarmedDistricts.includes(districtId)
+              ? s.weekFarmedDistricts
+              : [...s.weekFarmedDistricts, districtId],
+          }
+        } else {
+          s = gain(s, districtId, rival.id, P6.SHOWDOWN_DECLINE_SHARE)
+          s = withLog(s, 'flavor', CONCEDE_LINE + ' (' + name + ')')
+        }
+      } else if (c.kind === 'lowball' && action.actionTag === 'accept') {
         const p = propertyOf(s, c.payload.propertyId as string)
         if (p) {
           const price = c.payload.offerAmount as number
@@ -1180,6 +1269,46 @@ export function reducer(state: GameState, action: Action): GameState {
       }
       return sync(s)
     }
+    case 'FARM_DISTRICT': {
+      if (state.ap < 1) return state
+      const d = districtOf(action.districtId)
+      if (!d) return state
+      const res = transferShare(
+        spendAp(state, 1),
+        d.id,
+        PLAYER,
+        P6.GAIN_FARM,
+      )
+      let s = res.state
+      s = {
+        ...s,
+        weekFarmedDistricts: s.weekFarmedDistricts.includes(d.id)
+          ? s.weekFarmedDistricts
+          : [...s.weekFarmedDistricts, d.id],
+      }
+      return sync(
+        withLog(
+          s,
+          'flavor',
+          pick(d.farmLines) +
+            ' (+' +
+            res.moved.toFixed(1) +
+            '% in ' +
+            d.name +
+            ')',
+        ),
+      )
+    }
+    case 'SET_CHANNEL_TARGET': {
+      /* Only the three big-format channels can be pointed at a neighbourhood.
+         A flyer blitz goes where the flyers go. */
+      if (!isTargetable(action.channelId)) return state
+      if (action.districtId && !districtOf(action.districtId)) return state
+      const channelTargets = { ...state.channelTargets }
+      if (action.districtId) channelTargets[action.channelId] = action.districtId
+      else delete channelTargets[action.channelId]
+      return sync({ ...state, channelTargets })
+    }
     case 'END_WEEK':
       /* Unresolved decisions block the week. The button is disabled too, but
          the reducer is the source of truth. */
@@ -1213,6 +1342,16 @@ export function reducer(state: GameState, action: Action): GameState {
       return sync({ ...state, cash: state.cash + 100000 })
     case 'DEBUG_SET_CHARACTER':
       return sync({ ...state, characterId: action.characterId })
+    case 'DEBUG_ADD_SHARE':
+      return sync(gain(state, action.districtId, PLAYER, 10))
+    case 'DEBUG_SET_SHARES': {
+      if (!districtOf(action.districtId)) return state
+      return sync(setShares(state, action.districtId, action.shares))
+    }
+    case 'DEBUG_FORCE_SHOWDOWN':
+      return sync(applyEvent(state, 'showdown').state)
+    case 'DEBUG_KING_CHECK':
+      return sync(checkKing(state).state)
     case 'IMPORT_SAVE': {
       const s = sync({
         ...initialState(),
@@ -1343,7 +1482,10 @@ export function endWeek(state: GameState): GameState {
   }
 
   /* 1c. reputation movement, then the out-of-sight decay */
-  const repGain = weeklyChannelRep(s)
+  /* Your benches, your blocks — Downtown dominance pays an extra point. */
+  const benchBonus =
+    s.activeChannelIds.length > 0 && perkActive(s, 'benchmark') ? 1 : 0
+  const repGain = weeklyChannelRep(s) + benchBonus
   if (repGain) s = { ...s, reputation: clampRep(s.reputation + repGain) }
   if (s.activeChannelIds.length === 0) {
     const decayed = clampRep(s.reputation - repDecayFor(s, REP_DECAY_PER_WEEK))
@@ -1366,6 +1508,26 @@ export function endWeek(state: GameState): GameState {
   crossedThresholds(repBefore, s.reputation).forEach((t) => {
     s = withLog(s, 'event', t.toast)
   })
+
+  /* 11. TERRITORY RESOLUTION. Sub-order is law: passive property share ->
+     channel targeting -> rival moves -> player decay -> threshold sweep ->
+     king check. It sits after marketing (targeting reads this week's active
+     channels) and before pool rotation (dominance changes what the pool
+     costs). */
+  const shareBefore = playerShareSnapshot(s)
+  const thresholdsBefore = snapshotThresholds(s)
+  s = passivePropertyShare(s)
+  s = targetedChannelShare(s)
+  const rivals = rivalMoves(s)
+  s = rivals.state
+  s = playerDecay(s)
+  s = thresholdSweep(s, thresholdsBefore)
+  const king = checkKing(s)
+  s = king.state
+  if (king.crowned) events.push(KING_TITLE)
+  const territory = territorySummary(shareBefore, s, rivals.headlines)
+  /* The week's activity ledger resets once it has been spent. */
+  s = { ...s, weekDealDistricts: [], weekFarmedDistricts: [] }
 
   /* 12. pool rotation — skipped when step 10 already rebuilt the pool */
   s = rotatePool(s, market.regenerated)
@@ -1514,6 +1676,7 @@ export function endWeek(state: GameState): GameState {
     promo: promo ? promo.name : null,
     brag: bragFor(s),
     portfolio: Array.from(ctx.rows.values()),
+    territory,
   }
   return { ...s, summary, promo: promo ? promo.name : null }
 }

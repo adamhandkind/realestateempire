@@ -17,6 +17,8 @@ import type {
 } from '../state/types'
 import { hasFlag } from './characters'
 import { rankIndex } from './economy'
+import { DISTRICTS } from '../data/districts'
+import { districtsForType, isDominant, perkActive, priceMultOf } from './territory'
 import { pick, rand, randInt, roundTo, weightedPick } from './rand'
 
 export const clamp = (n: number, lo: number, hi: number): number =>
@@ -109,17 +111,27 @@ export function eligibleTypes(s: GameState): PropertyTypeDef[] {
   )
 }
 
+/** Type first, then a district that actually has that kind of building — a
+ *  luxury listing can only surface in Dufferin or Tutela Heights. */
 export function makeListing(s: GameState, id: number): Listing {
   const types = eligibleTypes(s)
   const t = weightedPick(types, (x) => x.weight) ?? types[0]
+  const candidates = districtsForType(t.id)
+  const districtId = candidates.length ? pick(candidates) : DISTRICTS[0].id
   const condition = randInt(40, 90)
-  const intrinsicValue = roundTo(randInt(t.band.min, t.band.max), PRICE_ROUND)
-  const askPrice = Math.round(
+  const intrinsicValue = roundTo(
+    randInt(t.band.min, t.band.max) * priceMultOf(districtId),
+    PRICE_ROUND,
+  )
+  let askPrice = Math.round(
     intrinsicValue *
       conditionFactor(condition) *
       P3.POOL_PRICE_MULT[s.marketState] *
       (s.crash.weeksLeft > 0 ? P3.CRASH.poolMult : 1),
   )
+  /* You are 'old Eagle Place' now, and the ask reflects it. */
+  if (districtId === 'eaglePlace' && perkActive(s, 'localsDeal'))
+    askPrice = Math.round(askPrice * 0.9)
   return {
     id: 'LST' + id,
     typeId: t.id,
@@ -127,6 +139,7 @@ export function makeListing(s: GameState, id: number): Listing {
     condition,
     askPrice,
     blurb: pick(t.blurbs),
+    districtId,
   }
 }
 
@@ -156,12 +169,22 @@ export function nicknameFor(typeId: PropertyTypeId): string {
 
 /* ----------------------------------------------------------- applicants */
 
-export const applicantChance = (r: number, propCo: boolean): number =>
+/** `bonus` is added before the clamp — Echo Place's `roomForRent` perk is the
+ *  only thing that passes one. */
+export const applicantChance = (
+  r: number,
+  propCo: boolean,
+  bonus = 0,
+): number =>
   clamp(
-    P3.APPLICANT_BASE - (r - 1.0) * P3.APPLICANT_SLOPE + (propCo ? 0.1 : 0),
+    P3.APPLICANT_BASE - (r - 1.0) * P3.APPLICANT_SLOPE + (propCo ? 0.1 : 0) + bonus,
     P3.APPLICANT_MIN,
     P3.APPLICANT_MAX,
   )
+
+/** Every student on Colborne knows your sign. */
+export const applicantBonusFor = (s: GameState, p: Property): number =>
+  p.districtId === 'echoPlace' && perkActive(s, 'roomForRent') ? 0.15 : 0
 
 export const tenantAvailable = (
   t: TenantArchetype,
@@ -224,8 +247,17 @@ export const saleChance = (s: GameState): number =>
 
 /* ---------------------------------------------------------- renovations */
 
-export const renoCost = (p: Property, id: RenoProjectId): number =>
-  Math.round(p.baseValue * renoOf(id).costPct)
+/** The trades drink where you drink, so Holmedale jobs come in under. */
+export const renoCost = (
+  s: GameState,
+  p: Property,
+  id: RenoProjectId,
+): number => {
+  const raw = p.baseValue * renoOf(id).costPct
+  const discount =
+    p.districtId === 'holmedale' && perkActive(s, 'tradeRates') ? 0.9 : 1
+  return Math.round(raw * discount)
+}
 
 export const renoWeeks = (s: GameState, id: RenoProjectId): number =>
   Math.max(
@@ -269,7 +301,7 @@ export function renoBlockReason(
   if (proj.requiresTopProducer && s.rank !== 'topProducer')
     return 'The luxury package requires a Top Producer on the paperwork.'
   if (proj.requiresVacant && anyUnitOccupied(p)) return null
-  if (s.cash < renoCost(p, id)) return 'The deposit alone would clear you out.'
+  if (s.cash < renoCost(s, p, id)) return 'The deposit alone would clear you out.'
   return null
 }
 

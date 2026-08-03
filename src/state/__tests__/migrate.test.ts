@@ -52,7 +52,7 @@ describe('migrate', () => {
 
   it('fills every new v2 field with a default', () => {
     const s = migrate(V1_SAVE)!
-    expect(s.version).toBe(4)
+    expect(s.version).toBe(5)
     expect(s.reputation).toBe(0)
     expect(s.activeChannelIds).toEqual([])
     expect(s.outfitPresets).toEqual([null, null, null])
@@ -150,7 +150,7 @@ describe('v2 -> v3 migration', () => {
     delete v2.peakNetWorth
     delete v2.firstP3Week
     const out = migrate(v2)!
-    expect(out.version).toBe(4)
+    expect(out.version).toBe(5)
     expect(out.properties).toEqual([])
     expect(out.marketState).toBe('normal')
     expect(out.crash).toEqual({ weeksLeft: 0, lastCrashWeek: -999 })
@@ -183,7 +183,7 @@ describe('v2 -> v3 migration', () => {
   it('chain-migrates a v1 save', () => {
     const v1 = { version: 1, week: 3, cash: 900, rank: 'sellerAgent' }
     const out = migrate(v1)!
-    expect(out.version).toBe(4)
+    expect(out.version).toBe(5)
     expect(out.reputation).toBe(0)
     expect(out.marketPool).toHaveLength(4)
   })

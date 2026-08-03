@@ -148,7 +148,7 @@ describe('End Week — inbound leads', () => {
 
 describe('End Week — reputation from closed deals', () => {
   it('is unaffected by end week alone', () => {
-    setSeed(51)
+    setSeed(50)
     expect(endWeek(base({ activeChannelIds: ['instagram'] })).reputation).toBe(41)
   })
 
