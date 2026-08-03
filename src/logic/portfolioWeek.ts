@@ -14,7 +14,11 @@
       let PropCo settle minors. A minor can be born and settled in the same
       week, which is the point of paying PropCo. */
 
+import { MILESTONES } from '../data/milestones'
 import { P3 } from '../data/p3'
+import { RENO_COMPLETE_LINE } from '../data/properties'
+import { CREW_DAMAGE, CREW_VIRAL, DAVE_BAD, DAVE_GOOD } from '../data/tenants'
+import { MACHINE_TITLE, VRBO_EVENTS } from '../data/vrbo'
 import {
   INSPECTION_PASS_LINE,
   NOISE_QUIT_LINE,
@@ -26,22 +30,40 @@ import {
 } from '../data/tenantEvents'
 import type {
   GameState,
+  MilestoneDef,
   PortfolioSummaryRow,
   Property,
+  SummaryLine,
   TenantEventDef,
   UnitState,
 } from '../state/types'
+import { clampRep } from './economy'
 import { withLog } from './log'
 import {
+  anyUnitOccupied,
   applicantChance,
   baseRentOf,
   chargedRent,
+  displayedValue,
+  fillPool,
+  hoaOf,
   interp,
   makeTenant,
+  MARKET_LINES,
+  netWorth,
   pickApplicant,
+  regeneratePool,
+  renoOf,
+  rollNextMarket,
+  saleChance,
   tenantOf,
+  totalUnitCount,
+  vrboIncome,
+  vrboJitter,
+  vrboOccupancy,
+  weeklyInterest,
 } from './portfolio'
-import { chance, pick, weightedPick } from './rand'
+import { chance, money, pick, randInt, weightedPick } from './rand'
 
 export interface WeekCtx {
   rows: Map<string, PortfolioSummaryRow>
@@ -370,4 +392,376 @@ function applyTenantEvent(
     default:
       return s
   }
+}
+
+/* ------------------------------------------------------- the VRBO */
+
+export function resolveVrbo(state: GameState, ctx: WeekCtx): GameState {
+  const p = state.properties.find((x) => x.isVrbo)
+  if (!p) return state
+  let s = state
+  const row = rowOf(ctx, p)
+
+  if (p.renovation) {
+    /* The crew has the keys; nobody is booking it. */
+    row.occupancyPct = 0
+    return s
+  }
+
+  const occ = vrboOccupancy(s, p, vrboJitter())
+  const income = vrboIncome(occ)
+  const out = P3.VRBO.UPKEEP + weeklyInterest(p)
+  const net = income - out
+
+  s = { ...s, cash: s.cash + income }
+  row.rentIn += income
+  row.occupancyPct = Math.round(occ * 100)
+  row.net = net
+
+  const condition = Math.max(
+    0,
+    p.condition - (occ > 0 ? P3.VRBO.COND_DECAY : P3.CONDITION_DECAY_VACANT),
+  )
+  const streak = net > 0 ? p.vrboProfitStreak + 1 : 0
+  s = patch(s, p.id, (x) => ({ ...x, condition, vrboProfitStreak: streak }))
+
+  /* Its own 15% roll, flat weights. */
+  if (chance(P3.VRBO.EVENT_CHANCE)) {
+    const e = pick(VRBO_EVENTS)
+    s = { ...s, cash: s.cash + e.cash }
+    if (e.cash < 0) row.moneyOut += -e.cash
+    if (e.cash > 0) row.rentIn += e.cash
+    if (e.rep) s = { ...s, reputation: clampRep(s.reputation + e.rep) }
+    if (e.condition)
+      s = patch(s, p.id, (x) => ({
+        ...x,
+        condition: Math.max(0, x.condition + e.condition),
+      }))
+    row.events.push(e.id)
+    s = withLog(s, 'event', e.line)
+  }
+
+  if (
+    streak >= P3.VRBO.STREAK_TARGET &&
+    !s.milestonesUnlocked.includes('theMachine')
+  ) {
+    s = {
+      ...s,
+      milestonesUnlocked: [...s.milestonesUnlocked, 'theMachine'],
+      reputation: clampRep(s.reputation + P3.VRBO.MACHINE_REP),
+      promo: MACHINE_TITLE,
+    }
+    s = withLog(
+      s,
+      'promotion',
+      'THE MACHINE. 424/7. Fully operational. Eight profitable weeks in a row and a man in a rented Lamborghini has started quoting you.',
+    )
+  }
+
+  return s
+}
+
+/* -------------------------------------------------------- flips */
+
+export function rollFlips(state: GameState, ctx: WeekCtx): GameState {
+  let s = state
+  for (const p of state.properties) {
+    if (!p.listedForSale) continue
+    const current = s.properties.find((x) => x.id === p.id)
+    if (!current) continue
+    const row = rowOf(ctx, current)
+    if (chance(saleChance(s))) {
+      const tenanted = anyUnitOccupied(current)
+      const price = tenanted
+        ? Math.round(displayedValue(s, current) * (1 - P3.TENANTED_SALE_PENALTY))
+        : displayedValue(s, current)
+      const proceeds = price - (current.mortgage?.balance ?? 0)
+      s = {
+        ...s,
+        cash: s.cash + proceeds,
+        properties: s.properties.filter((x) => x.id !== current.id),
+      }
+      row.events.push('SOLD')
+      s = withLog(
+        s,
+        'money',
+        'SOLD: ' +
+          current.nickname +
+          ' for ' +
+          money(price) +
+          '.' +
+          (tenanted ? ' Tenant included, like a fixture.' : ''),
+      )
+    } else if (chance(P3.LOWBALL_CHANCE)) {
+      const offer = Math.round(
+        (displayedValue(s, current) *
+          randInt(P3.LOWBALL_PCT_MIN, P3.LOWBALL_PCT_MAX)) /
+          100,
+      )
+      const id = 'C' + s.nextChoiceId
+      s = {
+        ...s,
+        nextChoiceId: s.nextChoiceId + 1,
+        pendingChoices: [
+          ...s.pendingChoices,
+          {
+            id,
+            kind: 'lowball',
+            title: 'Offer on ' + current.nickname,
+            body: pick([
+              'A buyer offers ' +
+                money(offer) +
+                ". His agent calls it 'more than fair.' It is neither.",
+              'Lowball incoming: ' +
+                money(offer) +
+                '. The buyer’s name is… Larry. Of course it is.',
+            ]),
+            options: [
+              { label: 'Take the money', actionTag: 'accept' },
+              { label: 'Hold firm', actionTag: 'reject' },
+            ],
+            payload: { propertyId: current.id, offerAmount: offer },
+          },
+        ],
+      }
+      row.events.push('Lowball offer')
+    }
+  }
+  return s
+}
+
+/* -------------------- decay, renovation, eviction, tenancy ticks */
+
+export function tickProperties(state: GameState, ctx: WeekCtx): GameState {
+  let s = state
+
+  for (const p of state.properties) {
+    const live = () => s.properties.find((x) => x.id === p.id)
+
+    /* condition decay — the VRBO handled its own in its phase */
+    if (!p.isVrbo && !p.renovation) {
+      const occupied = p.units.filter((u) => u.tenant !== null)
+      const delta = occupied.length
+        ? occupied.reduce(
+            (t, u) =>
+              t +
+              (tenantOf(u.tenant!.archetypeId)?.conditionPerWeek ??
+                -P3.CONDITION_DECAY_OCCUPIED),
+            0,
+          )
+        : -P3.CONDITION_DECAY_VACANT
+      s = patch(s, p.id, (x) => ({
+        ...x,
+        condition: Math.max(0, Math.min(100, x.condition + delta)),
+      }))
+    }
+
+    /* renovation */
+    const r = live()?.renovation
+    if (r) {
+      const weeksLeft = r.weeksLeft - 1
+      if (weeksLeft > 0) {
+        s = patch(s, p.id, (x) => ({
+          ...x,
+          renovation: { projectId: r.projectId, weeksLeft },
+        }))
+      } else {
+        const proj = renoOf(r.projectId)
+        s = patch(s, p.id, (x) => ({
+          ...x,
+          renovation: null,
+          baseValue: Math.round(x.baseValue * proj.valueMult),
+          condition:
+            proj.conditionSet !== null
+              ? proj.conditionSet
+              : Math.min(100, x.condition + (proj.conditionAdd ?? 0)),
+          vrboRenoDone:
+            x.isVrbo && r.projectId === 'full' ? true : x.vrboRenoDone,
+        }))
+        rowOf(ctx, p).events.push('Renovation complete')
+        s = withLog(
+          s,
+          'money',
+          interp(RENO_COMPLETE_LINE, { nickname: p.nickname }),
+        )
+      }
+    }
+
+    /* evictions and tenancies */
+    for (const u of p.units) {
+      const cur = live()?.units.find((x) => x.id === u.id)
+      if (!cur || !cur.tenant) continue
+
+      if (cur.evictionWeeksLeft !== null) {
+        const left = cur.evictionWeeksLeft - 1
+        if (left > 0) {
+          s = patchUnit(s, p.id, u.id, (x) => ({
+            ...x,
+            evictionWeeksLeft: left,
+          }))
+        } else {
+          s = moveOut(s, live()!, cur)
+          rowOf(ctx, p).events.push('Eviction complete')
+        }
+        continue
+      }
+
+      const tenancyWeeks = cur.tenant.tenancyWeeks + 1
+      s = patchUnit(s, p.id, u.id, (x) => ({
+        ...x,
+        tenant: x.tenant ? { ...x.tenant, tenancyWeeks } : null,
+      }))
+
+      /* the two monthly personality rolls */
+      if (tenancyWeeks % 4 === 0) {
+        if (cur.tenant.archetypeId === 'diyDave') {
+          const good = chance(0.5)
+          s = patch(s, p.id, (x) => ({
+            ...x,
+            condition: Math.max(
+              0,
+              Math.min(100, x.condition + (good ? 10 : -15)),
+            ),
+          }))
+          s = withLog(
+            s,
+            'event',
+            interp(good ? DAVE_GOOD : DAVE_BAD, { name: cur.tenant.name }),
+          )
+          rowOf(ctx, p).events.push(
+            good ? 'Dave improved things' : 'Dave removed a wall',
+          )
+        } else if (cur.tenant.archetypeId === 'contentCrew') {
+          if (chance(0.5)) {
+            s = { ...s, reputation: clampRep(s.reputation + 3) }
+            s = withLog(s, 'event', CREW_VIRAL)
+            rowOf(ctx, p).events.push('The content house went viral')
+          } else {
+            s = { ...s, cash: s.cash - 400 }
+            s = patch(s, p.id, (x) => ({
+              ...x,
+              condition: Math.max(0, x.condition - 5),
+            }))
+            rowOf(ctx, p).moneyOut += 400
+            s = withLog(s, 'event', CREW_DAMAGE)
+            rowOf(ctx, p).events.push('Challenge video damage')
+          }
+        }
+      }
+
+      if (tenancyWeeks >= cur.tenant.plannedStayWeeks) {
+        const now = s.properties.find((x) => x.id === p.id)!
+        const nowUnit = now.units.find((x) => x.id === u.id)!
+        s = moveOut(s, now, nowUnit)
+        rowOf(ctx, p).events.push('Tenant moved out')
+      }
+    }
+  }
+
+  return s
+}
+
+/* ------------------------------------------ market and the crash */
+
+export function tickMarket(state: GameState): {
+  state: GameState
+  regenerated: boolean
+} {
+  if (state.crash.weeksLeft > 0) {
+    const weeksLeft = state.crash.weeksLeft - 1
+    let s: GameState = { ...state, crash: { ...state.crash, weeksLeft } }
+    if (weeksLeft === 0)
+      s = withLog(s, 'event', 'The crash is over. Survivors get equity.')
+    return { state: s, regenerated: false }
+  }
+
+  const changed = state.nextMarketState !== state.marketState
+  let s: GameState = { ...state, marketState: state.nextMarketState }
+  if (changed) {
+    s = regeneratePool(s)
+    s = withLog(s, 'event', MARKET_LINES[s.marketState])
+  }
+  s = { ...s, nextMarketState: rollNextMarket(s.marketState) }
+  return { state: s, regenerated: changed }
+}
+
+/* ------------------------------------------------ pool rotation */
+
+/** Drops the oldest listing and adds one. Skipped when the pool was already
+ *  thrown away and rebuilt this week. */
+export function rotatePool(state: GameState, regenerated: boolean): GameState {
+  if (regenerated) return state
+  return fillPool({ ...state, marketPool: state.marketPool.slice(1) })
+}
+
+/* ------------------------------------------------------ billing */
+
+export function billPortfolio(
+  state: GameState,
+  ctx: WeekCtx,
+): { state: GameState; lines: SummaryLine[] } {
+  let s = state
+  const lines: SummaryLine[] = []
+
+  const interest = s.properties.reduce((t, p) => {
+    const i = weeklyInterest(p)
+    if (i) rowOf(ctx, p).moneyOut += i
+    return t + i
+  }, 0)
+  if (interest) {
+    s = { ...s, cash: s.cash - interest }
+    lines.push(['Mortgage interest', interest])
+  }
+
+  const hoa = s.properties.reduce((t, p) => {
+    const h = hoaOf(p)
+    if (h) rowOf(ctx, p).moneyOut += h
+    return t + h
+  }, 0)
+  if (hoa) {
+    s = { ...s, cash: s.cash - hoa }
+    lines.push(['HOA fees', hoa])
+  }
+
+  if (s.propCoActive) {
+    const propCo = totalUnitCount(s) * P3.PROPCO_PER_UNIT
+    if (propCo) {
+      s = { ...s, cash: s.cash - propCo }
+      lines.push(['PropCo', propCo])
+    }
+  }
+
+  const v = s.properties.find((p) => p.isVrbo)
+  if (v) {
+    s = { ...s, cash: s.cash - P3.VRBO.UPKEEP }
+    rowOf(ctx, v).moneyOut += P3.VRBO.UPKEEP
+    lines.push(['VRBO upkeep', P3.VRBO.UPKEEP])
+  }
+
+  /* Every row's net is now knowable. The VRBO already set its own. */
+  ctx.rows.forEach((row) => {
+    if (row.occupancyPct === undefined) row.net = row.rentIn - row.moneyOut
+  })
+
+  return { state: s, lines }
+}
+
+/* --------------------------------------------------- milestones */
+
+export function checkMilestones(state: GameState): {
+  state: GameState
+  unlocked: MilestoneDef[]
+} {
+  let s = state
+  const unlocked: MilestoneDef[] = []
+  /* One at a time and in order: a milestone's perk can change what the next
+     one sees. */
+  for (const m of MILESTONES) {
+    if (s.milestonesUnlocked.includes(m.id)) continue
+    if (netWorth(s) < m.threshold) continue
+    s = { ...s, milestonesUnlocked: [...s.milestonesUnlocked, m.id] }
+    s = withLog(s, 'promotion', m.line)
+    unlocked.push(m)
+  }
+  return { state: s, unlocked }
 }
