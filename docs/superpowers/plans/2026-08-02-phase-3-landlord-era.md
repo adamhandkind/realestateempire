@@ -1580,7 +1580,7 @@ describe('applicantChance', () => {
   })
   it('adds the PropCo bonus before clamping', () => {
     expect(applicantChance(1.0, true)).toBeCloseTo(0.8, 5)
-    expect(applicantChance(1.4, true)).toBeCloseTo(0.3, 5)
+    expect(applicantChance(1.4, true)).toBeCloseTo(0.35, 5)
   })
 })
 
