@@ -10,7 +10,12 @@ import { fillPool } from '../logic/portfolio'
 import { districtForType, initialState } from './reducer'
 import { gain, initialTerritory, pickLeadDistrict } from '../logic/territory'
 import { P6, PLAYER } from '../data/p6'
+import { emptySeasonStats } from '../data/awards'
+import { MIGRATION_LINE, P7 } from '../data/p7'
+import { withLog } from '../logic/log'
 import type { GameState } from './types'
+
+const TABLE_TIER_IDS: string[] = P7.TABLE_TIERS.map((t) => t.id)
 
 interface AnySave {
   version?: number
@@ -25,7 +30,7 @@ const num = (v: unknown, fallback: number): number =>
 export function migrate(raw: unknown): GameState | null {
   if (!raw || typeof raw !== 'object') return null
   const s = raw as AnySave
-  if (typeof s.version !== 'number' || s.version < 1 || s.version > 5)
+  if (typeof s.version !== 'number' || s.version < 1 || s.version > 6)
     return null
 
   const base = initialState()
@@ -57,7 +62,7 @@ export function migrate(raw: unknown): GameState | null {
 
   const out: GameState = {
     ...merged,
-    version: 5,
+    version: 6,
     permBonuses: {
       hustle: s.permBonuses?.hustle ?? base.permBonuses.hustle,
       swagger: s.permBonuses?.swagger ?? base.permBonuses.swagger,
@@ -156,10 +161,33 @@ export function migrate(raw: unknown): GameState | null {
         : {},
     weekDealDistricts: [],
     weekFarmedDistricts: [],
+    /* ---- phase 7 ---- a pre-Goldies save has no season and no hardware.
+       Season 1 begins at the week the save is on: no retroactive trophies,
+       and the first ceremony is a full thirteen weeks away. */
+    season:
+      s.season && typeof s.season === 'object'
+        ? { ...emptySeasonStats(0), ...(s.season as object) }
+        : emptySeasonStats(0),
+    seasonStartWeek: num(s.seasonStartWeek, week),
+    nominations: Array.isArray(s.nominations) ? (s.nominations as string[]) : null,
+    tableTier: TABLE_TIER_IDS.includes(s.tableTier as string)
+      ? (s.tableTier as GameState['tableTier'])
+      : 'none',
+    ceremony: (s.ceremony as GameState['ceremony'] | undefined) ?? null,
+    trophies: Array.isArray(s.trophies)
+      ? (s.trophies as GameState['trophies'])
+      : [],
+    awardHistory: Array.isArray(s.awardHistory)
+      ? (s.awardHistory as GameState['awardHistory'])
+      : [],
+    sponsorCringeSeasons: num(s.sponsorCringeSeasons, 0),
   }
 
+  const mapped = fillPool(placeOnTheMap(out, typeof s.territory === 'object'))
   /* A v1/v2 save arrives with an empty pool; a v3 save keeps the one it had. */
-  return fillPool(placeOnTheMap(out, typeof s.territory === 'object'))
+  return typeof s.season === 'object'
+    ? mapped
+    : withLog(mapped, 'event', MIGRATION_LINE)
 }
 
 /**

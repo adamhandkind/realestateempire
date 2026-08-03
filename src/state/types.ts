@@ -387,6 +387,80 @@ export interface DistrictShareState {
   shares: Record<string, number>
 }
 
+/* -------------------------------------------------------------- phase 7 */
+
+export type TableTierId = 'none' | 'seat' | 'table' | 'sponsor'
+
+/** Which speech the player gave. Echoed back in GIVE_SPEECH. */
+export type SpeechKey = 'humble' | 'gracious' | 'fullEgo'
+
+export interface AwardDef {
+  id: string
+  name: string
+  /** The joke line under the category name. */
+  subtitle: string
+  /** The player's score, pre-jitter and pre-table-bonus. */
+  score: (s: GameState, season: SeasonStats) => number
+  /** rivalId -> multiplier on their rolled score. Missing reads as 1. */
+  rivalAffinity: Record<string, number>
+  /** Active while the trophy is DISPLAYED. */
+  perk: { id: string; text: string }
+  /** Logged and shown on the ceremony card. */
+  winLine: string
+  /** Shown when a rival takes it. `{winner}` is interpolated. */
+  loseLine: string
+}
+
+/** Accumulated during a season, reset to zero at the ceremony. */
+export interface SeasonStats {
+  /** 0-based; season 1 is index 0. */
+  seasonIndex: number
+  dealsClosed: number
+  commissionEarned: number
+  showingsRun: number
+  leadsLost: number
+  biggestSale: number
+  closeAttempts: number
+  closeSuccesses: number
+  cringeEvents: number
+  swagSpend: number
+  /** 0 if Phase 2 absent. */
+  marketingSpend: number
+  /** 0 if Phase 2 absent. */
+  repGained: number
+  renovationsCompleted: number
+  tenantsEvicted: number
+  tenantIssuesFixed: number
+  /** 0 if Territory absent. */
+  districtsFarmed: number
+  propertiesBought: number
+}
+
+/** Every countable field of SeasonStats. `seasonIndex` is not one of them. */
+export type SeasonStatKey = Exclude<keyof SeasonStats, 'seasonIndex'>
+
+export interface AwardResult {
+  awardId: string
+  winnerId: string
+  playerScore: number
+  /** nomineeId -> final score. Always four entries. */
+  scores: Record<string, number>
+}
+
+export interface CeremonyState {
+  seasonIndex: number
+  results: AwardResult[]
+  /** The ceremony UI walks through results one at a time. */
+  revealIndex: number
+  speechGiven: boolean
+}
+
+export interface Trophy {
+  awardId: string
+  seasonIndex: number
+  displayed: boolean
+}
+
 export interface StatModifier {
   stat: 'hustle' | 'swagger' | 'ego'
   delta: number
@@ -526,7 +600,7 @@ export interface WeekSummary {
 }
 
 export interface GameState {
-  version: 5
+  version: 6
   week: number
   cash: number
   careerEarnings: number
@@ -611,6 +685,23 @@ export interface GameState {
   weekDealDistricts: string[]
   /** Districts farmed this week. Cleared at week end alongside the above. */
   weekFarmedDistricts: string[]
+
+  /* ------------------------------------------------------------ phase 7 */
+
+  /** The running season ledger. Reset at every ceremony. */
+  season: SeasonStats
+  /** The week the current season began. `seasonWeek()` reads this. */
+  seasonStartWeek: number
+  /** awardIds the player is nominated for; null outside the window. */
+  nominations: string[] | null
+  /** Bought for the CURRENT pending ceremony; reset after it. */
+  tableTier: TableTierId
+  /** Non-null means the ceremony modal is open. */
+  ceremony: CeremonyState | null
+  trophies: Trophy[]
+  awardHistory: { seasonIndex: number; results: AwardResult[] }[]
+  /** >0 means the sponsor cringe penalty is live; decremented per season. */
+  sponsorCringeSeasons: number
 }
 
 /* --------------------------------------------------------------- actions */
@@ -662,3 +753,12 @@ export type Action =
     }
   | { type: 'DEBUG_FORCE_SHOWDOWN' }
   | { type: 'DEBUG_KING_CHECK' }
+  /* ---- phase 7 ---- */
+  | { type: 'BUY_TABLE'; tierId: TableTierId }
+  | { type: 'ADVANCE_CEREMONY' }
+  | { type: 'GIVE_SPEECH'; key: SpeechKey }
+  | { type: 'CLOSE_CEREMONY' }
+  | { type: 'TOGGLE_TROPHY'; awardId: string; seasonIndex: number }
+  | { type: 'DEBUG_JUMP_TO_NOMINATIONS' }
+  | { type: 'DEBUG_FORCE_CEREMONY' }
+  | { type: 'DEBUG_GRANT_TROPHY'; awardId: string }

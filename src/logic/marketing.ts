@@ -4,6 +4,7 @@
 import { CHANNELS, LEAD_POOL_SKEW, TIKTOK_GHOST_RATE } from '../data/marketing'
 import type { Channel, GameState, Lead, RankId } from '../state/types'
 import { getChar, hasFlag } from './characters'
+import { hasPerk } from './perks'
 import { atLeastRank, repUnlocked } from './economy'
 import { arch, legalArchetypes, makeLead } from './leads'
 import { chance, pick } from './rand'
@@ -25,9 +26,14 @@ export function isChannelLocked(state: GameState, channel: Channel): boolean {
   )
 }
 
-/** What one channel costs this character per week. */
+/** What one channel costs this character per week. The signage trophy shaves
+ *  5% off — the printer owes you nothing and discounts you anyway. */
 export const channelCost = (state: GameState, channel: Channel): number =>
-  Math.round(channel.weeklyCost * getChar(state).marketingCostMult)
+  Math.round(
+    channel.weeklyCost *
+      getChar(state).marketingCostMult *
+      (hasPerk(state, 'signageRespect') ? 0.95 : 1),
+  )
 
 /** Rep lost this week when nothing at all is running. */
 export const repDecayFor = (state: GameState, base: number): number =>
