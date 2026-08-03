@@ -43,6 +43,30 @@ export default function WeekSummaryModal({
             <b style={{ color: 'var(--sold)' }}>-{money(v)}</b>
           </div>
         ))}
+        {summary.portfolio.length > 0 && (
+          <>
+            <h3>Portfolio</h3>
+            {summary.portfolio.map((r) => (
+              <div key={r.nickname} className="res-summary-row">
+                <div className="res-line">
+                  <span>{r.nickname}</span>
+                  <b className={r.net >= 0 ? 'res-mint' : 'res-loss'}>
+                    {money(r.net)}
+                  </b>
+                </div>
+                <div className="res-meta">
+                  In {money(r.rentIn)} · Out {money(r.moneyOut)}
+                  {r.occupancyPct !== undefined
+                    ? ' · ' + r.occupancyPct + '% occupancy'
+                    : ''}
+                </div>
+                {r.events.length > 0 && (
+                  <div className="res-meta">{r.events.join(' · ')}</div>
+                )}
+              </div>
+            ))}
+          </>
+        )}
         <div className="res-line">
           <span>
             <b>Net for the week</b>

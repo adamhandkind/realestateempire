@@ -161,7 +161,7 @@ describe('choice events', () => {
   it('clamps the pitch at the last one', () => {
     setSeed(73)
     const r = applyEvent(
-      at({ gagCounters: { vrboOffers: 40, nextVrboWeek: 0 } }),
+      at({ gagCounters: { vrboOffers: 40, nextVrboWeek: 0, vrboOwned: false, vrboDeclinedForever: false } }),
       'vrboSpam',
     )
     expect(r.state.pendingChoice!.body).toBe(VRBO_PITCHES[4])
@@ -229,17 +229,17 @@ describe('choice events', () => {
 describe('vrbo cadence', () => {
   it('is due once the stored week arrives', () => {
     expect(
-      vrboDue(at({ week: 12, gagCounters: { vrboOffers: 1, nextVrboWeek: 15 } })),
+      vrboDue(at({ week: 12, gagCounters: { vrboOffers: 1, nextVrboWeek: 15, vrboOwned: false, vrboDeclinedForever: false } })),
     ).toBe(false)
     expect(
-      vrboDue(at({ week: 15, gagCounters: { vrboOffers: 1, nextVrboWeek: 15 } })),
+      vrboDue(at({ week: 15, gagCounters: { vrboOffers: 1, nextVrboWeek: 15, vrboOwned: false, vrboDeclinedForever: false } })),
     ).toBe(true)
   })
 
   it('is not due for a buyer agent', () => {
     expect(
       vrboDue(
-        at({ rank: 'buyerAgent', week: 20, gagCounters: { vrboOffers: 0, nextVrboWeek: 1 } }),
+        at({ rank: 'buyerAgent', week: 20, gagCounters: { vrboOffers: 0, nextVrboWeek: 1, vrboOwned: false, vrboDeclinedForever: false } }),
       ),
     ).toBe(false)
   })
@@ -259,7 +259,7 @@ describe('vrbo cadence', () => {
     let s = at({
       week: 20,
       reputation: 20,
-      gagCounters: { vrboOffers: 0, nextVrboWeek: 20 },
+      gagCounters: { vrboOffers: 0, nextVrboWeek: 20, vrboOwned: false, vrboDeclinedForever: false },
     })
     for (let i = 0; i < 5 && s.gagCounters.vrboOffers === 0; i++) {
       s = endWeek(s)
@@ -277,7 +277,7 @@ describe('vrbo cadence', () => {
     const s = endWeek(
       at({
         week: 20,
-        gagCounters: { vrboOffers: 0, nextVrboWeek: 20 },
+        gagCounters: { vrboOffers: 0, nextVrboWeek: 20, vrboOwned: false, vrboDeclinedForever: false },
         pendingChoice: {
           id: 'charityGala',
           title: 'T',
@@ -287,5 +287,40 @@ describe('vrbo cadence', () => {
       }),
     )
     expect(s.pendingChoice!.id).toBe('charityGala')
+  })
+})
+
+describe('marketCrash', () => {
+  const def = () => EVENTS.find((e) => e.id === 'marketCrash')!
+
+  it('is weighted 3 and gated on the phase-3 start, cooldown, and no active crash', () => {
+    expect(def().weight).toBe(3)
+    const early = { ...initialState(), week: 5, firstP3Week: 1 }
+    expect(def().condition(early)).toBe(false)
+    const ready = { ...initialState(), week: 20, firstP3Week: 1 }
+    expect(def().condition(ready)).toBe(true)
+    const during = { ...ready, crash: { weeksLeft: 2, lastCrashWeek: 18 } }
+    expect(def().condition(during)).toBe(false)
+    const cooling = {
+      ...ready,
+      week: 40,
+      crash: { weeksLeft: 0, lastCrashWeek: 20 },
+    }
+    expect(def().condition(cooling)).toBe(false)
+  })
+
+  it('goes cold for six weeks and rebuilds the pool', () => {
+    const s = {
+      ...initialState(),
+      rank: 'topProducer' as const,
+      week: 30,
+      firstP3Week: 1,
+      marketState: 'hot' as const,
+    }
+    const out = applyEvent(s, 'marketCrash').state
+    expect(out.crash).toEqual({ weeksLeft: 6, lastCrashWeek: 30 })
+    expect(out.marketState).toBe('cold')
+    expect(out.marketPool).toHaveLength(4)
+    expect(out.log[0].text).toContain('generational buying opportunity')
   })
 })

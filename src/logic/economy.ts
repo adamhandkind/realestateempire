@@ -1,4 +1,9 @@
-import { BRAG_TEMPLATES } from '../data/brags'
+import {
+  BRAG_TEMPLATES,
+  CRASH_BRAGS,
+  LANDLORD_BRAGS,
+  VRBO_BRAGS,
+} from '../data/brags'
 import {
   AP_PER_WEEK,
   COMMISSION_RATE,
@@ -150,7 +155,11 @@ export function nextRank(state: GameState): RankDef | null {
 }
 
 export function bragFor(state: GameState): string {
-  const t = pick(BRAG_TEMPLATES[state.rank])
+  const pool = [...BRAG_TEMPLATES[state.rank]]
+  if (state.properties.length > 0) pool.push(...LANDLORD_BRAGS)
+  if (state.milestonesUnlocked.includes('theMachine')) pool.push(...VRBO_BRAGS)
+  if (state.crash.weeksLeft > 0) pool.push(...CRASH_BRAGS)
+  const t = pick(pool)
   return t
     .replace('{week}', String(state.week))
     .replace('{cash}', money(state.cash))
@@ -158,4 +167,5 @@ export function bragFor(state: GameState): string {
     .replace('{deals}', String(state.counters.dealsClosed))
     .replace('{showings}', String(state.counters.showingsRun))
     .replace('{leads}', String(state.leads.length))
+    .replace('{properties}', String(state.properties.length))
 }
