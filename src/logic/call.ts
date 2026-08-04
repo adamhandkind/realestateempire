@@ -11,9 +11,11 @@ import { ARCHETYPE_TELLS, CALL_BEATS, CLIENT_REPLIES, GENERIC_BEATS } from '../d
 import { cardOf } from '../data/callCards'
 import { P8 } from '../data/p8'
 import { deriveStats } from './economy'
+import { closeChance } from './leads'
 import { pick } from './rand'
 import type {
   CallBeat,
+  CallState,
   GameState,
   Lead,
   PlayableTactic,
@@ -162,4 +164,108 @@ export function tacticDelta(
     base += st.ego * egoAffinityOf(lead.archetypeId) * P8.EGO_TACTIC_SCALE
   base -= P8.REPEAT_PENALTY * usedTactics.filter((t) => t === tactic).length
   return { reaction, delta: Math.round(base) }
+}
+
+/** Fixed priority order for Read. Not alphabetical, not the card order by
+ *  accident — this is the order the reveal walks. */
+const READ_PRIORITY: PlayableTactic[] = ['empathize', 'push', 'namedrop', 'flex']
+
+/** Ranked best to worst, for the flat-beat fallback below. */
+const REACTION_RANK: Record<Reaction, number> = {
+  great: 4,
+  good: 3,
+  neutral: 2,
+  bad: 1,
+  terrible: 0,
+}
+
+export interface RevealedTell {
+  tactic: PlayableTactic
+  /** True = "play this", false = "do not play this". Drives the badge. */
+  positive: boolean
+}
+
+/**
+ * Read spends the turn to buy one piece of information. It reveals the first
+ * unrevealed `great` in priority order; failing that, the first `terrible`,
+ * because knowing what NOT to say is worth a turn too.
+ *
+ * A beat can be flat — no great and no terrible anywhere, which the default
+ * archetype row is — so there is a third fallback: the best remaining option.
+ * Read always names exactly one tactic. It never spends the turn for nothing.
+ */
+export function revealTell(
+  lead: Lead,
+  beat: CallBeat,
+  revealed: TacticId[],
+): RevealedTell {
+  const open = READ_PRIORITY.filter((t) => !revealed.includes(t))
+  if (!open.length) return { tactic: READ_PRIORITY[0], positive: true }
+  const reactionOf = (t: PlayableTactic) => reactionFor(lead, beat, t)
+
+  const great = open.find((t) => reactionOf(t) === 'great')
+  if (great) return { tactic: great, positive: true }
+
+  const terrible = open.find((t) => reactionOf(t) === 'terrible')
+  if (terrible) return { tactic: terrible, positive: false }
+
+  let best = open[0]
+  for (const t of open)
+    if (REACTION_RANK[reactionOf(t)] > REACTION_RANK[reactionOf(best)]) best = t
+  return { tactic: best, positive: reactionOf(best) !== 'bad' }
+}
+
+/** The log line for a Read turn, phrased to match what it found. */
+export function readLineFor(clientName: string, r: RevealedTell): string {
+  const label = cardOf(r.tactic).label
+  return (
+    'You let the silence sit. ' +
+    clientName +
+    ' fills it — and tells you something. ' +
+    (r.positive
+      ? "(They'd respond well to " + label + '.)'
+      : "(Whatever you do, don't " + label + '.)')
+  )
+}
+
+/** The bounds closeChance() already clamps to. Named here so the call's final
+ *  math cannot drift from the dice path's. */
+export const CLOSE_MIN = 0.1
+export const CLOSE_MAX = 0.9
+
+/** A fresh call. A retry opens at a deficit — they remember the first one. */
+export function startCall(lead: Lead): CallState {
+  const beat = pickBeat(lead, 1, [])
+  return {
+    leadId: lead.id,
+    turn: 1,
+    momentum: lead.retriedClose ? P8.RETRY_MOMENTUM : P8.MOMENTUM_START,
+    history: [],
+    usedTactics: [],
+    usedBeatIds: [beat.id],
+    currentBeatId: beat.id,
+    revealedTells: [],
+    phase: 'awaitingTactic',
+    outcome: null,
+  }
+}
+
+/** All three turns great. A Read turn scores neutral, so reading disqualifies
+ *  the call — the bonus is for saying three right things, not two. */
+export const isPerfect = (call: CallState): boolean =>
+  call.history.filter((h) => h.reaction === 'great').length === P8.TURNS
+
+/**
+ * The whole point of the minigame, in one line: the base close chance, plus
+ * momentum as hundredths, plus the perfect bonus, clamped to the bounds the
+ * dice path already used.
+ */
+export function finalChanceFor(
+  state: GameState,
+  lead: Lead,
+  call: CallState,
+): number {
+  const bonus = isPerfect(call) ? P8.PERFECT_BONUS / 100 : 0
+  const raw = closeChance(state, lead) + call.momentum / 100 + bonus
+  return Math.max(CLOSE_MIN, Math.min(CLOSE_MAX, raw))
 }

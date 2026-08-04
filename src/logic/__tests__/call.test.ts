@@ -5,6 +5,11 @@ import { P8 } from '../../data/p8'
 import { arch } from '../leads'
 import {
   beatOf,
+  finalChanceFor,
+  isPerfect,
+  readLineFor,
+  revealTell,
+  startCall,
   callSummaryLine,
   clientReplyFor,
   momentumWord,
@@ -15,9 +20,16 @@ import {
   tacticDelta,
 } from '../call'
 import { setSeed } from '../rand'
+import { closeChance } from '../leads'
 import { initialState } from '../../state/reducer'
 import { deriveStats } from '../economy'
-import type { GameState, Lead, TacticId } from '../../state/types'
+import type {
+  CallState,
+  CallTurn,
+  GameState,
+  Lead,
+  TacticId,
+} from '../../state/types'
 
 function leadFixture(over: Partial<Lead> = {}): Lead {
   return {
@@ -337,3 +349,175 @@ describe('tacticDelta — Flex scales with ego x egoAffinity, BOTH directions', 
   })
 })
 
+
+describe('revealTell', () => {
+  it('reveals the first great tactic in priority order', () => {
+    /* Otis: empathize good, push terrible, namedrop GREAT, flex terrible.
+       Priority is empathize, push, namedrop, flex — so namedrop wins. */
+    const otis = leadFixture({ archetypeId: 'oldMoneyOtis' })
+    const r = revealTell(otis, beatOf('t3_wobble'), [])
+    expect(r.tactic).toBe('namedrop')
+    expect(r.positive).toBe(true)
+  })
+
+  it('respects the beat tell over the archetype row', () => {
+    /* t3_generic_b overrides push to great; push comes before namedrop. */
+    const otis = leadFixture({ archetypeId: 'oldMoneyOtis' })
+    expect(revealTell(otis, beatOf('t3_generic_b'), []).tactic).toBe('push')
+  })
+
+  it('warns about a terrible tactic when nothing would be great', () => {
+    /* Otis with namedrop already known: no great remains, so the next-best
+       information is what NOT to do. Push and flex are both terrible; push
+       comes first in priority order. */
+    const otis = leadFixture({ archetypeId: 'oldMoneyOtis' })
+    const r = revealTell(otis, beatOf('t3_wobble'), ['namedrop'])
+    expect(r.tactic).toBe('push')
+    expect(r.positive).toBe(false)
+  })
+
+  it('picks the best available on a flat beat, and calls it positive', () => {
+    /* default row: empathize good, push neutral, namedrop good, flex neutral —
+       no great and no terrible anywhere. */
+    const nobody = leadFixture({ archetypeId: 'notARealArchetype' })
+    const r = revealTell(nobody, beatOf('t3_wobble'), [])
+    expect(r.tactic).toBe('empathize')
+    expect(r.positive).toBe(true)
+  })
+
+  it('never no-ops — it always names one unrevealed tactic', () => {
+    const nobody = leadFixture({ archetypeId: 'notARealArchetype' })
+    const r = revealTell(nobody, beatOf('t3_wobble'), ['empathize', 'namedrop'])
+    expect(['push', 'flex']).toContain(r.tactic)
+  })
+
+  it('phrases the read line to match the polarity', () => {
+    const good = readLineFor('Dana Feltz', { tactic: 'namedrop', positive: true })
+    expect(good).toContain('Dana Feltz')
+    expect(good).toContain("They'd respond well to")
+    expect(good).toContain('Namedrop')
+    const bad = readLineFor('Dana Feltz', { tactic: 'push', positive: false })
+    expect(bad).toContain('Whatever you do, don')
+    expect(bad).toContain('Push')
+  })
+})
+
+const turnStub = (reaction: CallTurn['reaction']): CallTurn => ({
+  turn: 1,
+  beatId: 't3_wobble',
+  tacticUsed: 'namedrop',
+  reaction,
+  delta: 0,
+  clientReply: 'x',
+})
+
+const callWith = (over: Partial<CallState> = {}): CallState => ({
+  leadId: 'L1',
+  turn: 3,
+  momentum: 0,
+  history: [],
+  usedTactics: [],
+  usedBeatIds: [],
+  currentBeatId: 't3_wobble',
+  revealedTells: [],
+  phase: 'resolving',
+  outcome: null,
+  ...over,
+})
+
+describe('startCall', () => {
+  it('opens at turn 1, zero momentum, with a legal beat already drawn', () => {
+    setSeed(11)
+    const lead = leadFixture({ archetypeId: 'luxLorenzo', salePrice: 900000 })
+    const c = startCall(lead)
+    expect(c.leadId).toBe('L1')
+    expect(c.turn).toBe(1)
+    expect(c.momentum).toBe(P8.MOMENTUM_START)
+    expect(c.phase).toBe('awaitingTactic')
+    expect(c.history).toEqual([])
+    expect(c.usedBeatIds).toEqual([c.currentBeatId])
+    const b = beatOf(c.currentBeatId)
+    expect(b.turn === 1 || b.turn === 'any').toBe(true)
+    setSeed(null)
+  })
+
+  it('opens a retry call at -5, because they remember the first one', () => {
+    setSeed(11)
+    const lead = leadFixture({ salePrice: 900000, retriedClose: true })
+    expect(startCall(lead).momentum).toBe(P8.RETRY_MOMENTUM)
+    setSeed(null)
+  })
+})
+
+describe('isPerfect', () => {
+  it('needs all three turns great', () => {
+    expect(
+      isPerfect(callWith({ history: [1, 2, 3].map(() => turnStub('great')) })),
+    ).toBe(true)
+  })
+
+  it('rejects two greats and a good', () => {
+    expect(
+      isPerfect(
+        callWith({
+          history: [turnStub('great'), turnStub('great'), turnStub('good')],
+        }),
+      ),
+    ).toBe(false)
+  })
+
+  it('is disqualified by a Read turn, which scores neutral', () => {
+    expect(
+      isPerfect(
+        callWith({
+          history: [turnStub('great'), turnStub('neutral'), turnStub('great')],
+        }),
+      ),
+    ).toBe(false)
+  })
+})
+
+describe('finalChanceFor', () => {
+  const s = initialState()
+  const lead = leadFixture({ salePrice: 900000 })
+
+  it('is exactly the dice chance at zero momentum with no perfect', () => {
+    expect(finalChanceFor(s, lead, callWith({ momentum: 0 }))).toBeCloseTo(
+      closeChance(s, lead),
+      6,
+    )
+  })
+
+  it('adds momentum as hundredths of a point', () => {
+    const base = closeChance(s, lead)
+    expect(finalChanceFor(s, lead, callWith({ momentum: 18 }))).toBeCloseTo(
+      Math.min(0.9, base + 0.18),
+      6,
+    )
+    expect(finalChanceFor(s, lead, callWith({ momentum: -18 }))).toBeCloseTo(
+      Math.max(0.1, base - 0.18),
+      6,
+    )
+  })
+
+  it('adds the perfect bonus on top', () => {
+    const flat = callWith({ momentum: 10 })
+    const perfect = callWith({
+      momentum: 10,
+      history: [1, 2, 3].map(() => turnStub('great')),
+    })
+    expect(
+      finalChanceFor(s, lead, perfect) - finalChanceFor(s, lead, flat),
+    ).toBeCloseTo(P8.PERFECT_BONUS / 100, 6)
+  })
+
+  it('never escapes the existing close bounds', () => {
+    const rich = { ...s, permBonuses: { hustle: 0, swagger: 10, ego: 0 } }
+    expect(
+      finalChanceFor(rich, lead, callWith({ momentum: 30 })),
+    ).toBeLessThanOrEqual(0.9)
+    expect(
+      finalChanceFor(s, lead, callWith({ momentum: -30 })),
+    ).toBeGreaterThanOrEqual(0.1)
+  })
+})
