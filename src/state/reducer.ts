@@ -15,6 +15,7 @@ import {
   repUnlocked,
   SLOTS,
   swagOf,
+  sync,
   weeklyUpkeep,
 } from '../logic/economy'
 import {
@@ -69,7 +70,6 @@ import {
 import { RENO_OCCUPIED_REFUSAL } from '../data/properties'
 import { TENANT_FIX_LINES } from '../data/tenantEvents'
 import { withLog } from '../logic/log'
-import { sync } from '../logic/stateOps'
 import { resolveClose } from '../logic/close'
 import {
   activeChannels,
@@ -430,6 +430,9 @@ export function reducer(state: GameState, action: Action): GameState {
       const lead = state.leads.find((l) => l.id === action.leadId)
       if (!lead || lead.stage !== 'ready' || lead.sold) return state
       const s = spendAp(state, 1)
+      /* closeChance reads only AP-independent stats, so pre-spend `state` and
+         post-spend `s` are equivalent here. Kept distinct so the formula's
+         inputs are visibly unchanged from the pre-refactor version. */
       return resolveClose(s, lead, closeChance(state, lead)).state
     }
     case 'BUY_SWAG': {

@@ -127,6 +127,11 @@ export function deriveStats(state: GameState): Stats {
   }
 }
 
+/** Stats are derived, so every state change re-syncs them. */
+export function sync(state: GameState): GameState {
+  return { ...state, stats: deriveStats(state) }
+}
+
 export function weeklyUpkeep(state: GameState): number {
   let u = 0
   SLOTS.forEach((s) => {

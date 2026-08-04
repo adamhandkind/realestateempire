@@ -8,18 +8,39 @@
  */
 
 import { arch } from './leads'
-import { applyAccentSlip, sync } from './stateOps'
+import { charLine, hasFlag, pushStatModifier } from './characters'
 import { chance, money, pick } from './rand'
-import { clampRep, commissionFor } from './economy'
+import { clampRep, commissionFor, sync } from './economy'
 import { gain, pluralityOwner } from './territory'
+import { P5 } from '../data/p5'
 import { P6, PLAYER } from '../data/p6'
 import { REP_PER_DEAL } from '../data/reputation'
 import { UNDERCUT_SUFFIX } from '../data/rivals'
 import { withLog } from './log'
 import type { GameState, Lead } from '../state/types'
 
+/** A failed close costs the accent, and the accent was the swagger. Does not
+ *  stack: a slip while one is already live is a no-op. */
+function applyAccentSlip(state: GameState): GameState {
+  if (!hasFlag(state, 'accentSlip')) return state
+  const pushed = pushStatModifier(state, {
+    stat: 'swagger',
+    delta: -1,
+    expiresWeek: state.week + P5.ACCENT_SLIP_WEEKS,
+    label: 'Accent Slip',
+  })
+  if (!pushed) return state
+  const line = charLine(state, 'accentSlip')
+  return line ? withLog(pushed, 'event', line) : pushed
+}
+
 /** What the close paid and whether it landed. The reducer needs the payout to
- *  fill in `call.outcome`; the dice path ignores it. */
+ *  fill in `call.outcome`; the dice path ignores it.
+ *
+ *  A struct rather than a callback or a split pair of success/failure
+ *  functions: either of those would have meant duplicating the branch that
+ *  decides success, which is exactly the drift this extraction exists to
+ *  prevent. One roll, one branch, one return shape. */
 export interface CloseResult {
   state: GameState
   success: boolean
