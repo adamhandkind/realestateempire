@@ -167,6 +167,22 @@ describe('beats', () => {
       expect(CALL_BEATS.some((x) => x.id === b.id)).toBe(false)
     })
   })
+
+  /* The generics deliberately mirror the plainest beat of their turn. Nothing
+     in the type system enforces that, so a reword of one and not the other
+     would silently desync. Pin it here instead. */
+  it('keeps each generic fallback in sync with the beat it mirrors', () => {
+    const mirrors: [1 | 2 | 3, string][] = [
+      [1, 't1_generic_a'],
+      [2, 't2_price'],
+      [3, 't3_generic_a'],
+    ]
+    mirrors.forEach(([turn, id]) => {
+      const source = CALL_BEATS.find((b) => b.id === id)
+      expect(source, id).toBeDefined()
+      expect(GENERIC_BEATS[turn].text, id).toBe(source!.text)
+    })
+  })
 })
 
 describe('client replies', () => {
