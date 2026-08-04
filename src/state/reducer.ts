@@ -6,7 +6,6 @@ import {
   START_CASH,
   bragFor,
   clampRep,
-  commissionFor,
   crossedThresholds,
   deriveStats,
   gatedOnMultipliedEarnings,
@@ -70,7 +69,8 @@ import {
 import { RENO_OCCUPIED_REFUSAL } from '../data/properties'
 import { TENANT_FIX_LINES } from '../data/tenantEvents'
 import { withLog } from '../logic/log'
-import { applyAccentSlip, sync } from '../logic/stateOps'
+import { sync } from '../logic/stateOps'
+import { resolveClose } from '../logic/close'
 import {
   activeChannels,
   channelOf,
@@ -98,13 +98,12 @@ import {
   KING_TITLE,
 } from '../data/districts'
 import { P6, PLAYER } from '../data/p6'
-import { FALLBACK_RIVAL, rivalOf, UNDERCUT_SUFFIX } from '../data/rivals'
+import { FALLBACK_RIVAL, rivalOf } from '../data/rivals'
 import {
   districtsForType,
   gain,
   initialTerritory,
   perkActive,
-  pluralityOwner,
   setShares,
   transferShare,
 } from '../logic/territory'
@@ -126,7 +125,6 @@ import {
   REP_DECAY_PER_WEEK,
   REP_FREE_LEAD_AT,
   REP_INBOUND_AT,
-  REP_PER_DEAL,
 } from '../data/reputation'
 import type {
   Action,
@@ -431,78 +429,8 @@ export function reducer(state: GameState, action: Action): GameState {
       if (state.ap < 1 || state.rank === 'receptionist') return state
       const lead = state.leads.find((l) => l.id === action.leadId)
       if (!lead || lead.stage !== 'ready' || lead.sold) return state
-      const a = arch(lead.archetypeId)
-      let s = spendAp(state, 1)
-      const success = chance(closeChance(state, lead))
-      if (!success) {
-        s = applyAccentSlip(s)
-        if (lead.retriedClose) {
-          s = {
-            ...s,
-            leads: s.leads.filter((l) => l.id !== lead.id),
-            counters: { ...s.counters, leadsLost: s.counters.leadsLost + 1 },
-          }
-          return sync(
-            withLog(
-              s,
-              'event',
-              lead.clientName +
-                ' walked for good. Second time at the table, second time watching a pen go back in a pocket.',
-            ),
-          )
-        }
-        s = {
-          ...s,
-          leads: s.leads.map((l) =>
-            l.id === lead.id
-              ? { ...l, patience: Math.max(0, l.patience - 1), retriedClose: true }
-              : l,
-          ),
-        }
-        return sync(
-          withLog(
-            s,
-            'event',
-            lead.clientName +
-              ' needed to “sleep on it,” which is a thing people say while backing toward a door. One more shot at this.',
-          ),
-        )
-      }
-      const isReferralCut = state.rank === 'junior'
-      const raw = commissionFor(lead.salePrice, state.rank).earnings
-      /* §9.6 — the Zambonis are undercutting, and it is their block. */
-      const undercut =
-        s.rivalEffects.undercutWeeksLeft > 0 &&
-        pluralityOwner(s, lead.districtId) === 'zambonis'
-      const earnings = undercut
-        ? Math.round(raw * P6.UNDERCUT_COMMISSION_MULT)
-        : raw
-      s = {
-        ...s,
-        cash: s.cash + earnings,
-        careerEarnings: s.careerEarnings + earnings,
-        leads: s.leads.map((l) => (l.id === lead.id ? { ...l, sold: true } : l)),
-        counters: { ...s.counters, dealsClosed: s.counters.dealsClosed + 1 },
-        reputation: clampRep(s.reputation + REP_PER_DEAL),
-        /* Closing here is the loudest thing you can do here. */
-        weekDealDistricts: s.weekDealDistricts.includes(lead.districtId)
-          ? s.weekDealDistricts
-          : [...s.weekDealDistricts, lead.districtId],
-      }
-      s = gain(s, lead.districtId, PLAYER, P6.GAIN_DEAL)
-      const line =
-        lead.clientName +
-        ' ' +
-        pick(a.successes) +
-        ' The house sold for ' +
-        money(lead.salePrice) +
-        '; ' +
-        (isReferralCut
-          ? 'the agent who signed it slid you a referral cut of ' +
-            money(earnings) +
-            ' and a compliment about your handwriting.'
-          : 'your share came to ' + money(earnings) + '.')
-      return sync(withLog(s, 'deal', line + (undercut ? UNDERCUT_SUFFIX : '')))
+      const s = spendAp(state, 1)
+      return resolveClose(s, lead, closeChance(state, lead)).state
     }
     case 'BUY_SWAG': {
       const it = swagOf(action.itemId)
