@@ -224,6 +224,18 @@ describe('phase 8 migration', () => {
     expect(out.callsEnabled).toBe(false)
   })
 
+  /* The default path is covered above. This covers the other branch: real
+     values surviving a reload. Without it, transposing two of the three keys
+     would pass every other test in this file. */
+  it('round-trips a non-default callStats', () => {
+    const out = migrate({
+      ...initialState(),
+      version: 6,
+      callStats: { calls: 7, perfectCalls: 2, hangups: 1 },
+    })!
+    expect(out.callStats).toEqual({ calls: 7, perfectCalls: 2, hangups: 1 })
+  })
+
   it('discards a call that was open when the tab died, and says so', () => {
     const mid = {
       ...initialState(),

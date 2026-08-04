@@ -162,6 +162,9 @@ export function migrate(raw: unknown): GameState | null {
     weekDealDistricts: [],
     weekFarmedDistricts: [],
     /* ---- phase 8 ---- a pre-call save has never picked up the phone ---- */
+    /* Note the `!== false`, not the `=== true` used by propCoActive and
+       kingOfBrantford above. Calls are opt-OUT: a save that has never heard of
+       them should arrive with them on, so only an explicit false disables. */
     callsEnabled: s.callsEnabled !== false,
     callStats: {
       calls: num(callStats?.calls, 0),
