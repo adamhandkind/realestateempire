@@ -70,6 +70,7 @@ import {
 import { RENO_OCCUPIED_REFUSAL } from '../data/properties'
 import { TENANT_FIX_LINES } from '../data/tenantEvents'
 import { withLog } from '../logic/log'
+import { applyAccentSlip, sync } from '../logic/stateOps'
 import {
   activeChannels,
   channelOf,
@@ -85,9 +86,8 @@ import {
   charLine,
   getChar,
   hasFlag,
-  pushStatModifier,
 } from '../logic/characters'
-import { DEFAULT_CHARACTER_ID, P5 } from '../data/p5'
+import { DEFAULT_CHARACTER_ID } from '../data/p5'
 import { UNKNOWN_CHARACTER_LINE } from '../data/characters'
 import { chance, money, pick, randInt, roundTo } from '../logic/rand'
 import {
@@ -322,21 +322,6 @@ function patchUnit(
 const propertyOf = (s: GameState, id: string): Property | undefined =>
   s.properties.find((p) => p.id === id)
 
-/** A failed close costs the accent, and the accent was the swagger. Does not
- *  stack: a slip while one is already live is a no-op. */
-function applyAccentSlip(state: GameState): GameState {
-  if (!hasFlag(state, 'accentSlip')) return state
-  const pushed = pushStatModifier(state, {
-    stat: 'swagger',
-    delta: -1,
-    expiresWeek: state.week + P5.ACCENT_SLIP_WEEKS,
-    label: 'Accent Slip',
-  })
-  if (!pushed) return state
-  const line = charLine(state, 'accentSlip')
-  return line ? withLog(pushed, 'event', line) : pushed
-}
-
 /** Why this character will not put this on, or null if they will. Some people
  *  have been doing this too long to wear a boa. */
 function equipRefusal(state: GameState, it: SwagItem): string | null {
@@ -345,11 +330,6 @@ function equipRefusal(state: GameState, it: SwagItem): string | null {
     charLine(state, 'boaRefusal', { itemName: it.name }) ??
     'That is not going to happen.'
   )
-}
-
-/** Stats are derived, so every state change re-syncs them. */
-function sync(state: GameState): GameState {
-  return { ...state, stats: deriveStats(state) }
 }
 
 export function reducer(state: GameState, action: Action): GameState {
