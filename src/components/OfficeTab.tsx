@@ -157,6 +157,22 @@ export default function OfficeTab({
 
       <div className="res-panel dark">
         <h3 className="res-h2 res-display">Settings</h3>
+        <div style={{ marginBottom: 12 }}>
+          <button
+            className={'res-tab' + (state.callsEnabled ? ' on' : '')}
+            onClick={() =>
+              dispatch({
+                type: 'SET_CALLS_ENABLED',
+                enabled: !state.callsEnabled,
+              })
+            }
+          >
+            {state.callsEnabled ? '● ' : '○ '}Phone calls for big deals
+          </button>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+            Off = instant dice roll, like the old days.
+          </div>
+        </div>
         <div className="res-mini" style={{ marginBottom: 8 }}>
           <button onClick={onExport}>Export Save</button>
           <button onClick={onImport} disabled={!importText.trim()}>
@@ -318,6 +334,26 @@ export default function OfficeTab({
           >
             Set shares: locked
           </button>
+          {/* ---- phase 8 ---- */}
+          <label className="res-chip">
+            Force call
+            <select
+              value=""
+              onChange={(e) =>
+                e.target.value &&
+                dispatch({ type: 'DEBUG_FORCE_CALL', leadId: e.target.value })
+              }
+            >
+              <option value="">Pick a lead…</option>
+              {state.leads
+                .filter((l) => !l.sold)
+                .map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.clientName} · {money(l.salePrice)}
+                  </option>
+                ))}
+            </select>
+          </label>
           <button
             className="res-tab"
             onClick={() => dispatch({ type: 'DEBUG_FORCE_SHOWDOWN' })}

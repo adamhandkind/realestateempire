@@ -6,7 +6,6 @@ import {
   START_CASH,
   bragFor,
   clampRep,
-  commissionFor,
   crossedThresholds,
   deriveStats,
   gatedOnMultipliedEarnings,
@@ -16,6 +15,7 @@ import {
   repUnlocked,
   SLOTS,
   swagOf,
+  sync,
   weeklyUpkeep,
 } from '../logic/economy'
 import {
@@ -70,6 +70,22 @@ import {
 import { RENO_OCCUPIED_REFUSAL } from '../data/properties'
 import { TENANT_FIX_LINES } from '../data/tenantEvents'
 import { withLog } from '../logic/log'
+import { resolveClose } from '../logic/close'
+import {
+  beatOf,
+  callSummaryLine,
+  clampMomentum,
+  clientReplyFor,
+  finalChanceFor,
+  isPerfect,
+  pickBeat,
+  readLineFor,
+  revealTell,
+  shouldCall,
+  startCall,
+  tacticDelta,
+} from '../logic/call'
+import { P8 } from '../data/p8'
 import {
   activeChannels,
   channelOf,
@@ -85,9 +101,8 @@ import {
   charLine,
   getChar,
   hasFlag,
-  pushStatModifier,
 } from '../logic/characters'
-import { DEFAULT_CHARACTER_ID, P5 } from '../data/p5'
+import { DEFAULT_CHARACTER_ID } from '../data/p5'
 import { UNKNOWN_CHARACTER_LINE } from '../data/characters'
 import { chance, money, pick, randInt, roundTo } from '../logic/rand'
 import {
@@ -98,13 +113,12 @@ import {
   KING_TITLE,
 } from '../data/districts'
 import { P6, PLAYER } from '../data/p6'
-import { FALLBACK_RIVAL, rivalOf, UNDERCUT_SUFFIX } from '../data/rivals'
+import { FALLBACK_RIVAL, rivalOf } from '../data/rivals'
 import {
   districtsForType,
   gain,
   initialTerritory,
   perkActive,
-  pluralityOwner,
   setShares,
   transferShare,
 } from '../logic/territory'
@@ -142,7 +156,6 @@ import {
   isUpgrade,
   nomineeName,
   playerWins,
-  recordSale,
   runCeremony,
   seasonWeek,
   shelfFull,
@@ -155,10 +168,10 @@ import {
   REP_DECAY_PER_WEEK,
   REP_FREE_LEAD_AT,
   REP_INBOUND_AT,
-  REP_PER_DEAL,
 } from '../data/reputation'
 import type {
   Action,
+  CallTurn,
   GameState,
   Lead,
   Property,
@@ -172,7 +185,7 @@ import type {
 
 export function initialState(): GameState {
   const base: GameState = {
-    version: 6,
+    version: 7,
     week: 1,
     cash: START_CASH,
     careerEarnings: 0,
@@ -231,6 +244,9 @@ export function initialState(): GameState {
     channelTargets: {},
     weekDealDistricts: [],
     weekFarmedDistricts: [],
+    call: null,
+    callsEnabled: true,
+    callStats: { calls: 0, perfectCalls: 0, hangups: 0 },
     season: emptySeasonStats(0),
     seasonStartWeek: 1,
     nominations: null,
@@ -359,21 +375,6 @@ function patchUnit(
 const propertyOf = (s: GameState, id: string): Property | undefined =>
   s.properties.find((p) => p.id === id)
 
-/** A failed close costs the accent, and the accent was the swagger. Does not
- *  stack: a slip while one is already live is a no-op. */
-function applyAccentSlip(state: GameState): GameState {
-  if (!hasFlag(state, 'accentSlip')) return state
-  const pushed = pushStatModifier(state, {
-    stat: 'swagger',
-    delta: -1,
-    expiresWeek: state.week + P5.ACCENT_SLIP_WEEKS,
-    label: 'Accent Slip',
-  })
-  if (!pushed) return state
-  const line = charLine(state, 'accentSlip')
-  return line ? withLog(pushed, 'event', line) : pushed
-}
-
 /** Why this character will not put this on, or null if they will. Some people
  *  have been doing this too long to wear a boa. */
 function equipRefusal(state: GameState, it: SwagItem): string | null {
@@ -384,10 +385,18 @@ function equipRefusal(state: GameState, it: SwagItem): string | null {
   )
 }
 
-/** Stats are derived, so every state change re-syncs them. */
-function sync(state: GameState): GameState {
-  return { ...state, stats: deriveStats(state) }
-}
+/** Action types that still resolve while a call is in progress. Everything
+ *  else is blocked — a call is a modal, expressed in state. */
+const CALL_SAFE_ACTIONS: ReadonlySet<Action['type']> = new Set([
+  'PLAY_TACTIC',
+  'ADVANCE_CALL',
+  'CLOSE_CALL_MODAL',
+  'RESTART',
+  'NEW_GAME',
+  'IMPORT_SAVE',
+  'DEBUG_SET_MOMENTUM',
+  'DEBUG_REVEAL_TELLS',
+])
 
 export function reducer(state: GameState, action: Action): GameState {
   if (
@@ -396,6 +405,9 @@ export function reducer(state: GameState, action: Action): GameState {
     action.type !== 'IMPORT_SAVE'
   )
     return state
+  /* A call is a blocking modal in state form. While the line is open the only
+     legal moves are the call's own, plus the escapes that must always work. */
+  if (state.call !== null && !CALL_SAFE_ACTIONS.has(action.type)) return state
   switch (action.type) {
     case 'WORK_PHONES': {
       if (state.ap < 1) return state
@@ -490,87 +502,225 @@ export function reducer(state: GameState, action: Action): GameState {
       if (state.ap < 1 || state.rank === 'receptionist') return state
       const lead = state.leads.find((l) => l.id === action.leadId)
       if (!lead || lead.stage !== 'ready' || lead.sold) return state
-      const a = arch(lead.archetypeId)
       let s = spendAp(state, 1)
-      /* Every attempt counts toward the Hustle Award, closed or not. */
+      /* Every attempt counts toward the Hustle Award, closed or not — and a
+         call is ONE attempt no matter how many turns it runs. Bumped here,
+         before the fork, so both paths count identically. */
       s = bumpSeason(s, 'closeAttempts')
-      const success = chance(closeChance(state, lead))
-      if (!success) {
-        s = applyAccentSlip(s)
-        if (lead.retriedClose) {
-          s = {
-            ...s,
-            leads: s.leads.filter((l) => l.id !== lead.id),
-            counters: { ...s.counters, leadsLost: s.counters.leadsLost + 1 },
-          }
-          s = bumpSeason(s, 'leadsLost')
-          return sync(
-            withLog(
-              s,
-              'event',
-              lead.clientName +
-                ' walked for good. Second time at the table, second time watching a pen go back in a pocket.',
-            ),
-          )
-        }
-        s = {
-          ...s,
-          leads: s.leads.map((l) =>
-            l.id === lead.id
-              ? { ...l, patience: Math.max(0, l.patience - 1), retriedClose: true }
-              : l,
-          ),
+      /* Big money gets a conversation. Everything else gets the dice it always
+         got — and so does everyone, if the player switched calls off. */
+      if (!state.callsEnabled || !shouldCall(lead)) {
+        /* closeChance reads only AP-independent stats, so pre-spend `state` and
+           post-spend `s` are equivalent here. Kept distinct so the formula's
+           inputs are visibly unchanged from the pre-refactor version. */
+        return resolveClose(s, lead, closeChance(state, lead)).state
+      }
+      const opened: GameState = {
+        ...s,
+        call: startCall(lead),
+        callStats: { ...s.callStats, calls: s.callStats.calls + 1 },
+      }
+      return sync(
+        withLog(
+          opened,
+          'flavor',
+          lead.retriedClose
+            ? 'Second call with ' +
+                lead.clientName +
+                '. They remember the first one. So do you.'
+            : 'You called ' +
+                lead.clientName +
+                '. This is a ' +
+                money(lead.salePrice) +
+                ' conversation. Your palms know it.',
+        ),
+      )
+    }
+    case 'PLAY_TACTIC': {
+      const call = state.call
+      if (!call || call.phase !== 'awaitingTactic') return state
+      const lead = state.leads.find((l) => l.id === call.leadId)
+      if (!lead) return state
+      const beat = beatOf(call.currentBeatId)
+
+      /* Read buys information instead of momentum. It costs the turn, keeps
+         the beat, and can only be played once. */
+      if (action.tacticId === 'read') {
+        if (call.usedTactics.includes('read')) return state
+        const found = revealTell(lead, beat, call.revealedTells)
+        const line = readLineFor(lead.clientName, found)
+        const entry: CallTurn = {
+          turn: call.turn,
+          beatId: beat.id,
+          tacticUsed: 'read',
+          reaction: 'neutral',
+          delta: 0,
+          clientReply: line,
         }
         return sync(
           withLog(
-            s,
-            'event',
-            lead.clientName +
-              ' needed to “sleep on it,” which is a thing people say while backing toward a door. One more shot at this.',
+            {
+              ...state,
+              call: {
+                ...call,
+                phase: 'showingReaction',
+                history: [...call.history, entry],
+                usedTactics: [...call.usedTactics, 'read'],
+                revealedTells: [...call.revealedTells, found.tactic],
+              },
+            },
+            'flavor',
+            line,
           ),
         )
       }
-      const isReferralCut = state.rank === 'junior'
-      const raw = commissionFor(lead.salePrice, state.rank).earnings
-      /* §9.6 — the Zambonis are undercutting, and it is their block. */
-      const undercut =
-        s.rivalEffects.undercutWeeksLeft > 0 &&
-        pluralityOwner(s, lead.districtId) === 'zambonis'
-      const earnings = undercut
-        ? Math.round(raw * P6.UNDERCUT_COMMISSION_MULT)
-        : raw
-      s = {
-        ...s,
-        cash: s.cash + earnings,
-        careerEarnings: s.careerEarnings + earnings,
-        leads: s.leads.map((l) => (l.id === lead.id ? { ...l, sold: true } : l)),
-        counters: { ...s.counters, dealsClosed: s.counters.dealsClosed + 1 },
-        reputation: clampRep(s.reputation + REP_PER_DEAL),
-        /* Closing here is the loudest thing you can do here. */
-        weekDealDistricts: s.weekDealDistricts.includes(lead.districtId)
-          ? s.weekDealDistricts
-          : [...s.weekDealDistricts, lead.districtId],
+
+      const { reaction, delta } = tacticDelta(
+        state,
+        lead,
+        beat,
+        action.tacticId,
+        call.usedTactics,
+      )
+      const entry: CallTurn = {
+        turn: call.turn,
+        beatId: beat.id,
+        tacticUsed: action.tacticId,
+        reaction,
+        delta,
+        clientReply: clientReplyFor(reaction),
       }
-      s = gain(s, lead.districtId, PLAYER, P6.GAIN_DEAL)
-      /* The season ledger the Goldies are scored from. */
-      s = bumpSeason(s, 'dealsClosed')
-      s = bumpSeason(s, 'closeSuccesses')
-      s = bumpSeason(s, 'commissionEarned', earnings)
-      s = bumpSeason(s, 'repGained', REP_PER_DEAL)
-      s = recordSale(s, lead.salePrice)
-      const line =
-        lead.clientName +
-        ' ' +
-        pick(a.successes) +
-        ' The house sold for ' +
-        money(lead.salePrice) +
-        '; ' +
-        (isReferralCut
-          ? 'the agent who signed it slid you a referral cut of ' +
-            money(earnings) +
-            ' and a compliment about your handwriting.'
-          : 'your share came to ' + money(earnings) + '.')
-      return sync(withLog(s, 'deal', line + (undercut ? UNDERCUT_SUFFIX : '')))
+      return {
+        ...state,
+        call: {
+          ...call,
+          phase: 'showingReaction',
+          momentum: clampMomentum(call.momentum + delta),
+          history: [...call.history, entry],
+          usedTactics: [...call.usedTactics, action.tacticId],
+        },
+      }
+    }
+    case 'ADVANCE_CALL': {
+      const call = state.call
+      if (!call || call.phase !== 'showingReaction') return state
+      const lead = state.leads.find((l) => l.id === call.leadId)
+      if (!lead) return { ...state, call: null }
+
+      /* Turn 2 is the only place a call can collapse early. Turn 3 was ending
+         anyway, so it resolves normally and is not charged for it. */
+      const hangup = call.turn === 2 && call.momentum <= P8.HANGUP_MOMENTUM
+      if (!hangup && call.turn < P8.TURNS) {
+        /* Read buys information about THIS beat, so the beat has to still be
+           there to use it on. The turn advances; the question does not. */
+        const wasRead =
+          call.history[call.history.length - 1]?.tacticUsed === 'read'
+        if (wasRead)
+          return {
+            ...state,
+            call: { ...call, turn: call.turn + 1, phase: 'awaitingTactic' },
+          }
+        const next = pickBeat(lead, call.turn + 1, call.usedBeatIds)
+        return {
+          ...state,
+          call: {
+            ...call,
+            turn: call.turn + 1,
+            currentBeatId: next.id,
+            usedBeatIds: call.usedBeatIds.includes(next.id)
+              ? call.usedBeatIds
+              : [...call.usedBeatIds, next.id],
+            phase: 'awaitingTactic',
+          },
+        }
+      }
+
+      let s: GameState = state
+      if (hangup) {
+        s = {
+          ...s,
+          callStats: { ...s.callStats, hangups: s.callStats.hangups + 1 },
+          leads: s.leads.map((l) =>
+            l.id === lead.id
+              ? {
+                  ...l,
+                  patience: Math.max(0, l.patience - P8.PATIENCE_ON_HANGUP),
+                }
+              : l,
+          ),
+        }
+        s = withLog(
+          s,
+          'event',
+          "'Let me think about it.' The line goes dead. That phrase has never once meant thinking.",
+        )
+      }
+
+      /* The lead may have lost patience above, so re-read it before resolving. */
+      const current = s.leads.find((l) => l.id === lead.id) ?? lead
+      const finalChance = finalChanceFor(s, current, call)
+      const perfect = isPerfect(call)
+      if (perfect)
+        s = {
+          ...s,
+          callStats: {
+            ...s.callStats,
+            perfectCalls: s.callStats.perfectCalls + 1,
+          },
+        }
+      s = withLog(s, 'flavor', callSummaryLine(call.momentum))
+      if (perfect)
+        s = withLog(
+          s,
+          'flavor',
+          'Three for three. Every single thing you said landed. You will be insufferable about this.',
+        )
+
+      const result = resolveClose(s, current, finalChance)
+      return {
+        ...result.state,
+        call: {
+          ...call,
+          phase: 'resolved',
+          outcome: {
+            success: result.success,
+            finalChance,
+            payout: result.payout,
+          },
+        },
+      }
+    }
+    case 'CLOSE_CALL_MODAL': {
+      if (!state.call || state.call.phase !== 'resolved') return state
+      return { ...state, call: null }
+    }
+    case 'SET_CALLS_ENABLED':
+      return { ...state, callsEnabled: action.enabled }
+    case 'DEBUG_FORCE_CALL': {
+      const lead = state.leads.find((l) => l.id === action.leadId)
+      if (!lead || state.call) return state
+      return {
+        ...state,
+        call: startCall(lead),
+        callStats: { ...state.callStats, calls: state.callStats.calls + 1 },
+      }
+    }
+    case 'DEBUG_SET_MOMENTUM': {
+      if (!state.call) return state
+      return {
+        ...state,
+        call: { ...state.call, momentum: clampMomentum(action.momentum) },
+      }
+    }
+    case 'DEBUG_REVEAL_TELLS': {
+      if (!state.call) return state
+      return {
+        ...state,
+        call: {
+          ...state.call,
+          revealedTells: ['empathize', 'push', 'namedrop', 'flex'],
+        },
+      }
     }
     case 'BUY_SWAG': {
       const it = swagOf(action.itemId)

@@ -93,3 +93,11 @@ export const TERRITORY_BRAGS: string[] = [
   'My territory map is mostly gold now. My accountant is mostly concerned.',
   'Farming {district} like the Grand carved the valley: slowly, then all at once.',
 ]
+
+/** Phase 8. Joins the rotation after the first perfect call, and not before —
+ *  you have to earn the right to be this annoying. */
+export const CALL_BRAGS: string[] = [
+  'Closed it on the phone in under six minutes. The phone is a WEAPON. ☎️',
+  'Some agents send emails. I call. 📞',
+  "'Let me think about it' is just a request for a better phone call.",
+]

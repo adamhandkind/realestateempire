@@ -55,7 +55,7 @@ describe('migrate', () => {
 
   it('fills every new v2 field with a default', () => {
     const s = migrate(V1_SAVE)!
-    expect(s.version).toBe(6)
+    expect(s.version).toBe(7)
     expect(s.reputation).toBe(0)
     expect(s.activeChannelIds).toEqual([])
     expect(s.outfitPresets).toEqual([null, null, null])
@@ -153,7 +153,7 @@ describe('v2 -> v3 migration', () => {
     delete v2.peakNetWorth
     delete v2.firstP3Week
     const out = migrate(v2)!
-    expect(out.version).toBe(6)
+    expect(out.version).toBe(7)
     expect(out.properties).toEqual([])
     expect(out.marketState).toBe('normal')
     expect(out.crash).toEqual({ weeksLeft: 0, lastCrashWeek: -999 })
@@ -186,7 +186,7 @@ describe('v2 -> v3 migration', () => {
   it('chain-migrates a v1 save', () => {
     const v1 = { version: 1, week: 3, cash: 900, rank: 'sellerAgent' }
     const out = migrate(v1)!
-    expect(out.version).toBe(6)
+    expect(out.version).toBe(7)
     expect(out.reputation).toBe(0)
     expect(out.marketPool).toHaveLength(4)
   })
@@ -198,5 +198,111 @@ describe('v2 -> v3 migration', () => {
   it('preserves an existing Phase 3 save', () => {
     const v3 = { ...initialState(), milestonesUnlocked: ['mogul250'] }
     expect(migrate(v3)!.milestonesUnlocked).toEqual(['mogul250'])
+  })
+})
+
+describe('phase 8 migration', () => {
+  const v5 = () => ({ ...initialState(), version: 5 }) as unknown
+
+  it('defaults the phase 8 fields on a v5 save', () => {
+    const out = migrate(v5())!
+    expect(out.version).toBe(7)
+    expect(out.call).toBeNull()
+    expect(out.callsEnabled).toBe(true)
+    expect(out.callStats).toEqual({ calls: 0, perfectCalls: 0, hangups: 0 })
+  })
+
+  it('accepts a v7 save', () => {
+    const out = migrate({ ...initialState(), version: 7 })
+    expect(out).not.toBeNull()
+    expect(out!.version).toBe(7)
+  })
+
+  /* Phase 7 (the Goldies) also shipped as v6, so a save written by it is the
+     realistic upgrade path into Phase 8 — not a hypothetical. Its awards state
+     must survive untouched while the call fields get their defaults. */
+  it('carries a Phase 7 save forward without disturbing its trophies', () => {
+    const v6 = {
+      ...initialState(),
+      version: 6,
+      trophies: [{ awardId: 'hustle', seasonIndex: 1, displayed: true }],
+      seasonStartWeek: 14,
+      sponsorCringeSeasons: 2,
+    }
+    delete (v6 as Record<string, unknown>).call
+    delete (v6 as Record<string, unknown>).callsEnabled
+    delete (v6 as Record<string, unknown>).callStats
+    const out = migrate(v6)!
+    expect(out.version).toBe(7)
+    expect(out.trophies).toHaveLength(1)
+    expect(out.seasonStartWeek).toBe(14)
+    expect(out.sponsorCringeSeasons).toBe(2)
+    expect(out.call).toBeNull()
+    expect(out.callsEnabled).toBe(true)
+    expect(out.callStats).toEqual({ calls: 0, perfectCalls: 0, hangups: 0 })
+  })
+
+  it('rejects a version from the future', () => {
+    expect(migrate({ ...initialState(), version: 8 })).toBeNull()
+  })
+
+  it('preserves a player toggle of callsEnabled', () => {
+    const out = migrate({ ...initialState(), version: 6, callsEnabled: false })!
+    expect(out.callsEnabled).toBe(false)
+  })
+
+  /* The default path is covered above. This covers the other branch: real
+     values surviving a reload. Without it, transposing two of the three keys
+     would pass every other test in this file. */
+  it('round-trips a non-default callStats', () => {
+    const out = migrate({
+      ...initialState(),
+      version: 6,
+      callStats: { calls: 7, perfectCalls: 2, hangups: 1 },
+    })!
+    expect(out.callStats).toEqual({ calls: 7, perfectCalls: 2, hangups: 1 })
+  })
+
+  it('discards a call that was open when the tab died, and says so', () => {
+    const mid = {
+      ...initialState(),
+      version: 6,
+      leads: [
+        {
+          id: 'L1',
+          archetypeId: 'luxLorenzo',
+          clientName: 'Marta Vance',
+          stage: 'ready',
+          salePrice: 800000,
+          patience: 3,
+          maxPatience: 3,
+          retriedClose: false,
+          createdWeek: 1,
+          intro: 'x',
+          referralBonus: false,
+          districtId: 'downtown',
+        },
+      ],
+      call: {
+        leadId: 'L1',
+        turn: 2,
+        momentum: 12,
+        history: [],
+        usedTactics: [],
+        usedBeatIds: [],
+        currentBeatId: 't1_lux',
+        revealedTells: [],
+        phase: 'awaitingTactic',
+        outcome: null,
+      },
+    }
+    const out = migrate(mid)!
+    expect(out.call).toBeNull()
+    /* The lead survives untouched — no patience drain, no removal. */
+    expect(out.leads).toHaveLength(1)
+    expect(out.leads[0].patience).toBe(3)
+    expect(out.leads[0].retriedClose).toBe(false)
+    expect(out.log[0].text).toContain('The line dropped')
+    expect(out.log[0].text).toContain('Marta Vance')
   })
 })

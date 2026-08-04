@@ -5,6 +5,7 @@ import {
   LANDLORD_BRAGS,
   TERRITORY_BRAGS,
   VRBO_BRAGS,
+  CALL_BRAGS,
 } from '../data/brags'
 import { districtOrFirst } from '../data/districts'
 import { dominantDistricts } from './territory'
@@ -133,6 +134,11 @@ export function deriveStats(state: GameState): Stats {
   }
 }
 
+/** Stats are derived, so every state change re-syncs them. */
+export function sync(state: GameState): GameState {
+  return { ...state, stats: deriveStats(state) }
+}
+
 export function weeklyUpkeep(state: GameState): number {
   let u = 0
   SLOTS.forEach((s) => {
@@ -210,6 +216,8 @@ export function bragFor(state: GameState): string {
   const dominant = dominantDistricts(state)
   if (dominant.length > 0) situational(TERRITORY_BRAGS)
   if (state.kingOfBrantford) situational(KING_BRAGS)
+  /* You have to land one before you are allowed to be this annoying. */
+  if (state.callStats.perfectCalls > 0) situational(CALL_BRAGS)
   /* One Goldie is enough to talk about Goldies forever. */
   if ((state.trophies ?? []).length > 0) situational(AWARDS_BRAGS)
   /* Character brags join the rotation at every rank, at double weight. */

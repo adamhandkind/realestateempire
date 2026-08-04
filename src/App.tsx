@@ -9,6 +9,7 @@ import LeadsTab from './components/LeadsTab'
 import LogTab from './components/LogTab'
 import MapTab from './components/MapTab'
 import OfficeTab from './components/OfficeTab'
+import CallModal from './components/CallModal'
 import PortfolioChoiceModal from './components/PortfolioChoiceModal'
 import PortfolioTab from './components/PortfolioTab'
 import WeekSummaryModal from './components/WeekSummaryModal'
@@ -225,15 +226,24 @@ export default function App() {
 
       <button
         className="res-end res-display"
-        disabled={state.pendingChoices.length > 0}
-        title={state.pendingChoices.length > 0 ? 'Decisions await' : ''}
+        disabled={state.pendingChoices.length > 0 || state.call !== null}
+        title={
+          state.call !== null
+            ? "You're on the phone."
+            : state.pendingChoices.length > 0
+              ? 'Decisions await'
+              : ''
+        }
         onClick={() => dispatch({ type: 'END_WEEK' })}
       >
-        {state.pendingChoices.length > 0
-          ? 'DECISIONS AWAIT'
-          : 'END WEEK ' + state.week}
+        {state.call !== null
+          ? 'ON THE PHONE'
+          : state.pendingChoices.length > 0
+            ? 'DECISIONS AWAIT'
+            : 'END WEEK ' + state.week}
       </button>
 
+      <CallModal state={state} dispatch={dispatch} />
       <PortfolioChoiceModal state={state} dispatch={dispatch} />
 
       {showSummary && (
