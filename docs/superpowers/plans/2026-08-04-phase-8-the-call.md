@@ -1749,14 +1749,20 @@ describe('tacticDelta — Flex scales with ego x egoAffinity, BOTH directions', 
   })
 
   it('drags a merely-good Flex below neutral on a negative-affinity client', () => {
-    /* t2_other_agent overrides flex to 'good' (+5). Ruth's egoAffinity is
-       negative, so a proud player playing Flex there does worse than nothing. */
+    /* t2_other_agent overrides flex to 'good' (+5). Otis's egoAffinity is -3,
+       so a proud player gets 5 + (ego x -3 x 0.4) and lands under zero: the
+       tell was positive and the tactic still cost them. This is the whole
+       point of Flex scaling in both directions.
+
+       Note this does NOT hold for every negative-affinity archetype — Ruth at
+       -2 lands on 0.2, which rounds to 0. The rule bites hardest exactly where
+       the design wants it to, on the luxury tier. */
     const proud = withEgo(6)
-    const ruth = leadFixture({ archetypeId: 'retireeRuth' })
-    expect(arch('retireeRuth').egoAffinity).toBeLessThan(0)
-    expect(reactionFor(ruth, beatOf('t2_other_agent'), 'flex')).toBe('good')
+    const otis = leadFixture({ archetypeId: 'oldMoneyOtis' })
+    expect(arch('oldMoneyOtis').egoAffinity).toBeLessThan(0)
+    expect(reactionFor(otis, beatOf('t2_other_agent'), 'flex')).toBe('good')
     expect(
-      tacticDelta(proud, ruth, beatOf('t2_other_agent'), 'flex', []).delta,
+      tacticDelta(proud, otis, beatOf('t2_other_agent'), 'flex', []).delta,
     ).toBeLessThan(0)
   })
 

@@ -389,6 +389,20 @@ momentum = clamp(momentum + Math.round(base), P8.MOMENTUM_MIN, P8.MOMENTUM_MAX)
 `st` is `deriveStats(state)` and `a.egoAffinity` is the same field `closeChance()` already
 uses, so Doreen's ego cap naturally weakens Flex with no special-casing.
 
+**How hard the both-directions rule actually bites.** The scaling is `ego × egoAffinity ×
+0.4`, so how far a positive tell can be dragged under zero depends entirely on the
+archetype's affinity. Worked at ego 6, off a `good` (+5) tell:
+
+| archetype | egoAffinity | result | net |
+|---|---|---|---|
+| `oldMoneyOtis` | −3 | 5 − 7.2 = −2.2 | **−2** |
+| `retireeRuth` | −2 | 5 − 4.8 = 0.2 | **0** |
+
+Only the −3 tier crosses zero. That is the intended shape — the punishment is sharpest on
+the luxury leads the loadout decision is meant to be about, and merely mild on the ordinary
+negative-affinity clients. Tests asserting "a good Flex still nets negative" must use
+`oldMoneyOtis`; the same assertion is false for `retireeRuth` and always was.
+
 ### 8.4 Turn flow
 
 `PLAY_TACTIC { tacticId }` → compute per §8.3 → push a `CallTurn` → `phase =
