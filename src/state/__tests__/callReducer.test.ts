@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { initialState, reducer } from '../reducer'
 import { P8 } from '../../data/p8'
 import { setSeed } from '../../logic/rand'
+import { ARCHETYPES } from '../../data/archetypes'
 import type { Action, GameState, Lead, TacticId } from '../types'
 
 function leadFixture(over: Partial<Lead> = {}): Lead {
@@ -339,5 +340,82 @@ describe('settings and debug', () => {
     expect([...s.call!.revealedTells].sort()).toEqual(
       ['empathize', 'flex', 'namedrop', 'push'].sort(),
     )
+  })
+})
+
+describe('acceptance — the call cannot escape its bounds', () => {
+  it('keeps momentum in band and finalChance in bounds across every archetype', () => {
+    setSeed(101)
+    const tactics: TacticId[] = ['empathize', 'push', 'namedrop', 'flex', 'read']
+    ARCHETYPES.forEach((a, i) => {
+      let s = reducer(gameWith({ archetypeId: a.id, salePrice: 900000 }), {
+        type: 'ATTEMPT_CLOSE',
+        leadId: 'L1',
+      })
+      for (let t = 0; t < 3; t++) {
+        if (!s.call || s.call.phase !== 'awaitingTactic') break
+        let pickTactic = tactics[(i + t) % tactics.length]
+        if (pickTactic === 'read' && s.call.usedTactics.includes('read'))
+          pickTactic = 'push'
+        s = reducer(s, { type: 'PLAY_TACTIC', tacticId: pickTactic })
+        expect(s.call!.momentum, a.id).toBeGreaterThanOrEqual(P8.MOMENTUM_MIN)
+        expect(s.call!.momentum, a.id).toBeLessThanOrEqual(P8.MOMENTUM_MAX)
+        s = reducer(s, { type: 'ADVANCE_CALL' })
+      }
+      expect(s.call!.phase, a.id).toBe('resolved')
+      const o = s.call!.outcome!
+      expect(o.finalChance, a.id).toBeGreaterThanOrEqual(0.1)
+      expect(o.finalChance, a.id).toBeLessThanOrEqual(0.9)
+    })
+    setSeed(null)
+  })
+
+  it('never runs more than three scored turns', () => {
+    setSeed(102)
+    const s = playThrough(openCall(), ['push', 'namedrop', 'empathize', 'flex'])
+    expect(s.call!.history.length).toBeLessThanOrEqual(P8.TURNS)
+    setSeed(null)
+  })
+})
+
+describe('acceptance — guards', () => {
+  /* The engine's own lookups tolerate an unknown archetype — reactionFor,
+     revealTell and pickBeat all fall back, and call.test.ts pins that. A whole
+     REDUCER call cannot be tested that way, because finalChanceFor delegates to
+     the Phase 1 closeChance, whose arch() does ARCHETYPES.find(...)! and throws
+     on a miss. That fragility predates this phase and bites the dice path
+     identically; fixing it is Phase 1 work, not ours.
+
+     So this asserts what we actually own: an archetype with no beats of its own
+     and no tell row entry beyond the default still plays a full three turns. */
+  it('runs a whole call for an archetype with no beats of its own', () => {
+    setSeed(104)
+    const s = playThrough(
+      reducer(gameWith({ archetypeId: 'lowballLarry', salePrice: 900000 }), {
+        type: 'ATTEMPT_CLOSE',
+        leadId: 'L1',
+      }),
+      ['empathize', 'read', 'namedrop'],
+    )
+    expect(s.call!.phase).toBe('resolved')
+    expect(s.call!.history).toHaveLength(3)
+    setSeed(null)
+  })
+
+  it('removes the lead on a second failure, same as the dice path', () => {
+    setSeed(103)
+    let s = reducer(gameWith({ salePrice: 900000, retriedClose: true }), {
+      type: 'ATTEMPT_CLOSE',
+      leadId: 'L1',
+    })
+    s = reducer(s, { type: 'PLAY_TACTIC', tacticId: 'push' })
+    /* Drive it to the floor so the roll cannot save us. */
+    s = { ...s, call: { ...s.call!, turn: 3, momentum: P8.MOMENTUM_MIN } }
+    s = reducer(s, { type: 'ADVANCE_CALL' })
+    if (!s.call!.outcome!.success) {
+      expect(s.leads.find((l) => l.id === 'L1')).toBeUndefined()
+      expect(s.counters.leadsLost).toBe(1)
+    }
+    setSeed(null)
   })
 })

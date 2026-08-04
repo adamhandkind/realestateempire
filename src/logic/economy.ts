@@ -5,6 +5,7 @@ import {
   LANDLORD_BRAGS,
   TERRITORY_BRAGS,
   VRBO_BRAGS,
+  CALL_BRAGS,
 } from '../data/brags'
 import { districtOrFirst } from '../data/districts'
 import { dominantDistricts } from './territory'
@@ -209,6 +210,8 @@ export function bragFor(state: GameState): string {
   const dominant = dominantDistricts(state)
   if (dominant.length > 0) situational(TERRITORY_BRAGS)
   if (state.kingOfBrantford) situational(KING_BRAGS)
+  /* You have to land one before you are allowed to be this annoying. */
+  if (state.callStats.perfectCalls > 0) situational(CALL_BRAGS)
   /* Character brags join the rotation at every rank, at double weight. */
   getChar(state).brags.forEach((text) =>
     pool.push({ text, weight: P5.BRAG_CHAR_WEIGHT }),
