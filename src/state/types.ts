@@ -452,6 +452,60 @@ export interface EventDef {
   condition: (s: GameState) => boolean
 }
 
+/* ------------------------------------------------------------- phase 8 */
+
+export type TacticId = 'empathize' | 'push' | 'namedrop' | 'flex' | 'read'
+/** Everything except Read. Read has no reaction and no tell. */
+export type PlayableTactic = Exclude<TacticId, 'read'>
+export type Reaction = 'great' | 'good' | 'neutral' | 'bad' | 'terrible'
+
+/** What the client says at the start of a turn. */
+export interface CallBeat {
+  id: string
+  /** Which archetypes can draw this beat. `'any'` means all of them. */
+  archetypeIds: string[] | 'any'
+  turn: 1 | 2 | 3 | 'any'
+  /** Supports the {name} and {price} placeholders. */
+  text: string
+  /** OVERRIDES the archetype default, for this beat only. */
+  tell?: Partial<Record<PlayableTactic, Reaction>>
+}
+
+/** A tactic button. */
+export interface CallCard {
+  id: TacticId
+  label: string
+  hint: string
+  /** Picked by a stable hash of beatId + tacticId, so a situation reads the
+   *  same way twice. */
+  playerLines: string[]
+}
+
+export interface CallTurn {
+  turn: number
+  beatId: string
+  tacticUsed: TacticId | null
+  reaction: Reaction | null
+  delta: number
+  clientReply: string
+}
+
+export interface CallState {
+  leadId: string
+  /** 1..3 */
+  turn: number
+  momentum: number
+  history: CallTurn[]
+  usedTactics: TacticId[]
+  /** Beats never repeat within a call. `history` cannot express this on its
+   *  own, because Read holds one beat across two entries. */
+  usedBeatIds: string[]
+  currentBeatId: string
+  revealedTells: TacticId[]
+  phase: 'awaitingTactic' | 'showingReaction' | 'resolving' | 'resolved'
+  outcome: null | { success: boolean; finalChance: number; payout: number }
+}
+
 /* ----------------------------------------------------------------- state */
 
 export interface Lead {
@@ -611,6 +665,14 @@ export interface GameState {
   weekDealDistricts: string[]
   /** Districts farmed this week. Cleared at week end alongside the above. */
   weekFarmedDistricts: string[]
+
+  /* ------------------------------------------------------------ phase 8 */
+
+  /** Non-null means the call modal is open and every other action is blocked. */
+  call: CallState | null
+  /** Settings toggle. False reverts every close to the old instant dice roll. */
+  callsEnabled: boolean
+  callStats: { calls: number; perfectCalls: number; hangups: number }
 }
 
 /* --------------------------------------------------------------- actions */
@@ -662,3 +724,11 @@ export type Action =
     }
   | { type: 'DEBUG_FORCE_SHOWDOWN' }
   | { type: 'DEBUG_KING_CHECK' }
+  /* ---- phase 8 ---- */
+  | { type: 'PLAY_TACTIC'; tacticId: TacticId }
+  | { type: 'ADVANCE_CALL' }
+  | { type: 'CLOSE_CALL_MODAL' }
+  | { type: 'SET_CALLS_ENABLED'; enabled: boolean }
+  | { type: 'DEBUG_FORCE_CALL'; leadId: string }
+  | { type: 'DEBUG_SET_MOMENTUM'; momentum: number }
+  | { type: 'DEBUG_REVEAL_TELLS' }
