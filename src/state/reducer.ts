@@ -141,7 +141,7 @@ import type {
 
 export function initialState(): GameState {
   const base: GameState = {
-    version: 5,
+    version: 6,
     week: 1,
     cash: START_CASH,
     careerEarnings: 0,
@@ -200,6 +200,9 @@ export function initialState(): GameState {
     channelTargets: {},
     weekDealDistricts: [],
     weekFarmedDistricts: [],
+    call: null,
+    callsEnabled: true,
+    callStats: { calls: 0, perfectCalls: 0, hangups: 0 },
   }
   /* The pool is seeded as soon as anything is eligible so the Portfolio tab is
      never empty. Nothing unlocks below Seller Agent, so a week-one game keeps

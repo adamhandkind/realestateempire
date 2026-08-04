@@ -580,7 +580,7 @@ export interface WeekSummary {
 }
 
 export interface GameState {
-  version: 5
+  version: 6
   week: number
   cash: number
   careerEarnings: number

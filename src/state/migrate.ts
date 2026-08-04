@@ -1,12 +1,13 @@
-/* v1/v2 -> v3 save migration. The localStorage key never changes
+/* v1/v2 -> v6 save migration. The localStorage key never changes
    (`res_save_v1`); only `GameState.version` moves. Every field added in a later
-   phase gets a default here, so a player who refreshes mid-game lands in v3
+   phase gets a default here, so a player who refreshes mid-game lands in v6
    with their progress intact and nothing to re-earn. */
 
 import { DEFAULT_CHARACTER_ID } from '../data/p5'
 import { RANKS } from '../data/ranks'
 import { PRESET_SLOTS } from '../data/swag'
 import { fillPool } from '../logic/portfolio'
+import { withLog } from '../logic/log'
 import { districtForType, initialState } from './reducer'
 import { gain, initialTerritory, pickLeadDistrict } from '../logic/territory'
 import { P6, PLAYER } from '../data/p6'
@@ -21,11 +22,11 @@ interface AnySave {
 const num = (v: unknown, fallback: number): number =>
   typeof v === 'number' && Number.isFinite(v) ? v : fallback
 
-/** Returns a fully-populated v3 state, or null if `raw` isn't one of ours. */
+/** Returns a fully-populated v6 state, or null if `raw` isn't one of ours. */
 export function migrate(raw: unknown): GameState | null {
   if (!raw || typeof raw !== 'object') return null
   const s = raw as AnySave
-  if (typeof s.version !== 'number' || s.version < 1 || s.version > 5)
+  if (typeof s.version !== 'number' || s.version < 1 || s.version > 6)
     return null
 
   const base = initialState()
@@ -55,9 +56,13 @@ export function migrate(raw: unknown): GameState | null {
       }
     | undefined
 
+  const callStats = s.callStats as
+    | { calls?: number; perfectCalls?: number; hangups?: number }
+    | undefined
+
   const out: GameState = {
     ...merged,
-    version: 5,
+    version: 6,
     permBonuses: {
       hustle: s.permBonuses?.hustle ?? base.permBonuses.hustle,
       swagger: s.permBonuses?.swagger ?? base.permBonuses.swagger,
@@ -156,10 +161,22 @@ export function migrate(raw: unknown): GameState | null {
         : {},
     weekDealDistricts: [],
     weekFarmedDistricts: [],
+    /* ---- phase 8 ---- a pre-call save has never picked up the phone ---- */
+    callsEnabled: s.callsEnabled !== false,
+    callStats: {
+      calls: num(callStats?.calls, 0),
+      perfectCalls: num(callStats?.perfectCalls, 0),
+      hangups: num(callStats?.hangups, 0),
+    },
+    /* A call is never restored. See dropInterruptedCall below. */
+    call: null,
   }
 
   /* A v1/v2 save arrives with an empty pool; a v3 save keeps the one it had. */
-  return fillPool(placeOnTheMap(out, typeof s.territory === 'object'))
+  return dropInterruptedCall(
+    fillPool(placeOnTheMap(out, typeof s.territory === 'object')),
+    s.call as { leadId?: string } | null | undefined,
+  )
 }
 
 /**
@@ -198,4 +215,25 @@ function placeOnTheMap(s: GameState, alreadyMapped: boolean): GameState {
   const early = ['northEnd', 'westBrant', 'downtown']
   for (const id of early) out = gain(out, id, PLAYER, credit / early.length)
   return out
+}
+
+/**
+ * A save written mid-call is a crashed call. The call is discarded rather than
+ * resumed: the lead keeps its state as of before the call, minus the AP already
+ * spent. AP is never refunded and never double-charged, because ATTEMPT_CLOSE
+ * spends it once before the call opens and the call itself never touches it.
+ */
+function dropInterruptedCall(
+  s: GameState,
+  saved: { leadId?: string } | null | undefined,
+): GameState {
+  if (!saved || typeof saved.leadId !== 'string') return s
+  const lead = s.leads.find((l) => l.id === saved.leadId)
+  return withLog(
+    { ...s, call: null },
+    'flavor',
+    'The line dropped. ' +
+      (lead ? lead.clientName : 'Someone') +
+      ' is still in your pipeline, mercifully.',
+  )
 }
