@@ -47,12 +47,15 @@ describe('migrate', () => {
     expect(s.ownedSwagIds).toEqual(['discountSuit', 'gasSunnies'])
     expect(s.equipped.outfit).toBe('discountSuit')
     expect(s.counters.dealsClosed).toBe(11)
-    expect(s.log).toHaveLength(1)
+    /* The original entry, plus Phase 7's inaugural-Goldies announcement. */
+    expect(s.log).toHaveLength(2)
+    expect(s.log[1].text).toBe('something happened')
+    expect(s.log[0].text).toContain('Golden Lockbox Awards')
   })
 
   it('fills every new v2 field with a default', () => {
     const s = migrate(V1_SAVE)!
-    expect(s.version).toBe(6)
+    expect(s.version).toBe(7)
     expect(s.reputation).toBe(0)
     expect(s.activeChannelIds).toEqual([])
     expect(s.outfitPresets).toEqual([null, null, null])
@@ -150,7 +153,7 @@ describe('v2 -> v3 migration', () => {
     delete v2.peakNetWorth
     delete v2.firstP3Week
     const out = migrate(v2)!
-    expect(out.version).toBe(6)
+    expect(out.version).toBe(7)
     expect(out.properties).toEqual([])
     expect(out.marketState).toBe('normal')
     expect(out.crash).toEqual({ weeksLeft: 0, lastCrashWeek: -999 })
@@ -183,7 +186,7 @@ describe('v2 -> v3 migration', () => {
   it('chain-migrates a v1 save', () => {
     const v1 = { version: 1, week: 3, cash: 900, rank: 'sellerAgent' }
     const out = migrate(v1)!
-    expect(out.version).toBe(6)
+    expect(out.version).toBe(7)
     expect(out.reputation).toBe(0)
     expect(out.marketPool).toHaveLength(4)
   })
@@ -203,20 +206,44 @@ describe('phase 8 migration', () => {
 
   it('defaults the phase 8 fields on a v5 save', () => {
     const out = migrate(v5())!
-    expect(out.version).toBe(6)
+    expect(out.version).toBe(7)
     expect(out.call).toBeNull()
     expect(out.callsEnabled).toBe(true)
     expect(out.callStats).toEqual({ calls: 0, perfectCalls: 0, hangups: 0 })
   })
 
-  it('accepts a v6 save', () => {
-    const out = migrate({ ...initialState(), version: 6 })
+  it('accepts a v7 save', () => {
+    const out = migrate({ ...initialState(), version: 7 })
     expect(out).not.toBeNull()
-    expect(out!.version).toBe(6)
+    expect(out!.version).toBe(7)
+  })
+
+  /* Phase 7 (the Goldies) also shipped as v6, so a save written by it is the
+     realistic upgrade path into Phase 8 — not a hypothetical. Its awards state
+     must survive untouched while the call fields get their defaults. */
+  it('carries a Phase 7 save forward without disturbing its trophies', () => {
+    const v6 = {
+      ...initialState(),
+      version: 6,
+      trophies: [{ awardId: 'hustle', seasonIndex: 1, displayed: true }],
+      seasonStartWeek: 14,
+      sponsorCringeSeasons: 2,
+    }
+    delete (v6 as Record<string, unknown>).call
+    delete (v6 as Record<string, unknown>).callsEnabled
+    delete (v6 as Record<string, unknown>).callStats
+    const out = migrate(v6)!
+    expect(out.version).toBe(7)
+    expect(out.trophies).toHaveLength(1)
+    expect(out.seasonStartWeek).toBe(14)
+    expect(out.sponsorCringeSeasons).toBe(2)
+    expect(out.call).toBeNull()
+    expect(out.callsEnabled).toBe(true)
+    expect(out.callStats).toEqual({ calls: 0, perfectCalls: 0, hangups: 0 })
   })
 
   it('rejects a version from the future', () => {
-    expect(migrate({ ...initialState(), version: 7 })).toBeNull()
+    expect(migrate({ ...initialState(), version: 8 })).toBeNull()
   })
 
   it('preserves a player toggle of callsEnabled', () => {

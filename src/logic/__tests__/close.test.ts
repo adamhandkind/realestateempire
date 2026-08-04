@@ -222,3 +222,56 @@ describe('resolveClose — referral cut', () => {
     expect(r.state.log[0].text).toContain('your share came to')
   })
 })
+
+/* Phase 7 kept the season ledger inline in ATTEMPT_CLOSE; the Phase 8 merge
+   moved it here so a deal closed on the PHONE feeds the Goldies exactly as a
+   deal closed by dice does. Nothing in the suite covered that path, so a
+   dropped bump would have gone unnoticed until an award scored wrong. */
+describe('resolveClose — the season ledger', () => {
+  it('credits a successful close to every stat the Goldies read', () => {
+    const s = st()
+    const l = lead({ salePrice: 620000 })
+    const before = s.season
+    const out = resolveClose(withLead(s, l), l, 1).state
+    const earnings = commissionFor(l.salePrice, s.rank).earnings
+    expect(out.season.dealsClosed).toBe(before.dealsClosed + 1)
+    expect(out.season.closeSuccesses).toBe(before.closeSuccesses + 1)
+    expect(out.season.commissionEarned).toBe(before.commissionEarned + earnings)
+    expect(out.season.repGained).toBe(before.repGained + REP_PER_DEAL)
+  })
+
+  it('records the biggest sale as a max, not a sum', () => {
+    let s = st()
+    s = { ...s, season: { ...s.season, biggestSale: 500000 } }
+    const small = lead({ salePrice: 200000 })
+    expect(
+      resolveClose(withLead(s, small), small, 1).state.season.biggestSale,
+    ).toBe(500000)
+    const big = lead({ salePrice: 900000 })
+    expect(
+      resolveClose(withLead(s, big), big, 1).state.season.biggestSale,
+    ).toBe(900000)
+  })
+
+  it('credits a lost lead when the second attempt fails', () => {
+    const s = st()
+    const l = lead({ retriedClose: true })
+    const out = resolveClose(withLead(s, l), l, 0).state
+    expect(out.season.leadsLost).toBe(s.season.leadsLost + 1)
+  })
+
+  it('does not credit a lost lead on the FIRST failure', () => {
+    const s = st()
+    const l = lead({ retriedClose: false })
+    const out = resolveClose(withLead(s, l), l, 0).state
+    expect(out.season.leadsLost).toBe(s.season.leadsLost)
+  })
+
+  it('leaves the ledger alone on a failed close otherwise', () => {
+    const s = st()
+    const l = lead()
+    const out = resolveClose(withLead(s, l), l, 0).state
+    expect(out.season.dealsClosed).toBe(s.season.dealsClosed)
+    expect(out.season.commissionEarned).toBe(s.season.commissionEarned)
+  })
+})

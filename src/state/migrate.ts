@@ -1,6 +1,6 @@
-/* v1/v2 -> v6 save migration. The localStorage key never changes
+/* v1/v2 -> v7 save migration. The localStorage key never changes
    (`res_save_v1`); only `GameState.version` moves. Every field added in a later
-   phase gets a default here, so a player who refreshes mid-game lands in v6
+   phase gets a default here, so a player who refreshes mid-game lands in v7
    with their progress intact and nothing to re-earn. */
 
 import { DEFAULT_CHARACTER_ID } from '../data/p5'
@@ -11,7 +11,11 @@ import { withLog } from '../logic/log'
 import { districtForType, initialState } from './reducer'
 import { gain, initialTerritory, pickLeadDistrict } from '../logic/territory'
 import { P6, PLAYER } from '../data/p6'
+import { emptySeasonStats } from '../data/awards'
+import { MIGRATION_LINE, P7 } from '../data/p7'
 import type { GameState } from './types'
+
+const TABLE_TIER_IDS: string[] = P7.TABLE_TIERS.map((t) => t.id)
 
 interface AnySave {
   version?: number
@@ -22,11 +26,11 @@ interface AnySave {
 const num = (v: unknown, fallback: number): number =>
   typeof v === 'number' && Number.isFinite(v) ? v : fallback
 
-/** Returns a fully-populated v6 state, or null if `raw` isn't one of ours. */
+/** Returns a fully-populated v7 state, or null if `raw` isn't one of ours. */
 export function migrate(raw: unknown): GameState | null {
   if (!raw || typeof raw !== 'object') return null
   const s = raw as AnySave
-  if (typeof s.version !== 'number' || s.version < 1 || s.version > 6)
+  if (typeof s.version !== 'number' || s.version < 1 || s.version > 7)
     return null
 
   const base = initialState()
@@ -62,7 +66,7 @@ export function migrate(raw: unknown): GameState | null {
 
   const out: GameState = {
     ...merged,
-    version: 6,
+    version: 7,
     permBonuses: {
       hustle: s.permBonuses?.hustle ?? base.permBonuses.hustle,
       swagger: s.permBonuses?.swagger ?? base.permBonuses.swagger,
@@ -161,6 +165,26 @@ export function migrate(raw: unknown): GameState | null {
         : {},
     weekDealDistricts: [],
     weekFarmedDistricts: [],
+    /* ---- phase 7 ---- a pre-Goldies save has no season and no hardware.
+       Season 1 begins at the week the save is on: no retroactive trophies,
+       and the first ceremony is a full thirteen weeks away. */
+    season:
+      s.season && typeof s.season === 'object'
+        ? { ...emptySeasonStats(0), ...(s.season as object) }
+        : emptySeasonStats(0),
+    seasonStartWeek: num(s.seasonStartWeek, week),
+    nominations: Array.isArray(s.nominations) ? (s.nominations as string[]) : null,
+    tableTier: TABLE_TIER_IDS.includes(s.tableTier as string)
+      ? (s.tableTier as GameState['tableTier'])
+      : 'none',
+    ceremony: (s.ceremony as GameState['ceremony'] | undefined) ?? null,
+    trophies: Array.isArray(s.trophies)
+      ? (s.trophies as GameState['trophies'])
+      : [],
+    awardHistory: Array.isArray(s.awardHistory)
+      ? (s.awardHistory as GameState['awardHistory'])
+      : [],
+    sponsorCringeSeasons: num(s.sponsorCringeSeasons, 0),
     /* ---- phase 8 ---- a pre-call save has never picked up the phone ---- */
     /* Note the `!== false`, not the `=== true` used by propCoActive and
        kingOfBrantford above. Calls are opt-OUT: a save that has never heard of
@@ -175,10 +199,16 @@ export function migrate(raw: unknown): GameState | null {
     call: null,
   }
 
+  const mapped = fillPool(placeOnTheMap(out, typeof s.territory === 'object'))
   /* A v1/v2 save arrives with an empty pool; a v3-or-later save keeps the one
-     it had. A call open at save time never survives — see below. */
+     it had. A pre-Goldies save is told the Board has noticed it. */
+  const withGoldies =
+    typeof s.season === 'object'
+      ? mapped
+      : withLog(mapped, 'event', MIGRATION_LINE)
+  /* A call open at save time never survives — see dropInterruptedCall. */
   return dropInterruptedCall(
-    fillPool(placeOnTheMap(out, typeof s.territory === 'object')),
+    withGoldies,
     s.call as { leadId?: string } | null | undefined,
   )
 }

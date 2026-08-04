@@ -1,6 +1,8 @@
 import { useState, type Dispatch } from 'react'
+import { AWARDS } from '../data/awards'
 import { CHARACTERS } from '../data/characters'
 import { DISTRICTS } from '../data/districts'
+import TablePicker from './TablePicker'
 import { channelOf, isChannelLocked } from '../logic/marketing'
 import { TARGETABLE_CHANNEL_IDS } from '../logic/territoryWeek'
 import { atLeastRank, weeklyExpenses } from '../logic/economy'
@@ -140,6 +142,8 @@ export default function OfficeTab({
           />
         </div>
       </div>
+
+      <TablePicker state={state} dispatch={dispatch} />
 
       <div className="res-panel">
         <h3 className="res-h2 res-display">The Ladder</h3>
@@ -362,6 +366,40 @@ export default function OfficeTab({
           >
             King of Brantford check
           </button>
+          {/* ---- phase 7 ---- */}
+          <button
+            className="res-tab"
+            onClick={() => dispatch({ type: 'DEBUG_JUMP_TO_NOMINATIONS' })}
+          >
+            Jump to season week 12
+          </button>
+          <button
+            className="res-tab"
+            onClick={() => dispatch({ type: 'DEBUG_FORCE_CEREMONY' })}
+          >
+            Force ceremony
+          </button>
+          <label className="res-chip">
+            Grant trophy…
+            <select
+              value=""
+              onChange={(e) => {
+                if (!e.target.value) return
+                dispatch({
+                  type: 'DEBUG_GRANT_TROPHY',
+                  awardId: e.target.value,
+                })
+                e.target.value = ''
+              }}
+            >
+              <option value="">Pick one</option>
+              {AWARDS.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </label>
           {(['cold', 'normal', 'hot'] as const).map((m) => (
             <button
               key={m}

@@ -17,6 +17,7 @@ import { P6, PLAYER } from '../data/p6'
 import { REP_PER_DEAL } from '../data/reputation'
 import { UNDERCUT_SUFFIX } from '../data/rivals'
 import { withLog } from './log'
+import { bumpSeason, recordSale } from './awards'
 import type { GameState, Lead } from '../state/types'
 
 /** A failed close costs the accent, and the accent was the swagger. Does not
@@ -63,6 +64,7 @@ export function resolveClose(
         leads: s.leads.filter((l) => l.id !== lead.id),
         counters: { ...s.counters, leadsLost: s.counters.leadsLost + 1 },
       }
+      s = bumpSeason(s, 'leadsLost')
       return {
         state: sync(
           withLog(
@@ -118,6 +120,14 @@ export function resolveClose(
       : [...state.weekDealDistricts, lead.districtId],
   }
   s = gain(s, lead.districtId, PLAYER, P6.GAIN_DEAL)
+  /* The season ledger the Goldies are scored from. Phase 7 kept these inline
+     in the reducer; they live here now so a deal closed on the PHONE feeds the
+     awards exactly as a deal closed by dice does. */
+  s = bumpSeason(s, 'dealsClosed')
+  s = bumpSeason(s, 'closeSuccesses')
+  s = bumpSeason(s, 'commissionEarned', earnings)
+  s = bumpSeason(s, 'repGained', REP_PER_DEAL)
+  s = recordSale(s, lead.salePrice)
   const line =
     lead.clientName +
     ' ' +

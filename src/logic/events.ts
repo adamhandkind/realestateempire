@@ -25,6 +25,8 @@ import type {
   PendingChoice,
 } from '../state/types'
 import { getChar } from './characters'
+import { hasPerk } from './perks'
+import { P7 } from '../data/p7'
 import { atLeastRank, clampRep, deriveStats } from './economy'
 import { arch, makeLead } from './leads'
 import { withLog } from './log'
@@ -78,11 +80,14 @@ export function selectEvent(state: GameState): EventDef | null {
   return chosen
 }
 
-/** Community Sponsorship halves how often bad reviews come up. */
+/** Community Sponsorship halves how often bad reviews come up. So does the
+ *  Community Service Honour — and they stack, because you earned both. */
 export function badReviewWeight(state: GameState): number {
-  return state.activeChannelIds.includes('communitySponsorship')
+  let w = state.activeChannelIds.includes('communitySponsorship')
     ? BAD_REVIEW_BASE_WEIGHT / 2
     : BAD_REVIEW_BASE_WEIGHT
+  if (hasPerk(state, 'goodNeighbour')) w *= 0.5
+  return w
 }
 
 /** The guaranteed 6–9 week VRBO cadence, independent of the 30% roll. */
@@ -106,9 +111,13 @@ export function scheduleNextVrbo(state: GameState): GameState {
 /** Fires independently of the 30% roll, once ego gets loud enough. The ego
  *  threshold never moves; only the character's chance modifier does. */
 export function shouldCringe(state: GameState): boolean {
+  /* Platinum sponsorship (and a Full Ego speech) is paid for the season after
+     it happened, in the currency of being perceived. */
+  const sponsor =
+    (state.sponsorCringeSeasons ?? 0) > 0 ? P7.SPONSOR_CRINGE_DELTA : 0
   return (
     deriveStats(state).ego >= 8 &&
-    chance(CRINGE_WEEKLY_CHANCE + getChar(state).cringeChanceDelta)
+    chance(CRINGE_WEEKLY_CHANCE + getChar(state).cringeChanceDelta + sponsor)
   )
 }
 

@@ -286,3 +286,84 @@ body{margin:0;background:var(--ink);color:var(--marble);
 .res-tactic .badge.good { color: var(--brass); }
 .res-tactic .badge.avoid { color: var(--sold); }
 .res-tactic.wide { grid-column: 1 / -1; }
+/* ---------------------------------------------------------- phase 7 UI */
+/* The Goldies. Brass everywhere, on purpose. */
+
+.res-segmented { margin-bottom: 10px; }
+
+.res-banner.res-goldies {
+  display: flex; gap: 10px; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; background: linear-gradient(90deg, #2a2210, #3a2f14);
+  border-color: var(--brass); color: #f0e2ad;
+}
+.res-banner.res-goldies .res-tab { flex: 0 0 auto; padding: 6px 12px; }
+
+/* ---- the table picker ---- */
+.res-tier-card {
+  border: 1px solid rgba(201,162,39,.35); border-radius: 10px; padding: 10px;
+  background: var(--ink2);
+}
+.res-tier-card.on { border-color: var(--brass); box-shadow: 0 0 0 1px var(--brass) inset; }
+.res-tier-card .nm { font-size: 14px; margin-bottom: 2px; }
+.res-sponsor-warn { color: var(--sold); font-size: 11.5px; line-height: 1.45; margin-top: 6px; }
+.res-nomlist { margin: 0 0 12px; padding-left: 18px; font-size: 12.5px; line-height: 1.7; color: #cfc9b8; }
+
+/* ---- the trophy room ---- */
+.res-trophy {
+  position: relative; border: 1px solid rgba(245,242,234,.18); border-radius: 10px;
+  padding: 10px; background: var(--ink2); opacity: .4; transition: opacity .2s ease;
+}
+.res-trophy.on { opacity: 1; border-color: var(--brass); }
+.res-trophy-glyph { font-size: 22px; line-height: 1; margin-bottom: 4px; }
+.res-trophy .nm { font-size: 13.5px; margin-bottom: 2px; }
+.res-trophy-sub {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--muted); line-height: 1.5; margin: 6px 0;
+}
+.res-trophy .res-perk { font-size: 12px; line-height: 1.5; color: #cfc9b8; }
+
+/* ---- the ceremony ---- */
+.res-modal.res-ceremony { align-items: flex-start; }
+.res-proscenium {
+  max-width: 560px; width: 100%; margin: 0 auto; padding: 18px 16px 22px;
+  background: radial-gradient(120% 80% at 50% 0%, #24201a 0%, var(--ink) 70%);
+  border: 3px solid var(--brass);
+  box-shadow: 0 0 0 1px #6b5416 inset, 0 20px 60px rgba(0,0,0,.6);
+  border-radius: 4px;
+}
+.res-ceremony-head { text-align: center; padding-bottom: 12px; border-bottom: 1px solid rgba(201,162,39,.35); }
+.res-ceremony-title { font-size: 19px; color: var(--brass); line-height: 1.25; }
+.res-ceremony-body { padding: 14px 0; }
+
+.res-award { margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px dashed rgba(245,242,234,.14); }
+.res-award:last-child { border-bottom: none; }
+.res-award.big .res-award-name { font-size: 21px; color: var(--brass); }
+.res-award-name { font-size: 15px; margin: 0 0 4px; }
+.res-award-sub {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--muted); line-height: 1.5; margin-bottom: 10px;
+}
+.res-nominees { display: grid; gap: 4px; margin-bottom: 10px; }
+.res-nominee {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 5px 9px; border: 1px solid rgba(245,242,234,.14); border-radius: 6px;
+  font-size: 13px; background: rgba(0,0,0,.2);
+}
+.res-nominee.win { border-color: var(--brass); background: rgba(201,162,39,.18); font-weight: 700; }
+.res-nominee b { color: var(--brass); font-variant-numeric: tabular-nums; }
+.res-award-line { font-size: 13px; line-height: 1.6; margin: 0; color: #cfc9b8; }
+.res-award-line.win { color: #f0e2ad; }
+
+.res-speech { margin-top: 8px; padding-top: 12px; border-top: 1px solid rgba(201,162,39,.35); }
+.res-speech-opt {
+  display: flex; flex-direction: column; gap: 3px; text-align: left;
+  width: 100%; margin-bottom: 6px; text-transform: none; letter-spacing: 0;
+  padding: 9px 11px; font-size: 12.5px;
+}
+.res-speech-opt b { color: var(--marble); font-size: 13.5px; }
+.res-speech-opt span { color: var(--muted); font-size: 11.5px; }
+.res-speech-none { margin: 14px 0; text-align: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  .res-trophy { transition: none; }
+}

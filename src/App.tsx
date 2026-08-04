@@ -1,6 +1,8 @@
 import { useEffect, useReducer, useRef, useState } from 'react'
 import BragTicker from './components/BragTicker'
+import CeremonyModal from './components/CeremonyModal'
 import CharacterSelect from './components/CharacterSelect'
+import { NominationBanner } from './components/TablePicker'
 import ClosetTab from './components/ClosetTab'
 import Header from './components/Header'
 import LeadsTab from './components/LeadsTab'
@@ -169,6 +171,18 @@ export default function App() {
           worth less. Everything is also cheaper.
         </div>
       )}
+      <NominationBanner
+        state={state}
+        onOpen={() => {
+          setTab('office')
+          /* The picker lives in the Office tab; scroll once it has mounted. */
+          requestAnimationFrame(() =>
+            document
+              .getElementById('goldies-table')
+              ?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
+          )
+        }}
+      />
       {isPhase2Teaser(state) && (
         <div className="res-banner">
           🏆 Seller's Agent with six figures liquid.{' '}
@@ -234,6 +248,12 @@ export default function App() {
 
       {showSummary && (
         <WeekSummaryModal state={state} onClose={() => setShowSummary(false)} />
+      )}
+
+      {/* Never stacked: the Week Summary always reads first, and dismissing it
+          is what raises the curtain on the Goldies. */}
+      {!showSummary && state.ceremony && (
+        <CeremonyModal state={state} dispatch={dispatch} />
       )}
 
       {confetti && (

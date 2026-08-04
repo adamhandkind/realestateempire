@@ -35,6 +35,8 @@ import {
   statModifierDelta,
 } from './characters'
 import { P5 } from '../data/p5'
+import { hasPerk, trophyEgo } from './perks'
+import { AWARDS_BRAGS } from '../data/p7'
 import { money, pick, weightedPick } from './rand'
 
 export {
@@ -121,6 +123,10 @@ export function deriveStats(state: GameState): Stats {
   hustle += char.statMods.hustle
   swagger += char.statMods.swagger
   ego += char.statMods.ego
+  /* The trophy is watching, and the shelf is loud. Both cap normally — an
+     ego-capped character's trophies contribute nothing but pride. */
+  if (hasPerk(state, 'hustleTrophy')) hustle += 1
+  ego += trophyEgo(state)
   return {
     hustle: Math.max(STAT_FLOOR, Math.min(10, hustle)),
     swagger: Math.max(STAT_FLOOR, Math.min(10, swagger)),
@@ -212,6 +218,8 @@ export function bragFor(state: GameState): string {
   if (state.kingOfBrantford) situational(KING_BRAGS)
   /* You have to land one before you are allowed to be this annoying. */
   if (state.callStats.perfectCalls > 0) situational(CALL_BRAGS)
+  /* One Goldie is enough to talk about Goldies forever. */
+  if ((state.trophies ?? []).length > 0) situational(AWARDS_BRAGS)
   /* Character brags join the rotation at every rank, at double weight. */
   getChar(state).brags.forEach((text) =>
     pool.push({ text, weight: P5.BRAG_CHAR_WEIGHT }),
@@ -225,6 +233,14 @@ export function bragFor(state: GameState): string {
     .replace('{showings}', String(state.counters.showingsRun))
     .replace('{leads}', String(state.leads.length))
     .replace('{properties}', String(state.properties.length))
+    /* The season of the newest Goldie, displayed 1-based like the Trophy Room. */
+    .replace(
+      '{seasonIndex}',
+      String(
+        (state.trophies ?? []).reduce((m, t) => Math.max(m, t.seasonIndex), 0) +
+          1,
+      ),
+    )
     .replace(
       '{district}',
       dominant.length ? districtOrFirst(pick(dominant)).name : 'Brantford',

@@ -135,6 +135,34 @@ import {
   territorySummary,
   thresholdSweep,
 } from '../logic/territoryWeek'
+import { awardOf, emptySeasonStats } from '../data/awards'
+import {
+  CEREMONY_CLOSE_LINE,
+  CEREMONY_OPEN_LINE,
+  GAME_OVER_CEREMONY_LINE,
+  NOMINATIONS_LINE,
+  NO_REFUNDS_LINE,
+  P7,
+  SHUTOUT_LINE,
+  SPEECH_OPTIONS,
+  SWEEP_LINE,
+  TABLE_LINES,
+  UPSET_LINE,
+} from '../data/p7'
+import {
+  PLAYER_NOMINEE,
+  bumpSeason,
+  computeNominations,
+  isUpgrade,
+  nomineeName,
+  playerWins,
+  runCeremony,
+  seasonWeek,
+  shelfFull,
+  tierOf,
+  upgradeCost,
+} from '../logic/awards'
+import { hasPerk } from '../logic/perks'
 import { INBOUND_LINES } from '../data/marketing'
 import {
   REP_DECAY_PER_WEEK,
@@ -157,7 +185,7 @@ import type {
 
 export function initialState(): GameState {
   const base: GameState = {
-    version: 6,
+    version: 7,
     week: 1,
     cash: START_CASH,
     careerEarnings: 0,
@@ -219,6 +247,14 @@ export function initialState(): GameState {
     call: null,
     callsEnabled: true,
     callStats: { calls: 0, perfectCalls: 0, hangups: 0 },
+    season: emptySeasonStats(0),
+    seasonStartWeek: 1,
+    nominations: null,
+    tableTier: 'none',
+    ceremony: null,
+    trophies: [],
+    awardHistory: [],
+    sponsorCringeSeasons: 0,
   }
   /* The pool is seeded as soon as anything is eligible so the Portfolio tab is
      never empty. Nothing unlocks below Seller Agent, so a week-one game keeps
@@ -400,6 +436,7 @@ export function reducer(state: GameState, action: Action): GameState {
         careerEarnings: s.careerEarnings + 100,
         counters: { ...s.counters, showingsRun: s.counters.showingsRun + 1 },
       }
+      s = bumpSeason(s, 'showingsRun')
       return sync(
         withLog(
           s,
@@ -443,6 +480,7 @@ export function reducer(state: GameState, action: Action): GameState {
         ),
         counters: { ...s.counters, showingsRun: s.counters.showingsRun + 1 },
       }
+      s = bumpSeason(s, 'showingsRun')
       let text =
         'You walked ' +
         lead.clientName +
@@ -464,7 +502,11 @@ export function reducer(state: GameState, action: Action): GameState {
       if (state.ap < 1 || state.rank === 'receptionist') return state
       const lead = state.leads.find((l) => l.id === action.leadId)
       if (!lead || lead.stage !== 'ready' || lead.sold) return state
-      const s = spendAp(state, 1)
+      let s = spendAp(state, 1)
+      /* Every attempt counts toward the Hustle Award, closed or not — and a
+         call is ONE attempt no matter how many turns it runs. Bumped here,
+         before the fork, so both paths count identically. */
+      s = bumpSeason(s, 'closeAttempts')
       /* Big money gets a conversation. Everything else gets the dice it always
          got — and so does everyone, if the player switched calls off. */
       if (!state.callsEnabled || !shouldCall(lead)) {
@@ -686,11 +728,15 @@ export function reducer(state: GameState, action: Action): GameState {
         return state
       if (rankIndex(state.rank) < rankIndex(it.unlockRank)) return state
       if (state.cash < it.price) return state
-      let s = {
-        ...state,
-        cash: state.cash - it.price,
-        ownedSwagIds: [...state.ownedSwagIds, it.id],
-      }
+      let s = bumpSeason(
+        {
+          ...state,
+          cash: state.cash - it.price,
+          ownedSwagIds: [...state.ownedSwagIds, it.id],
+        },
+        'swagSpend',
+        it.price,
+      )
       /* Buying is always legal; wearing it is a separate opinion. */
       const refusal = equipRefusal(s, it)
       if (refusal)
@@ -970,6 +1016,7 @@ export function reducer(state: GameState, action: Action): GameState {
       }
       /* Buying a door on a street is the fastest way onto that street. */
       s = gain(s, l.districtId, PLAYER, P6.GAIN_PROPERTY_BUY)
+      s = bumpSeason(s, 'propertiesBought')
       s = fillPool(s)
       return sync(
         withLog(
@@ -1169,6 +1216,8 @@ export function reducer(state: GameState, action: Action): GameState {
         )
       const eventId = u.openIssue.eventId
       let s: GameState = { ...state, cash: state.cash - u.openIssue.fixCost }
+      /* Fixing things is the whole basis of the Community Service Honour. */
+      s = bumpSeason(s, 'tenantIssuesFixed')
       s = patchUnit(spendAp(s, 1), p.id, u.id, (x) => ({
         ...x,
         openIssue: null,
@@ -1435,7 +1484,7 @@ export function reducer(state: GameState, action: Action): GameState {
         PLAYER,
         P6.GAIN_FARM,
       )
-      let s = res.state
+      let s = bumpSeason(res.state, 'districtsFarmed')
       s = {
         ...s,
         weekFarmedDistricts: s.weekFarmedDistricts.includes(d.id)
@@ -1464,6 +1513,92 @@ export function reducer(state: GameState, action: Action): GameState {
       if (action.districtId) channelTargets[action.channelId] = action.districtId
       else delete channelTargets[action.channelId]
       return sync({ ...state, channelTargets })
+    }
+    /* ------------------------------------------------------------ phase 7 */
+    case 'BUY_TABLE': {
+      const target = tierOf(action.tierId)
+      if (target.id === 'none') return state
+      /* The window is the last two weeks of the season and nothing else. */
+      if (seasonWeek(state) < P7.NOMINATION_WEEK_OFFSET) return state
+      if (!state.nominations) return state
+      if (!isUpgrade(state.tableTier, action.tierId))
+        return withLog(state, 'flavor', NO_REFUNDS_LINE)
+      const cost = upgradeCost(state.tableTier, action.tierId)
+      if (state.cash < cost)
+        return withLog(
+          state,
+          'flavor',
+          'The Board takes cheques. The Board does not take this cheque.',
+        )
+      const s: GameState = {
+        ...state,
+        cash: state.cash - cost,
+        tableTier: action.tierId,
+      }
+      return sync(withLog(s, 'money', TABLE_LINES[action.tierId] ?? ''))
+    }
+    case 'ADVANCE_CEREMONY': {
+      const c = state.ceremony
+      if (!c) return state
+      if (c.revealIndex >= c.results.length) return state
+      return {
+        ...state,
+        ceremony: { ...c, revealIndex: c.revealIndex + 1 },
+      }
+    }
+    case 'GIVE_SPEECH': {
+      const c = state.ceremony
+      if (!c || c.speechGiven) return state
+      if (playerWins(c.results).length === 0) return state
+      const opt = SPEECH_OPTIONS.find((o) => o.key === action.key)
+      if (!opt) return state
+      let s: GameState = {
+        ...state,
+        ceremony: { ...c, speechGiven: true },
+        reputation: clampRep(state.reputation + opt.rep),
+        permBonuses: {
+          ...state.permBonuses,
+          ego: state.permBonuses.ego + opt.ego,
+        },
+      }
+      /* A Full Ego speech buys the same season of cringe a sponsorship does. */
+      if (opt.cringeSeason) s = { ...s, sponsorCringeSeasons: 1 }
+      return sync(withLog(s, 'event', opt.line))
+    }
+    case 'CLOSE_CEREMONY': {
+      const c = state.ceremony
+      if (!c) return state
+      const won = playerWins(c.results).length
+      const s: GameState = { ...state, ceremony: null }
+      return sync(
+        withLog(
+          s,
+          'event',
+          CEREMONY_CLOSE_LINE.replace('{season}', String(c.seasonIndex + 1))
+            .replace('{w}', String(won))
+            .replace('{n}', String(c.results.length)),
+        ),
+      )
+    }
+    case 'TOGGLE_TROPHY': {
+      const t = state.trophies.find(
+        (x) =>
+          x.awardId === action.awardId && x.seasonIndex === action.seasonIndex,
+      )
+      if (!t) return state
+      /* Six on the shelf is six. Taking one down is always allowed. */
+      if (!t.displayed && shelfFull(state))
+        return withLog(
+          state,
+          'flavor',
+          'The shelf holds six. Something has to come down first.',
+        )
+      return sync({
+        ...state,
+        trophies: state.trophies.map((x) =>
+          x === t ? { ...x, displayed: !x.displayed } : x,
+        ),
+      })
     }
     case 'END_WEEK':
       /* Unresolved decisions block the week. The button is disabled too, but
@@ -1508,6 +1643,27 @@ export function reducer(state: GameState, action: Action): GameState {
       return sync(applyEvent(state, 'showdown').state)
     case 'DEBUG_KING_CHECK':
       return sync(checkKing(state).state)
+    case 'DEBUG_JUMP_TO_NOMINATIONS':
+      /* Rewinds the season start so THIS week is season week 12. */
+      return sync({
+        ...state,
+        seasonStartWeek: state.week - (P7.NOMINATION_WEEK_OFFSET - 1),
+      })
+    case 'DEBUG_FORCE_CEREMONY':
+      return sync({
+        ...state,
+        seasonStartWeek: state.week - (P7.SEASON_WEEKS - 1),
+        nominations: state.nominations ?? computeNominations(state),
+      })
+    case 'DEBUG_GRANT_TROPHY': {
+      if (!awardOf(action.awardId)) return state
+      const trophy = {
+        awardId: action.awardId,
+        seasonIndex: state.season.seasonIndex,
+        displayed: !shelfFull(state),
+      }
+      return sync({ ...state, trophies: [...state.trophies, trophy] })
+    }
     case 'IMPORT_SAVE': {
       const s = sync({
         ...initialState(),
@@ -1526,6 +1682,136 @@ export function reducer(state: GameState, action: Action): GameState {
       return initialState()
     default:
       return state
+  }
+}
+
+/**
+ * §5 + §6 — the awards beat of End Week. Nominations land at season week 12;
+ * the ceremony runs at 13 and rolls the season over. Everything else is a
+ * no-op, which is most weeks.
+ *
+ * `events` is the Week Summary's incident list, appended in place the same way
+ * the milestone and event steps do it.
+ */
+function awardsStep(s: GameState, events: string[]): GameState {
+  const sw = seasonWeek(s)
+
+  if (sw === P7.NOMINATION_WEEK_OFFSET) {
+    const nominations = computeNominations(s)
+    const names = nominations
+      .map((id) => awardOf(id)?.name ?? id)
+      .join(', ')
+    return withLog(
+      { ...s, nominations },
+      'event',
+      NOMINATIONS_LINE.replace('{n}', String(nominations.length)).replace(
+        '{list}',
+        names,
+      ),
+    )
+  }
+
+  if (sw < P7.SEASON_WEEKS) return s
+
+  /* A career that ends this week does not attend. */
+  if (s.gameOver || s.cash < LOSE_AT)
+    return rollSeason(withLog(s, 'event', GAME_OVER_CEREMONY_LINE))
+
+  /* §6.6 — the previous season's sponsor penalty expires as this one opens. */
+  let out: GameState = {
+    ...s,
+    sponsorCringeSeasons: Math.max(0, s.sponsorCringeSeasons - 1),
+  }
+  /* Nominations exist even if the player never saw week 12 (a migrated save
+     landing straight on 13, or a debug jump). */
+  const nominations = out.nominations ?? computeNominations(out)
+  const seasonIndex = out.season.seasonIndex
+  const { results, upsets } = runCeremony(out)
+
+  out = withLog(out, 'event', CEREMONY_OPEN_LINE)
+  upsets.forEach(() => {
+    out = withLog(out, 'event', UPSET_LINE)
+  })
+
+  /* §6.5 — trophies first, so the shelf fills in ceremony order. */
+  const wins = playerWins(results)
+  for (const r of wins) {
+    const award = awardOf(r.awardId)!
+    out = {
+      ...out,
+      trophies: [
+        ...out.trophies,
+        {
+          awardId: r.awardId,
+          seasonIndex,
+          displayed: !shelfFull(out),
+        },
+      ],
+    }
+    out = withLog(
+      out,
+      'promotion',
+      award.winLine.replace('{weeks}', String(out.week)),
+    )
+  }
+
+  /* A loss only stings where you were nominated to lose. */
+  for (const r of results) {
+    if (r.winnerId === PLAYER_NOMINEE) continue
+    if (!nominations.includes(r.awardId)) continue
+    const award = awardOf(r.awardId)!
+    out = withLog(
+      out,
+      'event',
+      award.loseLine.replaceAll('{winner}', nomineeName(r.winnerId)),
+    )
+  }
+
+  /* The table pays its reputation once, on the night. */
+  const tier = tierOf(out.tableTier)
+  if (tier.repGain)
+    out = { ...out, reputation: clampRep(out.reputation + tier.repGain) }
+  if (tier.id === 'sponsor') out = { ...out, sponsorCringeSeasons: 1 }
+
+  if (wins.length >= 5) {
+    out = { ...out, reputation: clampRep(out.reputation + P7.SWEEP_BONUS_REP) }
+    out = withLog(out, 'promotion', SWEEP_LINE)
+  }
+  if (wins.length === 0 && nominations.length >= 3) {
+    out = {
+      ...out,
+      permBonuses: {
+        ...out.permBonuses,
+        hustle: out.permBonuses.hustle + P7.SHUTOUT_HUSTLE,
+      },
+    }
+    out = withLog(
+      out,
+      'event',
+      SHUTOUT_LINE.replace('{n}', String(nominations.length)),
+    )
+  }
+
+  events.push(
+    'The Goldies — ' + wins.length + ' of ' + results.length,
+  )
+
+  out = {
+    ...out,
+    awardHistory: [...out.awardHistory, { seasonIndex, results }],
+    ceremony: { seasonIndex, results, revealIndex: 0, speechGiven: false },
+  }
+  return rollSeason(out)
+}
+
+/** §6.6 — a fresh ledger for the season that starts next week. */
+function rollSeason(s: GameState): GameState {
+  return {
+    ...s,
+    season: emptySeasonStats(s.season.seasonIndex + 1),
+    seasonStartWeek: s.week + 1,
+    nominations: null,
+    tableTier: 'none',
   }
 }
 
@@ -1607,6 +1893,7 @@ export function endWeek(state: GameState): GameState {
 
   if (spend > 0) {
     s = { ...s, cash: s.cash - spend }
+    s = bumpSeason(s, 'marketingSpend', spend)
     money_out.push(['Marketing', spend])
   }
 
@@ -1641,8 +1928,14 @@ export function endWeek(state: GameState): GameState {
   /* Your benches, your blocks — Downtown dominance pays an extra point. */
   const benchBonus =
     s.activeChannelIds.length > 0 && perkActive(s, 'benchmark') ? 1 : 0
-  const repGain = weeklyChannelRep(s) + benchBonus
-  if (repGain) s = { ...s, reputation: clampRep(s.reputation + repGain) }
+  /* Two trophies pay reputation every week they are on the shelf. */
+  const trophyRep =
+    (hasPerk(s, 'benchLove') ? 1 : 0) + (hasPerk(s, 'agentOfTheYear') ? 2 : 0)
+  const repGain = weeklyChannelRep(s) + benchBonus + trophyRep
+  if (repGain) {
+    s = { ...s, reputation: clampRep(s.reputation + repGain) }
+    s = bumpSeason(s, 'repGained', repGain)
+  }
   if (s.activeChannelIds.length === 0) {
     const decayed = clampRep(s.reputation - repDecayFor(s, REP_DECAY_PER_WEEK))
     if (decayed < s.reputation) {
@@ -1740,7 +2033,7 @@ export function endWeek(state: GameState): GameState {
   /* 4. cringe event (independent, ego >= 8) */
   if (shouldCringe(s)) {
     const r = applyEvent(s, 'cringeEvent')
-    s = r.state
+    s = bumpSeason(r.state, 'cringeEvents')
     events.push(r.label)
     money_out.push([r.label, -r.cashDelta])
   }
@@ -1791,13 +2084,21 @@ export function endWeek(state: GameState): GameState {
     )
   }
 
+  /* 18. THE GOLDIES. Nominations at season week 12, the ceremony at 13. Sits
+     after promotions (a rank earned tonight is a rank you accept the award at)
+     and before the week rolls, so seasonWeek() still reads the week ending. */
+  s = awardsStep(s, events)
+
   /* 6. tidy modifiers, roll the week */
   s = {
     ...s,
     activeModifiers: s.activeModifiers.filter((m) => m.expiresWeek > s.week),
     statModifiers: s.statModifiers.filter((m) => m.expiresWeek > s.week),
     week: s.week + 1,
-    ap: getChar(s).apPerWeek,
+    /* Rookie of the Year buys one extra point every fourth week, forever. */
+    ap:
+      getChar(s).apPerWeek +
+      (hasPerk(s, 'rookieEnergy') && (s.week + 1) % 4 === 0 ? 1 : 0),
   }
   s = sync(s)
 

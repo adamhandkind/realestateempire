@@ -16,6 +16,7 @@ import type {
   UnitState,
 } from '../state/types'
 import { hasFlag } from './characters'
+import { hasPerk } from './perks'
 import { rankIndex } from './economy'
 import { DISTRICTS } from '../data/districts'
 import { districtsForType, perkActive, priceMultOf } from './territory'
@@ -182,9 +183,11 @@ export const applicantChance = (
     P3.APPLICANT_MAX,
   )
 
-/** Every student on Colborne knows your sign. */
+/** Every student on Colborne knows your sign — and a Community Service Honour
+ *  on the shelf makes every unit easier to fill, everywhere. */
 export const applicantBonusFor = (s: GameState, p: Property): number =>
-  p.districtId === 'echoPlace' && perkActive(s, 'roomForRent') ? 0.15 : 0
+  (p.districtId === 'echoPlace' && perkActive(s, 'roomForRent') ? 0.15 : 0) +
+  (hasPerk(s, 'goodNeighbour') ? 0.05 : 0)
 
 export const tenantAvailable = (
   t: TenantArchetype,
