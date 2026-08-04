@@ -37,6 +37,7 @@ import type {
   TenantEventDef,
   UnitState,
 } from '../state/types'
+import { bumpSeason } from './awards'
 import { clampRep } from './economy'
 import { withLog } from './log'
 import { perkActive } from './territory'
@@ -592,6 +593,7 @@ export function tickProperties(state: GameState, ctx: WeekCtx): GameState {
             x.isVrbo && r.projectId === 'full' ? true : x.vrboRenoDone,
         }))
         rowOf(ctx, p).events.push('Renovation complete')
+        s = bumpSeason(s, 'renovationsCompleted')
         s = withLog(
           s,
           'money',
@@ -615,6 +617,9 @@ export function tickProperties(state: GameState, ctx: WeekCtx): GameState {
         } else {
           s = moveOut(s, live()!, cur)
           rowOf(ctx, p).events.push('Eviction complete')
+          /* Counted when it lands, not when it was filed — the Board judges
+             the family on the curb, not the paperwork. */
+          s = bumpSeason(s, 'tenantsEvicted')
         }
         continue
       }

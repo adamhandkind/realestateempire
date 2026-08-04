@@ -7,6 +7,7 @@ import {
   repUnlocked,
 } from './economy'
 import { getChar, hasFlag } from './characters'
+import { hasPerk } from './perks'
 import { P5 } from '../data/p5'
 import { pick, rand, randInt, roundTo, weightedPick } from './rand'
 import { PRICE_ROUND } from '../data/p3'
@@ -105,6 +106,10 @@ export function closeChance(state: GameState, lead: Lead): number {
   /* Presence is the only share-to-close link. Dominance pays out in perks. */
   if (hasPresence(state, lead.districtId)) c += 0.05
   if (lead.referralBonus) c += 0.1
+  /* Hardware on the shelf, working. Only DISPLAYED trophies count. */
+  if (hasPerk(state, 'topProducerAura')) c += 0.03
+  if (hasPerk(state, 'agentOfTheYear')) c += 0.05
+  if (hasPerk(state, 'luxuryDistinction') && lead.salePrice > 450000) c += 0.06
   return Math.max(0.1, Math.min(0.9, c))
 }
 

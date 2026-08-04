@@ -74,19 +74,35 @@ describe('the market Markov chain never jumps', () => {
   it('only ever moves through normal', () => {
     setSeed(77)
     let s: GameState = { ...initialState(), rank: 'topProducer', cash: 200000 }
-    const seen: string[] = [s.marketState]
+    /* A crash slams the market to cold outside the chain — it is not a Markov
+       step. Each crash therefore breaks the run into a separate chain, and
+       only transitions WITHIN a chain are the thing under test. */
+    const chains: string[][] = [[s.marketState]]
+    let crashed = false
     for (let i = 0; i < 600; i++) {
       s = advance(s)
-      if (s.marketState !== seen[seen.length - 1]) seen.push(s.marketState)
+      if (s.crash.weeksLeft > 0) {
+        crashed = true
+        continue
+      }
+      if (crashed) {
+        chains.push([s.marketState])
+        crashed = false
+        continue
+      }
+      const chain = chains[chains.length - 1]
+      if (s.marketState !== chain[chain.length - 1]) chain.push(s.marketState)
       if (s.gameOver) break
     }
     setSeed(null)
-    for (let i = 1; i < seen.length; i++) {
-      const from = seen[i - 1]
-      const to = seen[i]
-      expect(from === 'hot' && to === 'cold').toBe(false)
-      expect(from === 'cold' && to === 'hot').toBe(false)
-    }
+    const seen = chains.flat()
+    for (const chain of chains)
+      for (let i = 1; i < chain.length; i++) {
+        const from = chain[i - 1]
+        const to = chain[i]
+        expect(from === 'hot' && to === 'cold').toBe(false)
+        expect(from === 'cold' && to === 'hot').toBe(false)
+      }
     /* The run has to actually exercise a transition for the above to mean
        anything. */
     expect(seen.length).toBeGreaterThan(1)

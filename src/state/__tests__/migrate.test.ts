@@ -47,12 +47,15 @@ describe('migrate', () => {
     expect(s.ownedSwagIds).toEqual(['discountSuit', 'gasSunnies'])
     expect(s.equipped.outfit).toBe('discountSuit')
     expect(s.counters.dealsClosed).toBe(11)
-    expect(s.log).toHaveLength(1)
+    /* The original entry, plus Phase 7's inaugural-Goldies announcement. */
+    expect(s.log).toHaveLength(2)
+    expect(s.log[1].text).toBe('something happened')
+    expect(s.log[0].text).toContain('Golden Lockbox Awards')
   })
 
   it('fills every new v2 field with a default', () => {
     const s = migrate(V1_SAVE)!
-    expect(s.version).toBe(5)
+    expect(s.version).toBe(6)
     expect(s.reputation).toBe(0)
     expect(s.activeChannelIds).toEqual([])
     expect(s.outfitPresets).toEqual([null, null, null])
@@ -150,7 +153,7 @@ describe('v2 -> v3 migration', () => {
     delete v2.peakNetWorth
     delete v2.firstP3Week
     const out = migrate(v2)!
-    expect(out.version).toBe(5)
+    expect(out.version).toBe(6)
     expect(out.properties).toEqual([])
     expect(out.marketState).toBe('normal')
     expect(out.crash).toEqual({ weeksLeft: 0, lastCrashWeek: -999 })
@@ -183,7 +186,7 @@ describe('v2 -> v3 migration', () => {
   it('chain-migrates a v1 save', () => {
     const v1 = { version: 1, week: 3, cash: 900, rank: 'sellerAgent' }
     const out = migrate(v1)!
-    expect(out.version).toBe(5)
+    expect(out.version).toBe(6)
     expect(out.reputation).toBe(0)
     expect(out.marketPool).toHaveLength(4)
   })

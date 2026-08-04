@@ -1,4 +1,5 @@
-import type { Dispatch } from 'react'
+import { useState, type Dispatch } from 'react'
+import TrophyRoom from './TrophyRoom'
 import {
   SLOTS,
   SWAG,
@@ -25,6 +26,42 @@ function StatChips({ it }: { it: SwagItem }) {
 }
 
 export default function ClosetTab({
+  state,
+  dispatch,
+}: {
+  state: GameState
+  dispatch: Dispatch<Action>
+}) {
+  const [view, setView] = useState<'closet' | 'trophies'>('closet')
+  const trophyCount = (state.trophies ?? []).length
+
+  return (
+    <>
+      <div className="res-tabs res-segmented">
+        <button
+          className={'res-tab' + (view === 'closet' ? ' on' : '')}
+          onClick={() => setView('closet')}
+        >
+          Closet
+        </button>
+        <button
+          className={'res-tab' + (view === 'trophies' ? ' on' : '')}
+          onClick={() => setView('trophies')}
+        >
+          Trophies{trophyCount ? ' (' + trophyCount + ')' : ''}
+        </button>
+      </div>
+
+      {view === 'trophies' ? (
+        <TrophyRoom state={state} dispatch={dispatch} />
+      ) : (
+        <ClosetShop state={state} dispatch={dispatch} />
+      )}
+    </>
+  )
+}
+
+function ClosetShop({
   state,
   dispatch,
 }: {
