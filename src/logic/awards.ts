@@ -125,14 +125,24 @@ export const isUpgrade = (from: TableTierId, to: TableTierId): boolean =>
 const jitter = (n: number): number =>
   n * (1 + (rand() * (P7.SCORE_JITTER * 2) - P7.SCORE_JITTER))
 
-/** §6.1 — one player score: raw, plus the table bonus, jittered, floored at 0. */
+/**
+ * §6 normalization. Each category's formula has its own natural magnitude —
+ * Top Producer runs in the hundreds, People's Choice Bench in the tens — so a
+ * raw score means nothing next to a flat rival base. Dividing by the award's
+ * `reference` (the raw a dominant season produces) puts all nine on one ~0–100
+ * scale, where 100 is "you owned this category" and RIVAL_BASE is a real bar.
+ */
+export const normalize = (raw: number, award: AwardDef): number =>
+  Math.max(0, (raw / award.reference) * 100)
+
+/** §6.1 — normalize, add the table bonus, jitter, floor at 0. */
 export function playerScore(
   s: GameState,
   season: SeasonStats,
   award: AwardDef,
 ): number {
-  const raw = award.score(s, season)
-  const withTable = raw + tierOf(s.tableTier ?? 'none').scoreBonus
+  const norm = normalize(award.score(s, season), award)
+  const withTable = norm + tierOf(s.tableTier ?? 'none').scoreBonus
   return Math.max(0, jitter(withTable))
 }
 
@@ -142,7 +152,7 @@ export function provisionalPlayerScore(
   season: SeasonStats,
   award: AwardDef,
 ): number {
-  return Math.max(0, award.score(s, season))
+  return normalize(award.score(s, season), award)
 }
 
 /** Total share a rival holds across the city. 0 without Territory. */

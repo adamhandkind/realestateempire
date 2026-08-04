@@ -32,6 +32,7 @@ export const AWARDS: AwardDef[] = [
       'Decided entirely by volume. Sponsored by a mortgage broker who is not present.',
     score: (_s, season) => season.commissionEarned / 100 + season.dealsClosed * 15,
     rivalAffinity: { chadwick: 1.3, zambonis: 1.2, krystal: 0.9 },
+    reference: 780,
     perk: {
       id: 'topProducerAura',
       text: '+0.03 close chance on every lead. People have heard of you.',
@@ -48,6 +49,7 @@ export const AWARDS: AwardDef[] = [
       'Awarded to 40% of attendees annually. The math has never been questioned.',
     score: (_s, season) => 50 + season.commissionEarned / 300,
     rivalAffinity: { chadwick: 1.1, zambonis: 1.1, krystal: 1.1 },
+    reference: 150,
     perk: {
       id: 'onePercentPlaque',
       text: 'Purely decorative. Adds Ego. That is the entire function.',
@@ -63,6 +65,7 @@ export const AWARDS: AwardDef[] = [
     subtitle: 'A real category. Judged by three people from the printing sponsor.',
     score: (_s, season) => season.swagSpend / 40 + season.marketingSpend / 25,
     rivalAffinity: { chadwick: 0.8, zambonis: 1.4, krystal: 1.3 },
+    reference: 150,
     perk: {
       id: 'signageRespect',
       text: 'Marketing channels cost 5% less. The printer owes you nothing but gives anyway.',
@@ -79,6 +82,7 @@ export const AWARDS: AwardDef[] = [
     score: (s, season) =>
       repOf(s) + season.repGained * 2 + dominantDistrictCount(s) * 8,
     rivalAffinity: { chadwick: 0.9, zambonis: 1.2, krystal: 1.5 },
+    reference: 100,
     perk: {
       id: 'benchLove',
       text: '+1 Reputation per week, forever. The bench remembers.',
@@ -97,6 +101,7 @@ export const AWARDS: AwardDef[] = [
         ? 60 + season.dealsClosed * 10
         : Math.max(0, 40 - (s.week - 40)),
     rivalAffinity: { chadwick: 0.4, zambonis: 0.7, krystal: 1.0 },
+    reference: 120,
     perk: {
       id: 'rookieEnergy',
       text: '+1 AP every 4th week. Youthful vigour, contractually.',
@@ -114,6 +119,7 @@ export const AWARDS: AwardDef[] = [
     score: (_s, season) =>
       season.showingsRun * 6 + season.closeAttempts * 4 + season.districtsFarmed * 5,
     rivalAffinity: { chadwick: 0.8, zambonis: 1.5, krystal: 1.1 },
+    reference: 300,
     perk: {
       id: 'hustleTrophy',
       text: '+1 Hustle while displayed. The trophy is watching.',
@@ -129,6 +135,7 @@ export const AWARDS: AwardDef[] = [
     subtitle: 'Minimum one sale over $500,000, or a convincing anecdote.',
     score: (s, season) => season.biggestSale / 4000 + portfolioValue(s) / 20000,
     rivalAffinity: { chadwick: 1.6, zambonis: 0.5, krystal: 0.9 },
+    reference: 250,
     perk: {
       id: 'luxuryDistinction',
       text: '+0.06 close chance on leads priced over $450,000.',
@@ -151,6 +158,7 @@ export const AWARDS: AwardDef[] = [
           season.dealsClosed * 2,
       ),
     rivalAffinity: { chadwick: 0.6, zambonis: 1.3, krystal: 1.0 },
+    reference: 150,
     perk: {
       id: 'goodNeighbour',
       text: 'Bad-review event weight halved. Tenant applicant chance +5%.',
@@ -167,6 +175,7 @@ export const AWARDS: AwardDef[] = [
     /* Never called — §6.4 computes this from the other eight results. */
     score: () => 0,
     rivalAffinity: { chadwick: 1.4, zambonis: 1.0, krystal: 1.1 },
+    reference: 100,
     perk: {
       id: 'agentOfTheYear',
       text: '+0.05 close chance, +2 Reputation per week, and a permanent laurel on your name.',

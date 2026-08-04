@@ -14,7 +14,9 @@ import { PERK_AWARD, hasPerk, trophyEgo } from '../perks'
 import {
   computeNominations,
   displayedCount,
+  normalize,
   playerScore,
+  provisionalPlayerScore,
   playerWins,
   rivalRoster,
   rivalScore,
@@ -247,6 +249,138 @@ describe('scoring', () => {
     const { results } = runCeremony(atSeasonWeek(13))
     for (const r of results)
       expect(Object.keys(r.scores)).toHaveLength(P7.NOMINEES_PER_CATEGORY)
+  })
+})
+
+/* --------------------------------------------- §6 normalization + §13 */
+
+describe('normalization puts all nine categories on one scale', () => {
+  it('gives every award a positive reference', () => {
+    for (const a of AWARDS) expect(a.reference).toBeGreaterThan(0)
+  })
+
+  it('maps a reference-sized raw score to 100', () => {
+    for (const a of AWARDS) expect(normalize(a.reference, a)).toBeCloseTo(100, 6)
+    expect(normalize(0, AWARDS[0])).toBe(0)
+    /* Never negative, however grim the inputs. */
+    expect(normalize(-500, AWARDS[0])).toBe(0)
+  })
+
+  it('lands every category within one order of magnitude of the rival base', () => {
+    /* This is the whole point of normalizing: a single flat RIVAL_BASE has to
+       be a meaningful bar in all nine categories at once. */
+    const season = {
+      ...emptySeasonStats(0),
+      dealsClosed: 6,
+      commissionEarned: 30000,
+      showingsRun: 18,
+      closeAttempts: 9,
+      swagSpend: 3000,
+      biggestSale: 380000,
+    }
+    const s = atSeasonWeek(13, { season, reputation: 12 })
+    for (const a of UNDERCARD) {
+      const score = provisionalPlayerScore(s, season, a)
+      expect(score, a.id).toBeLessThan(P7.RIVAL_BASE * 10)
+    }
+  })
+})
+
+describe('§13 pacing intent', () => {
+  /** Average player wins and sweep rate over many simulated nights. */
+  const simulate = (
+    seed: number,
+    over: Partial<GameState>,
+    runs = 300,
+  ): { avg: number; sweeps: number; onePct: number } => {
+    setSeed(seed)
+    let total = 0
+    let sweeps = 0
+    let onePct = 0
+    for (let i = 0; i < runs; i++) {
+      const { results } = runCeremony(atSeasonWeek(13, over))
+      const wins = playerWins(results).length
+      total += wins
+      if (wins >= 5) sweeps++
+      if (
+        results.find((r) => r.awardId === 'topOnePercent')!.winnerId ===
+        PLAYER_NOMINEE
+      )
+        onePct++
+    }
+    setSeed(null)
+    return { avg: total / runs, sweeps: sweeps / runs, onePct: onePct / runs }
+  }
+
+  const MODEST_S1 = {
+    season: {
+      ...emptySeasonStats(0),
+      dealsClosed: 6,
+      commissionEarned: 30000,
+      showingsRun: 18,
+      closeAttempts: 9,
+      swagSpend: 3000,
+      biggestSale: 380000,
+    },
+    reputation: 12,
+  }
+
+  const SOLID_S4 = {
+    week: 52,
+    season: {
+      ...emptySeasonStats(3),
+      dealsClosed: 14,
+      commissionEarned: 120000,
+      showingsRun: 40,
+      closeAttempts: 20,
+      swagSpend: 20000,
+      marketingSpend: 12000,
+      repGained: 25,
+      biggestSale: 700000,
+      tenantIssuesFixed: 6,
+      renovationsCompleted: 2,
+      districtsFarmed: 8,
+    },
+    reputation: 55,
+    tableTier: 'table' as const,
+  }
+
+  it('wins a first-timer 1–3 Goldies, with topOnePercent nearly guaranteed', () => {
+    const r = simulate(101, MODEST_S1)
+    expect(r.avg).toBeGreaterThanOrEqual(1)
+    expect(r.avg).toBeLessThanOrEqual(3)
+    expect(r.onePct).toBeGreaterThan(0.8)
+    expect(r.sweeps).toBeLessThan(0.02)
+  })
+
+  it('wins 3–5 by season 4 with a table, and still rarely sweeps', () => {
+    const r = simulate(101, SOLID_S4)
+    expect(r.avg).toBeGreaterThanOrEqual(3)
+    expect(r.avg).toBeLessThanOrEqual(5)
+    expect(r.sweeps).toBeLessThan(0.15)
+  })
+
+  it('still lets a genuinely dominant season sweep', () => {
+    const r = simulate(101, {
+      week: 52,
+      season: {
+        ...emptySeasonStats(3),
+        dealsClosed: 40,
+        commissionEarned: 400000,
+        showingsRun: 90,
+        closeAttempts: 55,
+        swagSpend: 60000,
+        marketingSpend: 40000,
+        repGained: 60,
+        biggestSale: 1200000,
+        tenantIssuesFixed: 20,
+        renovationsCompleted: 8,
+        districtsFarmed: 25,
+      },
+      reputation: 95,
+      tableTier: 'sponsor',
+    })
+    expect(r.sweeps).toBeGreaterThan(0.7)
   })
 })
 

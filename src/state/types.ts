@@ -399,8 +399,15 @@ export interface AwardDef {
   name: string
   /** The joke line under the category name. */
   subtitle: string
-  /** The player's score, pre-jitter and pre-table-bonus. */
+  /** The player's RAW score, pre-normalization, pre-jitter, pre-table-bonus. */
   score: (s: GameState, season: SeasonStats) => number
+  /**
+   * The raw score a dominant season in this category produces. §6 divides by
+   * this to put all nine categories on one ~0–100 scale, which is the only
+   * thing that makes a single flat RIVAL_BASE meaningful across formulas whose
+   * natural magnitudes differ by an order of magnitude.
+   */
+  reference: number
   /** rivalId -> multiplier on their rolled score. Missing reads as 1. */
   rivalAffinity: Record<string, number>
   /** Active while the trophy is DISPLAYED. */

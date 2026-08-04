@@ -26,7 +26,7 @@ export const P7 = {
   UPSET_CHANCE: 0.1, // flat chance the top-scored nominee is skipped for #2
   RIVAL_BASE: 40,
   RIVAL_VARIANCE: 25,
-  RIVAL_GROWTH_PER_SEASON: 6, // rivals scale so awards stay contested late
+  RIVAL_GROWTH_PER_SEASON: 14, // rivals scale so awards stay contested late
   TROPHY_EGO: 1, // each trophy adds +1 Ego permanently while displayed
   TROPHY_DISPLAY_CAP: 6, // only 6 can be displayed at once
   SWEEP_BONUS_REP: 20, // winning 5+ in one night
