@@ -172,7 +172,8 @@ export function migrate(raw: unknown): GameState | null {
     call: null,
   }
 
-  /* A v1/v2 save arrives with an empty pool; a v3 save keeps the one it had. */
+  /* A v1/v2 save arrives with an empty pool; a v3-or-later save keeps the one
+     it had. A call open at save time never survives — see below. */
   return dropInterruptedCall(
     fillPool(placeOnTheMap(out, typeof s.territory === 'object')),
     s.call as { leadId?: string } | null | undefined,
