@@ -533,12 +533,20 @@ describe('the Zamboni discount', () => {
         stage: 'ready',
         salePrice: 400000,
       }
-      let out = { ...s, leads: [lead], ap: 5 }
+      /* This lead sits exactly on the Phase 8 call threshold, and the undercut
+         is a commission-math concern, not a dialogue one. Pin it to the dice
+         path so it keeps testing what it was written to test. */
+      let out = { ...s, leads: [lead], ap: 5, callsEnabled: false }
       let guard = 0
       while (out.counters.dealsClosed === 0 && guard++ < 60) {
         const cashBefore = out.cash
         const next = reducer(
-          { ...out, ap: 5, leads: [{ ...lead, retriedClose: false }] },
+          {
+            ...out,
+            ap: 5,
+            callsEnabled: false,
+            leads: [{ ...lead, retriedClose: false }],
+          },
           { type: 'ATTEMPT_CLOSE', leadId: lead.id },
         )
         if (next.counters.dealsClosed > 0) return next.cash - cashBefore
