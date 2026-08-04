@@ -80,6 +80,12 @@ export function beatOf(id: string): CallBeat {
   )
 }
 
+/** Clamps any turn number onto the three generic beats. The reducer calls
+ *  pickBeat with `turn + 1`, so this has to tolerate an out-of-range value
+ *  rather than trusting the caller. */
+const genericTurn = (turn: number): 1 | 2 | 3 =>
+  turn === 2 ? 2 : turn === 3 ? 3 : 1
+
 const legalFor = (b: CallBeat, lead: Lead, turn: number): boolean =>
   (b.archetypeIds === 'any' || b.archetypeIds.includes(lead.archetypeId)) &&
   (b.turn === turn || b.turn === 'any')
@@ -98,5 +104,5 @@ export function pickBeat(lead: Lead, turn: number, usedBeatIds: string[]): CallB
     (b) => b.archetypeIds === 'any' && (b.turn === turn || b.turn === 'any') && unused(b),
   )
   if (generic.length) return pick(generic)
-  return GENERIC_BEATS[(turn === 2 ? 2 : turn === 3 ? 3 : 1) as 1 | 2 | 3]
+  return GENERIC_BEATS[genericTurn(turn)]
 }
