@@ -454,16 +454,31 @@ describe('archetype tells', () => {
     })
   })
 
-  it('gives every archetype exactly one great and at least one bad or terrible', () => {
+  it('gives every archetype exactly one great', () => {
     Object.entries(ARCHETYPE_TELLS).forEach(([id, row]) => {
       if (id === 'default') return
       const vals = PLAYABLE.map((t) => row[t])
       expect(vals.filter((v) => v === 'great'), id).toHaveLength(1)
-      expect(
-        vals.filter((v) => v === 'bad' || v === 'terrible').length,
-        id,
-      ).toBeGreaterThan(0)
     })
+  })
+
+  /* Five agreeable archetypes have no way to actively blow it — they have an
+     obvious right answer and no punishing cell. That is deliberate: it is what
+     makes the luxury tier's terribles feel sharp by contrast. Pinned here so an
+     accidental edit is caught in either direction. See spec §6's correction
+     note — the source spec's "at least one bad/terrible" claim is not true of
+     the table it annotates. */
+  it('leaves exactly five archetypes with no negative tell', () => {
+    const noNegative = Object.entries(ARCHETYPE_TELLS)
+      .filter(([id]) => id !== 'default')
+      .filter(([, row]) =>
+        PLAYABLE.every((t) => row[t] !== 'bad' && row[t] !== 'terrible'),
+      )
+      .map(([id]) => id)
+      .sort()
+    expect(noNegative).toEqual(
+      ['flipBro', 'ghostGary', 'hgtvCouple', 'relocRob', 'techTyler'].sort(),
+    )
   })
 
   it('keeps the luxury split — Lorenzo and Cleo reward Flex, Otis punishes it', () => {
@@ -770,7 +785,7 @@ export const CLIENT_REPLIES: Record<Reaction, string[]> = {
 - [ ] **Step 4: Run the test and watch it pass**
 
 Run: `npx vitest run src/logic/__tests__/call.test.ts`
-Expected: PASS, 15 tests.
+Expected: PASS, 18 tests total (7 carried over from Tasks 1–2, 11 added here).
 
 - [ ] **Step 5: Commit**
 

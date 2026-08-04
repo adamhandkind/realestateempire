@@ -247,11 +247,30 @@ existence-checked; unknown archetypes fall back to the `default` row.
 | `luxLorenzo` | neutral | bad | good | **great** |
 | `oldMoneyOtis` | good | terrible | **great** | terrible |
 
-**Do not alter this table.** Every archetype has exactly one `great` and at least one
-`bad`/`terrible`. The luxury-tier split — Lorenzo/Cleo reward Flex, Otis punishes it — is
-the single most important balance line in the design, because it forces loadout-aware play
-on exactly the leads that pay the most. All 14 archetypes exist in `src/data/archetypes.ts`,
-so no row is unreachable in this repo.
+**Do not alter this table.** The luxury-tier split — Lorenzo/Cleo reward Flex, Otis
+punishes it — is the single most important balance line in the design, because it forces
+loadout-aware play on exactly the leads that pay the most. All 14 archetypes exist in
+`src/data/archetypes.ts`, so no row is unreachable in this repo.
+
+**Correction to the source spec's design note.** The source spec claims "every archetype
+has exactly one `great` and at least one `bad`/`terrible`." Only the first half is true.
+Audited cell by cell, five archetypes have **no** negative tell at all:
+
+| archetype | greats | negatives |
+|---|---|---|
+| `hgtvCouple` | 1 | 0 |
+| `relocRob` | 1 | 0 |
+| `flipBro` | 1 | 0 |
+| `techTyler` | 1 | 0 |
+| `ghostGary` | 1 | 0 |
+
+The other nine all have one or two. The table is the authoritative content and stays
+exactly as written — the note describing it was wrong, not the data. Reading it as intent
+rather than error: those five are the agreeable client types (the couple, the relocation,
+the two investors, and the ghost). They have an obvious right answer and no way to actively
+blow it, which is what makes the luxury tier's `terrible` cells feel sharp by contrast.
+Tests must assert the one-`great` rule and pin these five exceptions explicitly, not assert
+a universal negative that does not exist.
 
 ---
 
