@@ -246,3 +246,43 @@ body{margin:0;background:var(--ink);color:var(--marble);
   .res-tabs { gap: 5px; }
   .res-tabs > .res-tab { flex: 1 1 30%; padding: 9px 4px; font-size: 11px; }
 }
+
+/* ---------------------------------------------------------- phase 8 UI */
+.res-call { max-width: 560px; }
+.res-call-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.res-call-price { font-family: "Archivo Black", sans-serif; font-size: 20px; color: var(--brass); }
+
+/* The meter is centred at zero: brass grows right, sold-red grows left. */
+.res-meter { position: relative; height: 10px; background: #ddd7c8; border-radius: 5px; margin: 12px 0 4px; overflow: hidden; }
+.res-meter i { position: absolute; top: 0; bottom: 0; left: 50%; background: var(--brass); transition: width .35s ease, transform .35s ease; }
+.res-meter i.neg { background: var(--sold); transform: translateX(-100%); }
+.res-meter::after { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: rgba(20,22,31,.35); }
+.res-meter-label { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: #5e6270; }
+
+.res-call-pips { display: flex; gap: 6px; margin: 10px 0; }
+.res-call-pips i { width: 9px; height: 9px; border-radius: 50%; background: #cfc9ba; }
+.res-call-pips i.on { background: var(--brass); }
+
+.res-beat { font-size: 17px; line-height: 1.45; margin: 10px 0 4px; min-height: 3.2em; }
+.res-beat .glyph { color: var(--brass); margin-right: 6px; }
+
+.res-bubbles { margin: 10px 0; display: flex; flex-direction: column; gap: 8px; }
+.res-bub { max-width: 82%; padding: 9px 12px; border-radius: 12px; font-size: 14px; line-height: 1.4; }
+.res-bub.me { align-self: flex-end; background: var(--ink); color: var(--marble); border-bottom-right-radius: 3px; }
+.res-bub.them { align-self: flex-start; background: #e6e0d2; color: var(--ink); border-bottom-left-radius: 3px; }
+.res-delta { font-family: "Archivo Black", sans-serif; font-size: 15px; align-self: flex-end; }
+.res-delta.up { color: var(--mint); }
+.res-delta.down { color: var(--sold); }
+
+.res-tactics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.res-tactic { position: relative; text-align: left; padding: 10px 11px; border-radius: 10px; border: 1px solid rgba(20,22,31,.22);
+  background: #fffdf7; color: var(--ink); cursor: pointer; font: inherit; }
+.res-tactic:disabled { opacity: .45; cursor: default; }
+.res-tactic b { display: block; font-family: "Archivo Black", sans-serif; font-size: 14px; }
+.res-tactic span { display: block; font-size: 11.5px; color: #5e6270; margin-top: 2px; }
+.res-tactic.dim span { opacity: .5; }
+.res-tactic .used { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--sold); }
+.res-tactic .badge { position: absolute; top: 7px; right: 9px; font-size: 14px; }
+.res-tactic .badge.good { color: var(--brass); }
+.res-tactic .badge.avoid { color: var(--sold); }
+.res-tactic.wide { grid-column: 1 / -1; }
