@@ -68,8 +68,8 @@ case 'ATTEMPT_CLOSE': {
 | `src/data/p8.ts` | create | The `P8` tuning constants. Nothing else. |
 | `src/data/callCards.ts` | create | `CALL_CARDS` — the five tactics, their hints, their player lines. Pure data. |
 | `src/data/callBeats.ts` | create | `CALL_BEATS`, `GENERIC_BEATS`, `CLIENT_REPLIES`, `ARCHETYPE_TELLS`. Pure data. |
-| `src/logic/stateOps.ts` | create | `sync` and `applyAccentSlip`, moved out of `reducer.ts` so `close.ts` can use them without an import cycle. |
-| `src/logic/close.ts` | create | `resolveClose(state, lead, finalChance)` — the shared close outcome. |
+| `src/logic/close.ts` | create | `resolveClose(state, lead, finalChance)` — the shared close outcome, plus the module-private `applyAccentSlip` it is the only caller of. |
+| `src/logic/economy.ts` | modify | Gains `sync`, moved out of `reducer.ts` (it is a one-line wrapper over `deriveStats`, which lives here). |
 | `src/logic/call.ts` | create | The pure turn engine. No reducer knowledge, no React. |
 | `src/components/CallModal.tsx` | create | The blocking modal. |
 | `src/state/types.ts` | modify | New call types, `GameState` fields, new `Action` members. |
@@ -809,7 +809,18 @@ git commit -m "feat(call): beats, archetype tells, and client replies"
 - Create: `src/logic/stateOps.ts`, `src/logic/close.ts`
 - Modify: `src/state/reducer.ts`
 
-`close.ts` needs `sync` and `applyAccentSlip`, which are private to `reducer.ts`. If `close.ts` imported them from `reducer.ts` while `reducer.ts` imported `resolveClose` from `close.ts`, that is an import cycle. Move both helpers into a new `stateOps.ts` that neither imports.
+`close.ts` needs `sync` and `applyAccentSlip`, which are private to `reducer.ts`. If `close.ts` imported them from `reducer.ts` while `reducer.ts` imported `resolveClose` from `close.ts`, that is an import cycle.
+
+> **Correction, applied during execution — `stateOps.ts` does not exist.** This plan
+> originally created `src/logic/stateOps.ts` to hold both helpers. That was a module named
+> after its own extraction reason, pairing a generic helper with a close-specific one that
+> had nothing to do with it. The cycle fear was also unfounded: the real import graph shows
+> `economy.ts` importing only data files, `territory.ts`, and `rand.ts`, and `characters.ts`
+> importing only data files. Both helpers therefore have proper homes and no shim is needed:
+> **`sync` lives in `economy.ts`**, exported, directly below the `deriveStats` it wraps in
+> one line; **`applyAccentSlip` lives in `close.ts`** as a module-private function, `close.ts`
+> being its only caller in the repo. The steps below are preserved as originally written for
+> the record — read Step 2 and the imports in Steps 3, 5, and 6 accordingly.
 
 **This task must not change behaviour.** The existing test suite is the proof.
 
