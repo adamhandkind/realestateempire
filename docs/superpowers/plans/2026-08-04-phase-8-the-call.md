@@ -557,10 +557,17 @@ type TellRow = Record<PlayableTactic, Reaction>
  * Default reaction per archetype per tactic. A beat's own `tell` overrides an
  * individual cell; this is the fallback underneath it.
  *
- * DO NOT ALTER THIS TABLE. Every archetype has exactly one `great` and at
- * least one `bad`/`terrible`. The luxury-tier split — Lorenzo and Cleo reward
+ * DO NOT ALTER THIS TABLE. The luxury-tier split — Lorenzo and Cleo reward
  * Flex, Otis punishes it — is the single most important balance line in the
  * design, because it forces loadout-aware play on the leads that pay the most.
+ *
+ * Every archetype has exactly one `great`. Not every archetype has a negative:
+ * flipBro, ghostGary, hgtvCouple, relocRob and techTyler have no `bad` or
+ * `terrible` cell at all. That is deliberate — they are the agreeable clients,
+ * with an obvious right answer and no way to actively blow it, which is what
+ * makes the luxury tier's `terrible` cells feel sharp by contrast. Both rules
+ * are pinned by tests. If you came here to "fix" one of those five rows,
+ * don't.
  */
 export const ARCHETYPE_TELLS: Record<string, TellRow> = {
   default: { empathize: 'good', push: 'neutral', namedrop: 'good', flex: 'neutral' },
