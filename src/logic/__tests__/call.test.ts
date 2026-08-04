@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { CALL_BEATS, CLIENT_REPLIES } from '../../data/callBeats'
+import { ARCHETYPE_TELLS, CALL_BEATS, CLIENT_REPLIES } from '../../data/callBeats'
 import { cardOf } from '../../data/callCards'
+import { P8 } from '../../data/p8'
+import { arch } from '../leads'
 import {
   beatOf,
   callSummaryLine,
@@ -8,10 +10,14 @@ import {
   momentumWord,
   pickBeat,
   playerLineFor,
+  reactionFor,
   shouldCall,
+  tacticDelta,
 } from '../call'
 import { setSeed } from '../rand'
-import type { Lead } from '../../state/types'
+import { initialState } from '../../state/reducer'
+import { deriveStats } from '../economy'
+import type { GameState, Lead, TacticId } from '../../state/types'
 
 function leadFixture(over: Partial<Lead> = {}): Lead {
   return {
@@ -161,3 +167,173 @@ describe('pickBeat', () => {
     expect(b.archetypeIds).toBe('any')
   })
 })
+
+/** A state with a known ego, for the Flex scaling assertions. */
+const withEgo = (ego: number): GameState => ({
+  ...initialState(),
+  permBonuses: { hustle: 0, swagger: 0, ego },
+})
+const withSwagger = (swagger: number): GameState => ({
+  ...initialState(),
+  permBonuses: { hustle: 0, swagger, ego: 0 },
+})
+
+describe('reactionFor', () => {
+  it('uses the archetype row when the beat has no override', () => {
+    const lead = leadFixture({ archetypeId: 'ghostGary' })
+    expect(reactionFor(lead, beatOf('t3_generic_a'), 'push')).toBe('great')
+    expect(reactionFor(lead, beatOf('t3_generic_a'), 'empathize')).toBe('good')
+  })
+
+  it("lets a beat's tell override the archetype default", () => {
+    /* Otis's row says namedrop: great, push: terrible. t3_generic_b overrides
+       push to great — the beat wins. */
+    const otis = leadFixture({ archetypeId: 'oldMoneyOtis' })
+    expect(ARCHETYPE_TELLS.oldMoneyOtis.push).toBe('terrible')
+    expect(reactionFor(otis, beatOf('t3_generic_b'), 'push')).toBe('great')
+  })
+
+  it('leaves non-overridden tactics on the archetype row', () => {
+    const otis = leadFixture({ archetypeId: 'oldMoneyOtis' })
+    /* t3_generic_b only overrides push. */
+    expect(reactionFor(otis, beatOf('t3_generic_b'), 'flex')).toBe('terrible')
+  })
+
+  it('falls back to the default row for an unknown archetype', () => {
+    const nobody = leadFixture({ archetypeId: 'notARealArchetype' })
+    expect(reactionFor(nobody, beatOf('t3_generic_a'), 'empathize')).toBe('good')
+    expect(reactionFor(nobody, beatOf('t3_generic_a'), 'flex')).toBe('neutral')
+  })
+})
+
+describe('tacticDelta — base values', () => {
+  const s = initialState()
+
+  it('maps each reaction tier to its delta with no scaling in play', () => {
+    /* namedrop is stat-free, so these are the raw tier values. */
+    const otis = leadFixture({ archetypeId: 'oldMoneyOtis' })
+    expect(tacticDelta(s, otis, beatOf('t3_generic_a'), 'namedrop', []).delta)
+      .toBe(P8.GREAT)
+    const nancy = leadFixture({ archetypeId: 'nightmareNancy' })
+    expect(tacticDelta(s, nancy, beatOf('t3_generic_a'), 'namedrop', []).delta)
+      .toBe(P8.NEUTRAL)
+    const larry = leadFixture({ archetypeId: 'lowballLarry' })
+    expect(tacticDelta(s, larry, beatOf('t3_wobble'), 'empathize', []).delta)
+      .toBe(P8.NEUTRAL)
+    const first = leadFixture({ archetypeId: 'firstTimer' })
+    expect(tacticDelta(s, first, beatOf('t3_wobble'), 'empathize', []).delta)
+      .toBe(P8.GREAT)
+  })
+
+  it('returns the reaction alongside the delta', () => {
+    const first = leadFixture({ archetypeId: 'firstTimer' })
+    expect(tacticDelta(s, first, beatOf('t3_wobble'), 'push', []).reaction)
+      .toBe('terrible')
+  })
+})
+
+describe('tacticDelta — repeat penalty', () => {
+  it('compounds at -4, -8, -12 for each prior use', () => {
+    const s = initialState()
+    const otis = leadFixture({ archetypeId: 'oldMoneyOtis' })
+    const at = (used: TacticId[]) =>
+      tacticDelta(s, otis, beatOf('t3_generic_a'), 'namedrop', used).delta
+    expect(at([])).toBe(10)
+    expect(at(['namedrop'])).toBe(6)
+    expect(at(['namedrop', 'namedrop'])).toBe(2)
+    expect(at(['namedrop', 'namedrop', 'namedrop'])).toBe(-2)
+  })
+
+  it('only counts prior uses of the same tactic', () => {
+    const s = initialState()
+    const otis = leadFixture({ archetypeId: 'oldMoneyOtis' })
+    expect(
+      tacticDelta(s, otis, beatOf('t3_generic_a'), 'namedrop', [
+        'empathize',
+        'flex',
+        'read',
+      ]).delta,
+    ).toBe(10)
+  })
+})
+
+describe('tacticDelta — Push scales with Swagger, positive only', () => {
+  it('adds swagger x 0.5 to a positive delta', () => {
+    const s = withSwagger(4)
+    const sw = deriveStats(s).swagger
+    const gary = leadFixture({ archetypeId: 'ghostGary' })
+    expect(tacticDelta(s, gary, beatOf('t3_wobble'), 'push', []).delta).toBe(
+      Math.round(P8.GREAT + sw * P8.SWAGGER_TACTIC_SCALE),
+    )
+  })
+
+  it('leaves a negative delta alone no matter how high Swagger is', () => {
+    const low = withSwagger(0)
+    const high = withSwagger(8)
+    const first = leadFixture({ archetypeId: 'firstTimer' })
+    const a = tacticDelta(low, first, beatOf('t3_wobble'), 'push', []).delta
+    const b = tacticDelta(high, first, beatOf('t3_wobble'), 'push', []).delta
+    expect(a).toBe(P8.TERRIBLE)
+    expect(b).toBe(P8.TERRIBLE)
+  })
+
+  it('leaves a neutral delta alone', () => {
+    const s = withSwagger(8)
+    const izzy = leadFixture({ archetypeId: 'influencerIzzy' })
+    expect(tacticDelta(s, izzy, beatOf('t3_wobble'), 'push', []).delta).toBe(0)
+  })
+})
+
+describe('tacticDelta — Flex scales with ego x egoAffinity, BOTH directions', () => {
+  it('rewards a high-Ego player on luxLorenzo, whose affinity is positive', () => {
+    expect(arch('luxLorenzo').egoAffinity).toBeGreaterThan(0)
+    const flat = initialState()
+    const proud = withEgo(6)
+    const lorenzo = leadFixture({ archetypeId: 'luxLorenzo' })
+    const a = tacticDelta(flat, lorenzo, beatOf('t3_wobble'), 'flex', []).delta
+    const b = tacticDelta(proud, lorenzo, beatOf('t3_wobble'), 'flex', []).delta
+    expect(b).toBeGreaterThan(a)
+  })
+
+  it('punishes that same player on oldMoneyOtis, whose affinity is negative', () => {
+    expect(arch('oldMoneyOtis').egoAffinity).toBeLessThan(0)
+    const flat = initialState()
+    const proud = withEgo(6)
+    const otis = leadFixture({ archetypeId: 'oldMoneyOtis' })
+    const a = tacticDelta(flat, otis, beatOf('t3_wobble'), 'flex', []).delta
+    const b = tacticDelta(proud, otis, beatOf('t3_wobble'), 'flex', []).delta
+    expect(b).toBeLessThan(a)
+  })
+
+  it('drags a merely-good Flex below neutral on a negative-affinity client', () => {
+    /* t2_other_agent overrides flex to 'good' (+5). Otis's egoAffinity is -3,
+       so a proud player gets 5 + (ego x -3 x 0.4) and lands under zero: the
+       tell was positive and the tactic still cost them. This is the whole
+       point of Flex scaling in both directions.
+
+       Note this does NOT hold for every negative-affinity archetype — Ruth at
+       -2 lands on 0.2, which rounds to 0. The rule bites hardest exactly where
+       the design wants it to, on the luxury tier. */
+    const proud = withEgo(6)
+    const otis = leadFixture({ archetypeId: 'oldMoneyOtis' })
+    expect(arch('oldMoneyOtis').egoAffinity).toBeLessThan(0)
+    expect(reactionFor(otis, beatOf('t2_other_agent'), 'flex')).toBe('good')
+    expect(
+      tacticDelta(proud, otis, beatOf('t2_other_agent'), 'flex', []).delta,
+    ).toBeLessThan(0)
+  })
+
+  it('computes the exact scaled value', () => {
+    const proud = withEgo(6)
+    const ego = deriveStats(proud).ego
+    const lorenzo = leadFixture({ archetypeId: 'luxLorenzo' })
+    expect(
+      tacticDelta(proud, lorenzo, beatOf('t3_lux'), 'flex', []).delta,
+    ).toBe(
+      Math.round(
+        P8.GREAT + ego * arch('luxLorenzo').egoAffinity * P8.EGO_TACTIC_SCALE,
+      ),
+    )
+  })
+})
+

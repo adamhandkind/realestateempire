@@ -7,11 +7,19 @@
  */
 
 import { ARCHETYPES } from '../data/archetypes'
-import { CALL_BEATS, CLIENT_REPLIES, GENERIC_BEATS } from '../data/callBeats'
+import { ARCHETYPE_TELLS, CALL_BEATS, CLIENT_REPLIES, GENERIC_BEATS } from '../data/callBeats'
 import { cardOf } from '../data/callCards'
 import { P8 } from '../data/p8'
+import { deriveStats } from './economy'
 import { pick } from './rand'
-import type { CallBeat, Lead, Reaction, TacticId } from '../state/types'
+import type {
+  CallBeat,
+  GameState,
+  Lead,
+  PlayableTactic,
+  Reaction,
+  TacticId,
+} from '../state/types'
 
 /** $400k+, or one of the three archetypes who always get a call. */
 export function shouldCall(lead: Lead): boolean {
@@ -105,4 +113,53 @@ export function pickBeat(lead: Lead, turn: number, usedBeatIds: string[]): CallB
   )
   if (generic.length) return pick(generic)
   return GENERIC_BEATS[genericTurn(turn)]
+}
+
+const REACTION_DELTA: Record<Reaction, number> = {
+  great: P8.GREAT,
+  good: P8.GOOD,
+  neutral: P8.NEUTRAL,
+  bad: P8.BAD,
+  terrible: P8.TERRIBLE,
+}
+
+/** The beat's tell wins; the archetype row is the fallback; an archetype this
+ *  build has never heard of gets the default row. */
+export function reactionFor(
+  lead: Lead,
+  beat: CallBeat,
+  tactic: PlayableTactic,
+): Reaction {
+  const row = ARCHETYPE_TELLS[lead.archetypeId] ?? ARCHETYPE_TELLS.default
+  return beat.tell?.[tactic] ?? row?.[tactic] ?? 'neutral'
+}
+
+/**
+ * The turn's momentum change, before clamping.
+ *
+ * Two tactics read the player's stats, and they read them differently:
+ *
+ *   Push scales with Swagger only when it was already working. Confidence
+ *   makes a good close better; it does not rescue a bad one.
+ *
+ *   Flex scales with ego x egoAffinity in BOTH directions. That asymmetry is
+ *   deliberate and load-bearing. A high-Ego player flexing at Otis, whose
+ *   affinity is -3, does real damage even off a 'good' tell — which is why the
+ *   luxury tier is where loadout choice starts to matter.
+ */
+export function tacticDelta(
+  state: GameState,
+  lead: Lead,
+  beat: CallBeat,
+  tactic: PlayableTactic,
+  usedTactics: TacticId[],
+): { reaction: Reaction; delta: number } {
+  const reaction = reactionFor(lead, beat, tactic)
+  const st = deriveStats(state)
+  let base: number = REACTION_DELTA[reaction]
+  if (tactic === 'push' && base > 0) base += st.swagger * P8.SWAGGER_TACTIC_SCALE
+  if (tactic === 'flex')
+    base += st.ego * egoAffinityOf(lead.archetypeId) * P8.EGO_TACTIC_SCALE
+  base -= P8.REPEAT_PENALTY * usedTactics.filter((t) => t === tactic).length
+  return { reaction, delta: Math.round(base) }
 }
