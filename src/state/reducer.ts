@@ -13,6 +13,7 @@ import {
   PRESET_SLOTS,
   rankIndex,
   repUnlocked,
+  sideHustleBand,
   SLOTS,
   swagOf,
   sync,
@@ -104,7 +105,16 @@ import {
 } from '../logic/characters'
 import { DEFAULT_CHARACTER_ID } from '../data/p5'
 import { UNKNOWN_CHARACTER_LINE } from '../data/characters'
-import { chance, money, pick, randInt, roundTo } from '../logic/rand'
+import {
+  chance,
+  currentSeed,
+  money,
+  pick,
+  randInt,
+  randomSeed,
+  roundTo,
+  setSeed,
+} from '../logic/rand'
 import {
   CONCEDE_LINE,
   DISTRICTS,
@@ -184,13 +194,21 @@ import type {
 } from './types'
 
 export function initialState(): GameState {
+  /* Minted, deliberately NOT installed. Calling setSeed here would clobber a
+     seed the caller had just set — which is exactly what a seeded test does
+     before building a fixture. The new seed takes effect on the first dispatch
+     instead; the draws below (the listing pool) run on whatever cursor is
+     current, which is unpredictable in a real game and pinned in a test. */
+  const rngSeed = randomSeed()
   const base: GameState = {
-    version: 7,
+    version: 8,
     week: 1,
     cash: START_CASH,
     careerEarnings: 0,
     ap: AP_PER_WEEK,
     rank: 'receptionist',
+    rngSeed,
+    sideHustlesThisWeek: 0,
     stats: { hustle: 1, swagger: 1, ego: 0 },
     permBonuses: { hustle: 0, swagger: 0, ego: 0 },
     leads: [],
@@ -398,7 +416,35 @@ const CALL_SAFE_ACTIONS: ReadonlySet<Action['type']> = new Set([
   'DEBUG_REVEAL_TELLS',
 ])
 
+/**
+ * The reducer React actually dispatches to. Pure: it seeds the RNG from the
+ * state it was handed, runs the real reducer, and stores the cursor it ended
+ * on. The same (state, action) pair therefore produces the same next state
+ * every time — under StrictMode's double-invoke, in a test, and after a
+ * refresh, because rngSeed rides along in the save.
+ *
+ * A no-op (an illegal move returning `state` unchanged) deliberately does NOT
+ * advance the stored seed: refusing an action must not consume the player's
+ * luck.
+ *
+ * An action that hands back a DIFFERENT rngSeed than it was given has minted
+ * its own RNG identity — a new game, a restart, an imported save — and keeps
+ * it. Only the ordinary case gets the cursor written back.
+ */
 export function reducer(state: GameState, action: Action): GameState {
+  /* A state with no seed on it — a hand-built test fixture, most of them —
+     does NOT get seeded from, because that would stomp on a seed the caller
+     deliberately installed. It still gets the cursor written back, so the
+     first real dispatch adopts the RNG and every one after it is reproducible. */
+  const seeded = Number.isFinite(state.rngSeed)
+  if (seeded) setSeed(state.rngSeed)
+  const out = baseReducer(state, action)
+  if (out === state || (seeded && out.rngSeed !== state.rngSeed)) return out
+  const seed = currentSeed()
+  return seed === null ? out : { ...out, rngSeed: seed }
+}
+
+function baseReducer(state: GameState, action: Action): GameState {
   if (
     state.gameOver &&
     action.type !== 'RESTART' &&
@@ -451,9 +497,20 @@ export function reducer(state: GameState, action: Action): GameState {
     }
     case 'SIDE_HUSTLE': {
       if (state.ap < 1) return state
-      const amt = randInt(150, 400)
+      /* Diminishing within the week. The first one is the best money on the
+         board; the fourth is the reason you got a licence in the first place.
+         This is the whole counterweight to spamming gig work over the pipeline
+         — the leads have to be worth working, so the safety valve gets worse
+         the harder you lean on it. */
+      const [lo, hi] = sideHustleBand(state.sideHustlesThisWeek)
+      const amt = randInt(lo, hi)
       let s = spendAp(state, 1)
-      s = { ...s, cash: s.cash + amt, careerEarnings: s.careerEarnings + amt }
+      s = {
+        ...s,
+        cash: s.cash + amt,
+        careerEarnings: s.careerEarnings + amt,
+        sideHustlesThisWeek: s.sideHustlesThisWeek + 1,
+      }
       return sync(
         withLog(
           s,
@@ -2095,6 +2152,8 @@ export function endWeek(state: GameState): GameState {
     activeModifiers: s.activeModifiers.filter((m) => m.expiresWeek > s.week),
     statModifiers: s.statModifiers.filter((m) => m.expiresWeek > s.week),
     week: s.week + 1,
+    /* The gig work resets with the week. */
+    sideHustlesThisWeek: 0,
     /* Rookie of the Year buys one extra point every fourth week, forever. */
     ap:
       getChar(s).apPerWeek +

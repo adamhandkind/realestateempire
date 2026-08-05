@@ -5,7 +5,7 @@ import { DISTRICTS } from '../data/districts'
 import TablePicker from './TablePicker'
 import { channelOf, isChannelLocked } from '../logic/marketing'
 import { TARGETABLE_CHANNEL_IDS } from '../logic/territoryWeek'
-import { atLeastRank, weeklyExpenses } from '../logic/economy'
+import { atLeastRank, sideHustleBand, weeklyExpenses } from '../logic/economy'
 import { byStage } from '../logic/leads'
 import { money } from '../logic/rand'
 import type { Action, GameState } from '../state/types'
@@ -66,6 +66,7 @@ export default function OfficeTab({
   const junior = atLeastRank(state.rank, 'junior')
   const buyerPlus = atLeastRank(state.rank, 'buyerAgent')
   const noAp = state.ap < 1
+  const hustleBand = sideHustleBand(state.sideHustlesThisWeek)
   const stages = byStage(state.leads)
 
   return (
@@ -106,7 +107,18 @@ export default function OfficeTab({
           <ActionButton
             title="Side Hustle"
             ap={1}
-            desc="Photos, staging, drone work, aggressive nodding. $150–$400."
+            /* The band is shown, not buried: the whole point of the taper is
+               that the player can see the gig work drying up and go work a
+               lead instead. */
+            desc={
+              'Photos, staging, drone work, aggressive nodding. $' +
+              hustleBand[0] +
+              '–$' +
+              hustleBand[1] +
+              (state.sideHustlesThisWeek > 0
+                ? ' — the well is running dry this week.'
+                : '.')
+            }
             reason={noAp ? 'No action points left this week.' : null}
             onClick={() => dispatch({ type: 'SIDE_HUSTLE' })}
           />

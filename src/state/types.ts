@@ -630,8 +630,14 @@ export interface Counters {
   leadsLost: number
 }
 
+/** Market swings. `id` is what makes them mutually exclusive — a new market
+ *  modifier replaces the one already running rather than stacking with it —
+ *  and `label` is what the banner reads instead of guessing from the sign. */
 export interface ActiveModifier {
+  id: 'hotMarket' | 'rateSpike'
+  label: string
   closeChanceDelta: number
+  /** Live while `week < expiresWeek`, the same convention statModifiers use. */
   expiresWeek: number
 }
 
@@ -661,12 +667,20 @@ export interface WeekSummary {
 }
 
 export interface GameState {
-  version: 7
+  version: 8
   week: number
   cash: number
   careerEarnings: number
   ap: number
   rank: RankId
+  /** The RNG cursor. The reducer seeds from this on entry and stores the seed
+   *  it ended on, which is what makes it pure: the same state and the same
+   *  action always produce the same next state, in dev, in tests, and after a
+   *  refresh. Nothing outside the reducer needs to know it exists. */
+  rngSeed: number
+  /** Side Hustles taken in the current week. Drives the diminishing payout and
+   *  resets at the week roll. */
+  sideHustlesThisWeek: number
   /** Derived from equipped swag + permBonuses; recomputed on every action. */
   stats: Stats
   permBonuses: { hustle: number; swagger: number; ego: number }

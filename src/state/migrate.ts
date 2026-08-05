@@ -1,19 +1,29 @@
-/* v1/v2 -> v7 save migration. The localStorage key never changes
+/* v1/v2 -> v8 save migration. The localStorage key never changes
    (`res_save_v1`); only `GameState.version` moves. Every field added in a later
-   phase gets a default here, so a player who refreshes mid-game lands in v7
-   with their progress intact and nothing to re-earn. */
+   phase gets a default here, so a player who refreshes mid-game lands in v8
+   with their progress intact and nothing to re-earn.
+
+   This is also the ONLY validation boundary for imported saves. The paste box
+   accepts arbitrary text from a stranger's clipboard, so nothing that comes
+   out of here may be a number the rest of the game can't do arithmetic on, an
+   id that resolves to undefined, or a rank that isn't a rank. Anything that
+   can be repaired is repaired; anything that can't is dropped; a save that
+   isn't ours at all returns null and the current game is left untouched. */
 
 import { DEFAULT_CHARACTER_ID } from '../data/p5'
-import { RANKS } from '../data/ranks'
+import { AP_PER_WEEK, RANKS } from '../data/ranks'
 import { PRESET_SLOTS } from '../data/swag'
 import { fillPool } from '../logic/portfolio'
+import { archOrNull } from '../logic/leads'
+import { swagOf } from '../logic/economy'
+import { randomSeed } from '../logic/rand'
 import { withLog } from '../logic/log'
 import { districtForType, initialState } from './reducer'
 import { gain, initialTerritory, pickLeadDistrict } from '../logic/territory'
 import { P6, PLAYER } from '../data/p6'
 import { emptySeasonStats } from '../data/awards'
 import { MIGRATION_LINE, P7 } from '../data/p7'
-import type { GameState } from './types'
+import type { ActiveModifier, GameState, Slot } from './types'
 
 const TABLE_TIER_IDS: string[] = P7.TABLE_TIERS.map((t) => t.id)
 
@@ -26,11 +36,72 @@ interface AnySave {
 const num = (v: unknown, fallback: number): number =>
   typeof v === 'number' && Number.isFinite(v) ? v : fallback
 
-/** Returns a fully-populated v7 state, or null if `raw` isn't one of ours. */
+const clampNum = (v: unknown, lo: number, hi: number, fallback: number): number =>
+  Math.max(lo, Math.min(hi, num(v, fallback)))
+
+/** Keeps only the ids that name a real item. A save naming swag that no longer
+ *  exists is not a reason to refuse the save — it is a reason to drop the id,
+ *  because every read of it downstream would silently resolve to undefined. */
+const knownSwagIds = (v: unknown): string[] =>
+  Array.isArray(v) ? v.filter((id) => typeof id === 'string' && !!swagOf(id)) : []
+
+/** Equipped must be OWNED and in its OWN slot. A hand-edited save that equips
+ *  an unowned tier-4 car, or files a jacket under `vehicle`, gets it removed
+ *  rather than wearing something the shop never sold it. */
+function validEquipped(v: unknown, owned: string[]): Partial<Record<Slot, string>> {
+  const out: Partial<Record<Slot, string>> = {}
+  if (!v || typeof v !== 'object') return out
+  for (const [slot, id] of Object.entries(v as Record<string, unknown>)) {
+    if (typeof id !== 'string' || !owned.includes(id)) continue
+    const item = swagOf(id)
+    if (item && item.slot === slot) out[item.slot] = id
+  }
+  return out
+}
+
+/** Drops leads whose archetype no longer exists, and repairs the numbers on
+ *  the ones that survive. A lead with NaN patience never leaves the pipeline. */
+function validLeads(v: unknown): GameState['leads'] {
+  if (!Array.isArray(v)) return []
+  return (v as GameState['leads'])
+    .filter((l) => l && typeof l.id === 'string' && !!archOrNull(l.archetypeId))
+    .map((l) => ({
+      ...l,
+      salePrice: Math.max(0, num(l.salePrice, 0)),
+      maxPatience: Math.max(1, num(l.maxPatience, 1)),
+      patience: clampNum(l.patience, 1, 99, 1),
+    }))
+}
+
+/** Market modifiers gained an id and a label in v8. A v7 entry has neither, so
+ *  it is reconstructed from the only thing it did carry: the sign. */
+function validModifiers(v: unknown, week: number): GameState['activeModifiers'] {
+  if (!Array.isArray(v)) return []
+  return (v as Partial<ActiveModifier>[])
+    .filter((m) => m && Number.isFinite(m.closeChanceDelta))
+    .map((m) => {
+      const delta = m.closeChanceDelta as number
+      const hot = delta >= 0
+      return {
+        id: (m.id === 'hotMarket' || m.id === 'rateSpike'
+          ? m.id
+          : hot
+            ? 'hotMarket'
+            : 'rateSpike') as ActiveModifier['id'],
+        label: typeof m.label === 'string' ? m.label : hot ? 'Hot Market' : 'Rate Spike',
+        closeChanceDelta: delta,
+        expiresWeek: num(m.expiresWeek, week),
+      }
+    })
+    /* Mutual exclusivity is retroactive: a v7 save mid-stack keeps the newest. */
+    .slice(-1)
+}
+
+/** Returns a fully-populated v8 state, or null if `raw` isn't one of ours. */
 export function migrate(raw: unknown): GameState | null {
   if (!raw || typeof raw !== 'object') return null
   const s = raw as AnySave
-  if (typeof s.version !== 'number' || s.version < 1 || s.version > 7)
+  if (typeof s.version !== 'number' || s.version < 1 || s.version > 8)
     return null
 
   const base = initialState()
@@ -64,9 +135,34 @@ export function migrate(raw: unknown): GameState | null {
     | { calls?: number; perfectCalls?: number; hangups?: number }
     | undefined
 
+  /* Ownership is resolved before equipment, because equipment is checked
+     against it. */
+  const ownedSwagIds = knownSwagIds(s.ownedSwagIds)
+
   const out: GameState = {
     ...merged,
-    version: 7,
+    version: 8,
+    /* --- the scalars. `merged` spread these straight off the file; a hostile
+       or hand-edited save could put NaN, Infinity, or a string in any of them
+       and the arithmetic downstream would quietly turn the whole game to NaN.
+       Every one of them is re-derived here instead. --- */
+    week: Math.max(1, Math.round(num(s.week, base.week))),
+    cash,
+    careerEarnings: Math.max(0, num(s.careerEarnings, 0)),
+    /* The ceiling is deliberately loose, not AP_PER_WEEK: characters carry
+       their own apPerWeek (Blaine gets 7) and Rookie Energy pays a bonus point
+       on top of that. This is here to reject 9999, not to referee the roster. */
+    ap: Math.round(clampNum(s.ap, 0, 12, AP_PER_WEEK)),
+    gameOver: s.gameOver === true,
+    ownedSwagIds,
+    equipped: validEquipped(s.equipped, ownedSwagIds),
+    activeModifiers: validModifiers(s.activeModifiers, week),
+    /* v8. A save from before the seed existed gets a fresh one — its old rolls
+       are already spent, and nothing about them was reproducible anyway. */
+    rngSeed: Number.isFinite(s.rngSeed as number)
+      ? (s.rngSeed as number)
+      : randomSeed(),
+    sideHustlesThisWeek: Math.max(0, num(s.sideHustlesThisWeek, 0)),
     permBonuses: {
       hustle: s.permBonuses?.hustle ?? base.permBonuses.hustle,
       swagger: s.permBonuses?.swagger ?? base.permBonuses.swagger,
@@ -111,7 +207,7 @@ export function migrate(raw: unknown): GameState | null {
     /* transient UI fields never come back from disk */
     summary: null,
     promo: null,
-    leads: Array.isArray(s.leads) ? (s.leads as GameState['leads']) : base.leads,
+    leads: validLeads(s.leads),
     counters:
       s.counters && typeof s.counters === 'object'
         ? { ...base.counters, ...(s.counters as object) }

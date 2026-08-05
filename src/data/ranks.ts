@@ -21,7 +21,11 @@ export const RANKS: RankDef[] = [
     n: 2,
     name: 'Junior Showing Assistant',
     split: 0.1,
-    req: { earnings: 1500, showings: 0, deals: 0 },
+    /* The showings bar is the point. On $1,500-and-nothing-else a player could
+       spam Side Hustles and be promoted at the end of week one, having never
+       touched the job. Eight assists is two AP-weeks of the tutorial actually
+       being played, and Side Hustle money alone can no longer buy the rank. */
+    req: { earnings: 2500, showings: 8, deals: 0 },
     blurb: 'Your own leads — but an actual agent signs the paperwork.',
   },
   {

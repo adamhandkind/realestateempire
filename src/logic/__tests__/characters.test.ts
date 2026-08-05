@@ -110,12 +110,15 @@ describe('nigel', () => {
     let s: GameState = { ...as('nigel'), rank: 'buyerAgent', ap: 5 }
     const before = deriveStats(s).swagger
     s = { ...s, leads: [leadOf('firstTimer')] }
-    setSeed(1)
-    /* Force the failure branch by driving the close chance to its floor. */
+    /* Hunt for the failure branch by varying the SEED, not by re-rolling the
+       same input: the reducer is pure, so dispatching the identical state
+       forty times now returns the identical answer forty times. */
     let out = s
-    for (let i = 0; i < 40 && out.statModifiers.length === 0; i++) {
+    /* Widely spaced, because consecutive seeds are NOT usefully different:
+       the LCG's first output for seeds 1..40 is ~0.2360 every time. */
+    for (let i = 1; i < 40 && out.statModifiers.length === 0; i++) {
       out = reducer(
-        { ...s, ap: 5, leads: [leadOf('firstTimer')] },
+        { ...s, ap: 5, rngSeed: i * 1000003, leads: [leadOf('firstTimer')] },
         { type: 'ATTEMPT_CLOSE', leadId: 'L1' },
       )
     }
@@ -256,7 +259,7 @@ describe('chip', () => {
   it('needs 1.5× earnings at every rank', () => {
     const s = as('chip')
     const expected: Record<string, number> = {
-      junior: 2250,
+      junior: 3750,
       buyerAgent: 7500,
       sellerAgent: 37500,
       topProducer: 375000,
@@ -267,7 +270,14 @@ describe('chip', () => {
   })
 
   it('is held back by the multiplier alone, and the committee says so', () => {
-    const s: GameState = { ...as('chip'), careerEarnings: 1600 }
+    /* Over Junior's base $2,500 bar and under Chip's multiplied $3,750 one,
+       with the showings requirement already satisfied so the multiplier is
+       demonstrably the only thing left in the way. */
+    const s: GameState = {
+      ...as('chip'),
+      careerEarnings: 2600,
+      counters: { showingsRun: 8, dealsClosed: 0, leadsLost: 0 },
+    }
     expect(nextRank(s)).toBeNull()
     expect(gatedOnMultipliedEarnings(s)?.id).toBe('junior')
     const out = reducer(s, { type: 'END_WEEK' })
@@ -283,7 +293,11 @@ describe('chip', () => {
   })
 
   it('promotes normally once the multiplied bar is met', () => {
-    const s: GameState = { ...as('chip'), careerEarnings: 2250 }
+    const s: GameState = {
+      ...as('chip'),
+      careerEarnings: 3750,
+      counters: { showingsRun: 8, dealsClosed: 0, leadsLost: 0 },
+    }
     expect(nextRank(s)?.id).toBe('junior')
   })
 })
@@ -439,7 +453,7 @@ describe('terri', () => {
 describe('saves and brags', () => {
   it('migrates a pre-roster save to "you" with no modifiers', () => {
     const out = migrate({ version: 3, week: 4, cash: 900, rank: 'junior' })!
-    expect(out.version).toBe(7)
+    expect(out.version).toBe(8)
     expect(out.characterId).toBe('you')
     expect(out.statModifiers).toEqual([])
   })
