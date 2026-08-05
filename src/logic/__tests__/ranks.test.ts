@@ -62,7 +62,11 @@ describe('Top Producer', () => {
   })
 
   it('leaves Phase 1 promotion gates working', () => {
-    const broke = { ...initialState(), careerEarnings: 1500 }
+    const broke = {
+      ...initialState(),
+      careerEarnings: 2500,
+      counters: { showingsRun: 8, dealsClosed: 0, leadsLost: 0 },
+    }
     expect(nextRank(broke)?.id).toBe('junior')
   })
 })

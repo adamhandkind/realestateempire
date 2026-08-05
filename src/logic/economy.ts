@@ -21,6 +21,7 @@ import {
 import { REP_MAX, REP_MIN, REP_THRESHOLDS } from '../data/reputation'
 import { PRESET_SLOTS, SLOTS, SWAG } from '../data/swag'
 import type {
+  ActiveModifier,
   GameState,
   RankDef,
   RankId,
@@ -139,6 +140,15 @@ export function sync(state: GameState): GameState {
   return { ...state, stats: deriveStats(state) }
 }
 
+/** The payout band for the Nth Side Hustle of a week, `taken` already-taken.
+ *  Pure and exported so the Office tab can show the player the next band
+ *  before they spend the point on it. */
+export function sideHustleBand(taken: number): [number, number] {
+  if (taken <= 0) return [250, 400]
+  if (taken === 1) return [175, 300]
+  return [100, 200]
+}
+
 export function weeklyUpkeep(state: GameState): number {
   let u = 0
   SLOTS.forEach((s) => {
@@ -158,6 +168,13 @@ export function activeModifierDelta(state: GameState): number {
     (t, m) => (m.expiresWeek > state.week ? t + m.closeChanceDelta : t),
     0,
   )
+}
+
+/** The market swing currently running, or null. At most one can be — see
+ *  setMarketModifier. The banner reads this instead of inferring a mood from
+ *  the sign of a number. */
+export function activeMarketModifier(state: GameState): ActiveModifier | null {
+  return state.activeModifiers.find((m) => m.expiresWeek > state.week) ?? null
 }
 
 export function splitFor(rankId: RankId): number {

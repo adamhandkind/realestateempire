@@ -22,6 +22,11 @@ import {
 export const arch = (id: string): Archetype =>
   ARCHETYPES.find((a) => a.id === id)!
 
+/** The honest version, for the one caller that has to cope with a miss:
+ *  save validation, where the id came from a file and not from us. */
+export const archOrNull = (id: unknown): Archetype | null =>
+  typeof id === 'string' ? (ARCHETYPES.find((a) => a.id === id) ?? null) : null
+
 /** Seller-band clients need a listing licence; some clients need fame. */
 export function legalArchetypes(state: GameState): Archetype[] {
   const canList = atLeastRank(state.rank, 'sellerAgent')

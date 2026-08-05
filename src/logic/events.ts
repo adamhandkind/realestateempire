@@ -121,6 +121,39 @@ export function shouldCringe(state: GameState): boolean {
   )
 }
 
+/** How many PLAYABLE weeks a market swing lasts once it fires. */
+export const MARKET_MODIFIER_WEEKS = 2
+
+/**
+ * Installs a market swing, REPLACING whatever was running. Hot Market and Rate
+ * Spike are mutually exclusive: two of them stacking to a silent +20%, or
+ * cancelling into a banner that says nothing, is worse than a rule the player
+ * can hold in their head.
+ *
+ * It fires while week W is being resolved, and W is over, so the window it is
+ * paid for is W+1 and W+2. Modifiers are live while `week < expiresWeek`, so
+ * that window expires at W+3 — the `1 +` is the dead week being skipped, not
+ * an off-by-one.
+ */
+export function setMarketModifier(
+  state: GameState,
+  id: 'hotMarket' | 'rateSpike',
+  label: string,
+  closeChanceDelta: number,
+): GameState {
+  return {
+    ...state,
+    activeModifiers: [
+      {
+        id,
+        label,
+        closeChanceDelta,
+        expiresWeek: state.week + 1 + MARKET_MODIFIER_WEEKS,
+      },
+    ],
+  }
+}
+
 export function applyEvent(state: GameState, id: EventId): EventResult {
   let s = state
   let cashDelta = 0
@@ -190,13 +223,7 @@ export function applyEvent(state: GameState, id: EventId): EventResult {
       break
     }
     case 'hotMarket': {
-      s = {
-        ...s,
-        activeModifiers: [
-          ...s.activeModifiers,
-          { closeChanceDelta: 0.1, expiresWeek: s.week + 2 },
-        ],
-      }
+      s = setMarketModifier(s, 'hotMarket', 'Hot Market', 0.1)
       s = withLog(
         s,
         'event',
@@ -206,13 +233,7 @@ export function applyEvent(state: GameState, id: EventId): EventResult {
       break
     }
     case 'rateSpike': {
-      s = {
-        ...s,
-        activeModifiers: [
-          ...s.activeModifiers,
-          { closeChanceDelta: -0.1, expiresWeek: s.week + 2 },
-        ],
-      }
+      s = setMarketModifier(s, 'rateSpike', 'Rate Spike', -0.1)
       s = withLog(
         s,
         'event',
