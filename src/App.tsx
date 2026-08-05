@@ -6,6 +6,7 @@ import Header from './components/Header'
 import LeadsTab from './components/LeadsTab'
 import LogTab from './components/LogTab'
 import MapTab from './components/MapTab'
+import MarketingTab from './components/MarketingTab'
 import OfficeTab from './components/OfficeTab'
 import PortfolioChoiceModal from './components/PortfolioChoiceModal'
 import PortfolioTab from './components/PortfolioTab'
@@ -15,10 +16,11 @@ import { money } from './logic/rand'
 import { initialState, reducer } from './state/reducer'
 import { loadSave, parseImport, serialize, writeSave } from './state/save'
 
-type TabId = 'office' | 'leads' | 'portfolio' | 'city' | 'closet' | 'log'
+type TabId = 'office' | 'marketing' | 'leads' | 'portfolio' | 'city' | 'closet' | 'log'
 
 const TABS: [TabId, string][] = [
   ['office', 'Office'],
+  ['marketing', 'Marketing'],
   ['leads', 'Leads'],
   ['portfolio', 'Portfolio'],
   ['city', 'City'],
@@ -203,6 +205,7 @@ export default function App() {
           onNewGame={() => setChoosing(true)}
         />
       )}
+      {tab === 'marketing' && <MarketingTab state={state} dispatch={dispatch} />}
       {tab === 'leads' && <LeadsTab state={state} dispatch={dispatch} />}
       {tab === 'portfolio' && <PortfolioTab state={state} dispatch={dispatch} />}
       {tab === 'city' && <MapTab state={state} dispatch={dispatch} />}

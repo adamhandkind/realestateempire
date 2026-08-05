@@ -78,8 +78,12 @@ export default function CharacterSelect({
   }
 
   return (
-    <div className="res-app">
-      <h1 className="res-display res-select-title">CHOOSE YOUR AGENT</h1>
+    <main className="res-app res-character-select">
+      <header className="res-select-hero">
+        <p className="res-eyebrow">Brantford realty presents</p>
+        <h1 className="res-display res-select-title">Choose your agent</h1>
+        <p>Every agent changes how this career starts. Pick a personality, then make the market regret it.</p>
+      </header>
 
       <div
         className="res-roster"
@@ -90,14 +94,13 @@ export default function CharacterSelect({
         onKeyDown={onKeyDown}
       >
         {GRID.map((c, i) => (
-          <div
+          <button
             key={c.id}
-            role="option"
+            type="button"
             aria-selected={i === index}
             className={'res-char' + (i === index ? ' on' : '')}
             style={{ borderColor: i === index ? c.portrait.accent : undefined }}
             onClick={() => setIndex(i)}
-            onDoubleClick={() => onStart(c.id)}
           >
             <Portrait c={c} size={64} />
             <div className="nm">{c.name}</div>
@@ -122,11 +125,11 @@ export default function CharacterSelect({
                 {(PERK_FLAW[c.id]?.flaw ?? 'None').split(' · ')[0]}
               </span>
             </div>
-          </div>
+          </button>
         ))}
       </div>
 
-      <div className="res-panel res-detail">
+      <section className="res-panel res-detail" aria-live="polite">
         <div className="res-detail-head">
           <Portrait c={selected} size={88} />
           <div>
@@ -150,7 +153,7 @@ export default function CharacterSelect({
         <button className="res-go" onClick={() => onStart(selected.id)}>
           Start as {selected.name}
         </button>
-      </div>
-    </div>
+      </section>
+    </main>
   )
 }

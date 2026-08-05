@@ -1,8 +1,6 @@
 import { useState, type Dispatch } from 'react'
 import { CHARACTERS } from '../data/characters'
 import { DISTRICTS } from '../data/districts'
-import { channelOf, isChannelLocked } from '../logic/marketing'
-import { TARGETABLE_CHANNEL_IDS } from '../logic/territoryWeek'
 import { atLeastRank, weeklyExpenses } from '../logic/economy'
 import { byStage } from '../logic/leads'
 import { money } from '../logic/rand'
@@ -179,7 +177,9 @@ export default function OfficeTab({
           three targetable formats get their switch and their dropdown here
           until that tab exists. */}
       <div className="res-panel dark">
-        <h3 className="res-h2 res-display">Big-Format Advertising</h3>
+        <h3 className="res-h2 res-display">Marketing moved</h3>
+        <p className="res-debug-note">Campaigns, weekly costs, and neighbourhood targeting now live in Marketing.</p>
+        {/* Campaign controls moved to the dedicated Marketing tab.
         {TARGETABLE_CHANNEL_IDS.map((id) => {
           const c = channelOf(id)
           if (!c) return null
@@ -222,12 +222,13 @@ export default function OfficeTab({
               )}
             </div>
           )
-        })}
+        })} */}
       </div>
 
       <div className="res-panel dark">
         <h3 className="res-h2 res-display">Cheat Codes (We Won't Tell)</h3>
-        <div className="res-actions">
+        <p className="res-debug-note">Development controls. They change this save immediately.</p>
+        <div className="res-debug-grid">
           <button
             className="res-tab"
             onClick={() => dispatch({ type: 'DEBUG_CASH' })}
@@ -247,7 +248,7 @@ export default function OfficeTab({
             Fill vacancies
           </button>
           {/* Testing tool: swaps the active character live, mid-run. */}
-          <label className="res-chip">
+          <label className="res-debug-field">
             Set Character
             <select
               value={state.characterId}
@@ -269,7 +270,7 @@ export default function OfficeTab({
             New Game (pick an agent)
           </button>
           {/* ---- phase 6 ---- */}
-          <label className="res-chip">
+          <label className="res-debug-field">
             District
             <select
               value={debugDistrict}
