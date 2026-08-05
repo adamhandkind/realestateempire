@@ -82,13 +82,18 @@ describe('chance math (§6.1)', () => {
     expect(embarrass).toBeCloseTo(0.172, 5)
   })
   it('clamps to 0.80', () => {
-    const s = base({ reputation: 5, postEgo: 15, unlockedCrew: 'team' })
+    const s = base({
+      reputation: 5,
+      unlockedCrew: 'team',
+      stats: { ...initialState().stats, ego: 20 },
+    })
     const { viral, embarrass } = computeChances(
       s,
       postOf('dancingTour')!,
       captionOf('unhinged')!,
     )
-    expect(viral).toBeLessThanOrEqual(0.8)
+    expect(viral).toBeCloseTo(0.8, 5)
+    expect(embarrass).toBeGreaterThanOrEqual(0)
     expect(embarrass).toBeLessThanOrEqual(0.8)
   })
 })

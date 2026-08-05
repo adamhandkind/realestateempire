@@ -1,4 +1,4 @@
-import { CREWS, P9, crewOf } from '../data/crew'
+import { P9, crewOf } from '../data/crew'
 import { rankIndex } from './economy'
 import { clamp } from './portfolio'
 import type {
@@ -56,5 +56,3 @@ export function computeChances(
   embarrass = clamp(embarrass, 0, 0.8)
   return { viral, embarrass }
 }
-
-export { CREWS }
