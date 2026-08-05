@@ -273,6 +273,15 @@ export function initialState(): GameState {
     trophies: [],
     awardHistory: [],
     sponsorCringeSeasons: 0,
+    postEgo: 0,
+    pendingLeadBias: [],
+    contentHistory: [],
+    lastPost: null,
+    contentStats: { posts: 0, viral: 0, embarrassed: 0, skipStreak: 0 },
+    contentEnabled: true,
+    unlockedCrew: 'none',
+    postComposerPending: false,
+    postComposerWeek: 0,
   }
   /* The pool is seeded as soon as anything is eligible so the Portfolio tab is
      never empty. Nothing unlocks below Seller Agent, so a week-one game keeps
