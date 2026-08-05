@@ -1,7 +1,9 @@
 import { useState, type Dispatch } from 'react'
+import { AWARDS } from '../data/awards'
 import { CHARACTERS } from '../data/characters'
 import { DISTRICTS } from '../data/districts'
-import { atLeastRank, weeklyExpenses } from '../logic/economy'
+import TablePicker from './TablePicker'
+import { atLeastRank, sideHustleBand, weeklyExpenses } from '../logic/economy'
 import { byStage } from '../logic/leads'
 import { money } from '../logic/rand'
 import type { Action, GameState } from '../state/types'
@@ -62,6 +64,7 @@ export default function OfficeTab({
   const junior = atLeastRank(state.rank, 'junior')
   const buyerPlus = atLeastRank(state.rank, 'buyerAgent')
   const noAp = state.ap < 1
+  const hustleBand = sideHustleBand(state.sideHustlesThisWeek)
   const stages = byStage(state.leads)
 
   return (
@@ -102,7 +105,18 @@ export default function OfficeTab({
           <ActionButton
             title="Side Hustle"
             ap={1}
-            desc="Photos, staging, drone work, aggressive nodding. $150–$400."
+            /* The band is shown, not buried: the whole point of the taper is
+               that the player can see the gig work drying up and go work a
+               lead instead. */
+            desc={
+              'Photos, staging, drone work, aggressive nodding. $' +
+              hustleBand[0] +
+              '–$' +
+              hustleBand[1] +
+              (state.sideHustlesThisWeek > 0
+                ? ' — the well is running dry this week.'
+                : '.')
+            }
             reason={noAp ? 'No action points left this week.' : null}
             onClick={() => dispatch({ type: 'SIDE_HUSTLE' })}
           />
@@ -139,6 +153,8 @@ export default function OfficeTab({
         </div>
       </div>
 
+      <TablePicker state={state} dispatch={dispatch} />
+
       <div className="res-panel">
         <h3 className="res-h2 res-display">The Ladder</h3>
         <RankTrack state={state} />
@@ -151,6 +167,22 @@ export default function OfficeTab({
 
       <div className="res-panel dark">
         <h3 className="res-h2 res-display">Settings</h3>
+        <div style={{ marginBottom: 12 }}>
+          <button
+            className={'res-tab' + (state.callsEnabled ? ' on' : '')}
+            onClick={() =>
+              dispatch({
+                type: 'SET_CALLS_ENABLED',
+                enabled: !state.callsEnabled,
+              })
+            }
+          >
+            {state.callsEnabled ? '● ' : '○ '}Phone calls for big deals
+          </button>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+            Off = instant dice roll, like the old days.
+          </div>
+        </div>
         <div className="res-mini" style={{ marginBottom: 8 }}>
           <button onClick={onExport}>Export Save</button>
           <button onClick={onImport} disabled={!importText.trim()}>
@@ -315,6 +347,26 @@ export default function OfficeTab({
           >
             Set shares: locked
           </button>
+          {/* ---- phase 8 ---- */}
+          <label className="res-chip">
+            Force call
+            <select
+              value=""
+              onChange={(e) =>
+                e.target.value &&
+                dispatch({ type: 'DEBUG_FORCE_CALL', leadId: e.target.value })
+              }
+            >
+              <option value="">Pick a lead…</option>
+              {state.leads
+                .filter((l) => !l.sold)
+                .map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.clientName} · {money(l.salePrice)}
+                  </option>
+                ))}
+            </select>
+          </label>
           <button
             className="res-tab"
             onClick={() => dispatch({ type: 'DEBUG_FORCE_SHOWDOWN' })}
@@ -327,6 +379,40 @@ export default function OfficeTab({
           >
             King of Brantford check
           </button>
+          {/* ---- phase 7 ---- */}
+          <button
+            className="res-tab"
+            onClick={() => dispatch({ type: 'DEBUG_JUMP_TO_NOMINATIONS' })}
+          >
+            Jump to season week 12
+          </button>
+          <button
+            className="res-tab"
+            onClick={() => dispatch({ type: 'DEBUG_FORCE_CEREMONY' })}
+          >
+            Force ceremony
+          </button>
+          <label className="res-chip">
+            Grant trophy…
+            <select
+              value=""
+              onChange={(e) => {
+                if (!e.target.value) return
+                dispatch({
+                  type: 'DEBUG_GRANT_TROPHY',
+                  awardId: e.target.value,
+                })
+                e.target.value = ''
+              }}
+            >
+              <option value="">Pick one</option>
+              {AWARDS.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </label>
           {(['cold', 'normal', 'hot'] as const).map((m) => (
             <button
               key={m}

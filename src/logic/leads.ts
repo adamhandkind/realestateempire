@@ -7,6 +7,7 @@ import {
   repUnlocked,
 } from './economy'
 import { getChar, hasFlag } from './characters'
+import { hasPerk } from './perks'
 import { P5 } from '../data/p5'
 import { pick, rand, randInt, roundTo, weightedPick } from './rand'
 import { PRICE_ROUND } from '../data/p3'
@@ -20,6 +21,11 @@ import {
 
 export const arch = (id: string): Archetype =>
   ARCHETYPES.find((a) => a.id === id)!
+
+/** The honest version, for the one caller that has to cope with a miss:
+ *  save validation, where the id came from a file and not from us. */
+export const archOrNull = (id: unknown): Archetype | null =>
+  typeof id === 'string' ? (ARCHETYPES.find((a) => a.id === id) ?? null) : null
 
 /** Seller-band clients need a listing licence; some clients need fame. */
 export function legalArchetypes(state: GameState): Archetype[] {
@@ -105,6 +111,10 @@ export function closeChance(state: GameState, lead: Lead): number {
   /* Presence is the only share-to-close link. Dominance pays out in perks. */
   if (hasPresence(state, lead.districtId)) c += 0.05
   if (lead.referralBonus) c += 0.1
+  /* Hardware on the shelf, working. Only DISPLAYED trophies count. */
+  if (hasPerk(state, 'topProducerAura')) c += 0.03
+  if (hasPerk(state, 'agentOfTheYear')) c += 0.05
+  if (hasPerk(state, 'luxuryDistinction') && lead.salePrice > 450000) c += 0.06
   return Math.max(0.1, Math.min(0.9, c))
 }
 

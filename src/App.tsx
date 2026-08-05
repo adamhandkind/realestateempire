@@ -1,6 +1,8 @@
 import { useEffect, useReducer, useRef, useState } from 'react'
 import BragTicker from './components/BragTicker'
+import CeremonyModal from './components/CeremonyModal'
 import CharacterSelect from './components/CharacterSelect'
+import { NominationBanner } from './components/TablePicker'
 import ClosetTab from './components/ClosetTab'
 import Header from './components/Header'
 import LeadsTab from './components/LeadsTab'
@@ -8,10 +10,11 @@ import LogTab from './components/LogTab'
 import MapTab from './components/MapTab'
 import MarketingTab from './components/MarketingTab'
 import OfficeTab from './components/OfficeTab'
+import CallModal from './components/CallModal'
 import PortfolioChoiceModal from './components/PortfolioChoiceModal'
 import PortfolioTab from './components/PortfolioTab'
 import WeekSummaryModal from './components/WeekSummaryModal'
-import { activeModifierDelta, isPhase2Teaser, rankOf } from './logic/economy'
+import { activeMarketModifier, isPhase2Teaser, rankOf } from './logic/economy'
 import { money } from './logic/rand'
 import { initialState, reducer } from './state/reducer'
 import { loadSave, parseImport, serialize, writeSave } from './state/save'
@@ -71,7 +74,7 @@ export default function App() {
     }
   }, [state.promo])
 
-  const modDelta = activeModifierDelta(state)
+  const market = activeMarketModifier(state)
 
   const doExport = () => {
     const s = serialize(state)
@@ -157,9 +160,9 @@ export default function App() {
       <Header state={state} bump={bump} />
       <BragTicker state={state} />
 
-      {modDelta !== 0 && (
+      {market && (
         <div className="res-banner" style={{ marginTop: 10 }}>
-          {modDelta > 0
+          {market.id === 'hotMarket'
             ? "🔥 HOT MARKET — buyers are making offers on houses they've only seen from the car."
             : '🧊 RATE SPIKE — everybody suddenly wants to “wait and see.”'}
         </div>
@@ -170,6 +173,18 @@ export default function App() {
           worth less. Everything is also cheaper.
         </div>
       )}
+      <NominationBanner
+        state={state}
+        onOpen={() => {
+          setTab('office')
+          /* The picker lives in the Office tab; scroll once it has mounted. */
+          requestAnimationFrame(() =>
+            document
+              .getElementById('goldies-table')
+              ?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
+          )
+        }}
+      />
       {isPhase2Teaser(state) && (
         <div className="res-banner">
           🏆 Seller's Agent with six figures liquid.{' '}
@@ -214,19 +229,34 @@ export default function App() {
 
       <button
         className="res-end res-display"
-        disabled={state.pendingChoices.length > 0}
-        title={state.pendingChoices.length > 0 ? 'Decisions await' : ''}
+        disabled={state.pendingChoices.length > 0 || state.call !== null}
+        title={
+          state.call !== null
+            ? "You're on the phone."
+            : state.pendingChoices.length > 0
+              ? 'Decisions await'
+              : ''
+        }
         onClick={() => dispatch({ type: 'END_WEEK' })}
       >
-        {state.pendingChoices.length > 0
-          ? 'DECISIONS AWAIT'
-          : 'END WEEK ' + state.week}
+        {state.call !== null
+          ? 'ON THE PHONE'
+          : state.pendingChoices.length > 0
+            ? 'DECISIONS AWAIT'
+            : 'END WEEK ' + state.week}
       </button>
 
+      <CallModal state={state} dispatch={dispatch} />
       <PortfolioChoiceModal state={state} dispatch={dispatch} />
 
       {showSummary && (
         <WeekSummaryModal state={state} onClose={() => setShowSummary(false)} />
+      )}
+
+      {/* Never stacked: the Week Summary always reads first, and dismissing it
+          is what raises the curtain on the Goldies. */}
+      {!showSummary && state.ceremony && (
+        <CeremonyModal state={state} dispatch={dispatch} />
       )}
 
       {confetti && (

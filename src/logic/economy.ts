@@ -5,6 +5,7 @@ import {
   LANDLORD_BRAGS,
   TERRITORY_BRAGS,
   VRBO_BRAGS,
+  CALL_BRAGS,
 } from '../data/brags'
 import { districtOrFirst } from '../data/districts'
 import { dominantDistricts } from './territory'
@@ -20,6 +21,7 @@ import {
 import { REP_MAX, REP_MIN, REP_THRESHOLDS } from '../data/reputation'
 import { PRESET_SLOTS, SLOTS, SWAG } from '../data/swag'
 import type {
+  ActiveModifier,
   GameState,
   RankDef,
   RankId,
@@ -34,6 +36,8 @@ import {
   statModifierDelta,
 } from './characters'
 import { P5 } from '../data/p5'
+import { hasPerk, trophyEgo } from './perks'
+import { AWARDS_BRAGS } from '../data/p7'
 import { money, pick, weightedPick } from './rand'
 
 export {
@@ -120,11 +124,29 @@ export function deriveStats(state: GameState): Stats {
   hustle += char.statMods.hustle
   swagger += char.statMods.swagger
   ego += char.statMods.ego
+  /* The trophy is watching, and the shelf is loud. Both cap normally — an
+     ego-capped character's trophies contribute nothing but pride. */
+  if (hasPerk(state, 'hustleTrophy')) hustle += 1
+  ego += trophyEgo(state)
   return {
     hustle: Math.max(STAT_FLOOR, Math.min(10, hustle)),
     swagger: Math.max(STAT_FLOOR, Math.min(10, swagger)),
     ego: Math.max(0, Math.min(egoCapFor(state, 15), ego)),
   }
+}
+
+/** Stats are derived, so every state change re-syncs them. */
+export function sync(state: GameState): GameState {
+  return { ...state, stats: deriveStats(state) }
+}
+
+/** The payout band for the Nth Side Hustle of a week, `taken` already-taken.
+ *  Pure and exported so the Office tab can show the player the next band
+ *  before they spend the point on it. */
+export function sideHustleBand(taken: number): [number, number] {
+  if (taken <= 0) return [250, 400]
+  if (taken === 1) return [175, 300]
+  return [100, 200]
 }
 
 export function weeklyUpkeep(state: GameState): number {
@@ -146,6 +168,13 @@ export function activeModifierDelta(state: GameState): number {
     (t, m) => (m.expiresWeek > state.week ? t + m.closeChanceDelta : t),
     0,
   )
+}
+
+/** The market swing currently running, or null. At most one can be — see
+ *  setMarketModifier. The banner reads this instead of inferring a mood from
+ *  the sign of a number. */
+export function activeMarketModifier(state: GameState): ActiveModifier | null {
+  return state.activeModifiers.find((m) => m.expiresWeek > state.week) ?? null
 }
 
 export function splitFor(rankId: RankId): number {
@@ -204,6 +233,10 @@ export function bragFor(state: GameState): string {
   const dominant = dominantDistricts(state)
   if (dominant.length > 0) situational(TERRITORY_BRAGS)
   if (state.kingOfBrantford) situational(KING_BRAGS)
+  /* You have to land one before you are allowed to be this annoying. */
+  if (state.callStats.perfectCalls > 0) situational(CALL_BRAGS)
+  /* One Goldie is enough to talk about Goldies forever. */
+  if ((state.trophies ?? []).length > 0) situational(AWARDS_BRAGS)
   /* Character brags join the rotation at every rank, at double weight. */
   getChar(state).brags.forEach((text) =>
     pool.push({ text, weight: P5.BRAG_CHAR_WEIGHT }),
@@ -217,6 +250,14 @@ export function bragFor(state: GameState): string {
     .replace('{showings}', String(state.counters.showingsRun))
     .replace('{leads}', String(state.leads.length))
     .replace('{properties}', String(state.properties.length))
+    /* The season of the newest Goldie, displayed 1-based like the Trophy Room. */
+    .replace(
+      '{seasonIndex}',
+      String(
+        (state.trophies ?? []).reduce((m, t) => Math.max(m, t.seasonIndex), 0) +
+          1,
+      ),
+    )
     .replace(
       '{district}',
       dominant.length ? districtOrFirst(pick(dominant)).name : 'Brantford',

@@ -387,6 +387,87 @@ export interface DistrictShareState {
   shares: Record<string, number>
 }
 
+/* -------------------------------------------------------------- phase 7 */
+
+export type TableTierId = 'none' | 'seat' | 'table' | 'sponsor'
+
+/** Which speech the player gave. Echoed back in GIVE_SPEECH. */
+export type SpeechKey = 'humble' | 'gracious' | 'fullEgo'
+
+export interface AwardDef {
+  id: string
+  name: string
+  /** The joke line under the category name. */
+  subtitle: string
+  /** The player's RAW score, pre-normalization, pre-jitter, pre-table-bonus. */
+  score: (s: GameState, season: SeasonStats) => number
+  /**
+   * The raw score a dominant season in this category produces. §6 divides by
+   * this to put all nine categories on one ~0–100 scale, which is the only
+   * thing that makes a single flat RIVAL_BASE meaningful across formulas whose
+   * natural magnitudes differ by an order of magnitude.
+   */
+  reference: number
+  /** rivalId -> multiplier on their rolled score. Missing reads as 1. */
+  rivalAffinity: Record<string, number>
+  /** Active while the trophy is DISPLAYED. */
+  perk: { id: string; text: string }
+  /** Logged and shown on the ceremony card. */
+  winLine: string
+  /** Shown when a rival takes it. `{winner}` is interpolated. */
+  loseLine: string
+}
+
+/** Accumulated during a season, reset to zero at the ceremony. */
+export interface SeasonStats {
+  /** 0-based; season 1 is index 0. */
+  seasonIndex: number
+  dealsClosed: number
+  commissionEarned: number
+  showingsRun: number
+  leadsLost: number
+  biggestSale: number
+  closeAttempts: number
+  closeSuccesses: number
+  cringeEvents: number
+  swagSpend: number
+  /** 0 if Phase 2 absent. */
+  marketingSpend: number
+  /** 0 if Phase 2 absent. */
+  repGained: number
+  renovationsCompleted: number
+  tenantsEvicted: number
+  tenantIssuesFixed: number
+  /** 0 if Territory absent. */
+  districtsFarmed: number
+  propertiesBought: number
+}
+
+/** Every countable field of SeasonStats. `seasonIndex` is not one of them. */
+export type SeasonStatKey = Exclude<keyof SeasonStats, 'seasonIndex'>
+
+export interface AwardResult {
+  awardId: string
+  winnerId: string
+  playerScore: number
+  /** nomineeId -> final score. Always four entries. */
+  scores: Record<string, number>
+}
+
+export interface CeremonyState {
+  seasonIndex: number
+  results: AwardResult[]
+  /** The ceremony UI walks through results one at a time. */
+  revealIndex: number
+  speechGiven: boolean
+}
+
+export interface Trophy {
+  awardId: string
+  seasonIndex: number
+  displayed: boolean
+}
+
 export interface StatModifier {
   stat: 'hustle' | 'swagger' | 'ego'
   delta: number
@@ -452,6 +533,60 @@ export interface EventDef {
   condition: (s: GameState) => boolean
 }
 
+/* ------------------------------------------------------------- phase 8 */
+
+export type TacticId = 'empathize' | 'push' | 'namedrop' | 'flex' | 'read'
+/** Everything except Read. Read has no reaction and no tell. */
+export type PlayableTactic = Exclude<TacticId, 'read'>
+export type Reaction = 'great' | 'good' | 'neutral' | 'bad' | 'terrible'
+
+/** What the client says at the start of a turn. */
+export interface CallBeat {
+  id: string
+  /** Which archetypes can draw this beat. `'any'` means all of them. */
+  archetypeIds: string[] | 'any'
+  turn: 1 | 2 | 3 | 'any'
+  /** Supports the {name} and {price} placeholders. */
+  text: string
+  /** OVERRIDES the archetype default, for this beat only. */
+  tell?: Partial<Record<PlayableTactic, Reaction>>
+}
+
+/** A tactic button. */
+export interface CallCard {
+  id: TacticId
+  label: string
+  hint: string
+  /** Picked by a stable hash of beatId + tacticId, so a situation reads the
+   *  same way twice. */
+  playerLines: string[]
+}
+
+export interface CallTurn {
+  turn: number
+  beatId: string
+  tacticUsed: TacticId | null
+  reaction: Reaction | null
+  delta: number
+  clientReply: string
+}
+
+export interface CallState {
+  leadId: string
+  /** 1..3 */
+  turn: number
+  momentum: number
+  history: CallTurn[]
+  usedTactics: TacticId[]
+  /** Beats never repeat within a call. `history` cannot express this on its
+   *  own, because Read holds one beat across two entries. */
+  usedBeatIds: string[]
+  currentBeatId: string
+  revealedTells: TacticId[]
+  phase: 'awaitingTactic' | 'showingReaction' | 'resolving' | 'resolved'
+  outcome: null | { success: boolean; finalChance: number; payout: number }
+}
+
 /* ----------------------------------------------------------------- state */
 
 export interface Lead {
@@ -495,8 +630,14 @@ export interface Counters {
   leadsLost: number
 }
 
+/** Market swings. `id` is what makes them mutually exclusive — a new market
+ *  modifier replaces the one already running rather than stacking with it —
+ *  and `label` is what the banner reads instead of guessing from the sign. */
 export interface ActiveModifier {
+  id: 'hotMarket' | 'rateSpike'
+  label: string
   closeChanceDelta: number
+  /** Live while `week < expiresWeek`, the same convention statModifiers use. */
   expiresWeek: number
 }
 
@@ -526,12 +667,20 @@ export interface WeekSummary {
 }
 
 export interface GameState {
-  version: 5
+  version: 8
   week: number
   cash: number
   careerEarnings: number
   ap: number
   rank: RankId
+  /** The RNG cursor. The reducer seeds from this on entry and stores the seed
+   *  it ended on, which is what makes it pure: the same state and the same
+   *  action always produce the same next state, in dev, in tests, and after a
+   *  refresh. Nothing outside the reducer needs to know it exists. */
+  rngSeed: number
+  /** Side Hustles taken in the current week. Drives the diminishing payout and
+   *  resets at the week roll. */
+  sideHustlesThisWeek: number
   /** Derived from equipped swag + permBonuses; recomputed on every action. */
   stats: Stats
   permBonuses: { hustle: number; swagger: number; ego: number }
@@ -611,6 +760,31 @@ export interface GameState {
   weekDealDistricts: string[]
   /** Districts farmed this week. Cleared at week end alongside the above. */
   weekFarmedDistricts: string[]
+
+  /* ------------------------------------------------------------ phase 7 */
+
+  /** The running season ledger. Reset at every ceremony. */
+  season: SeasonStats
+  /** The week the current season began. `seasonWeek()` reads this. */
+  seasonStartWeek: number
+  /** awardIds the player is nominated for; null outside the window. */
+  nominations: string[] | null
+  /** Bought for the CURRENT pending ceremony; reset after it. */
+  tableTier: TableTierId
+  /** Non-null means the ceremony modal is open. */
+  ceremony: CeremonyState | null
+  trophies: Trophy[]
+  awardHistory: { seasonIndex: number; results: AwardResult[] }[]
+  /** >0 means the sponsor cringe penalty is live; decremented per season. */
+  sponsorCringeSeasons: number
+
+  /* ------------------------------------------------------------ phase 8 */
+
+  /** Non-null means the call modal is open and every other action is blocked. */
+  call: CallState | null
+  /** Settings toggle. False reverts every close to the old instant dice roll. */
+  callsEnabled: boolean
+  callStats: { calls: number; perfectCalls: number; hangups: number }
 }
 
 /* --------------------------------------------------------------- actions */
@@ -662,3 +836,20 @@ export type Action =
     }
   | { type: 'DEBUG_FORCE_SHOWDOWN' }
   | { type: 'DEBUG_KING_CHECK' }
+  /* ---- phase 8 ---- */
+  | { type: 'PLAY_TACTIC'; tacticId: TacticId }
+  | { type: 'ADVANCE_CALL' }
+  | { type: 'CLOSE_CALL_MODAL' }
+  | { type: 'SET_CALLS_ENABLED'; enabled: boolean }
+  | { type: 'DEBUG_FORCE_CALL'; leadId: string }
+  | { type: 'DEBUG_SET_MOMENTUM'; momentum: number }
+  | { type: 'DEBUG_REVEAL_TELLS' }
+  /* ---- phase 7 ---- */
+  | { type: 'BUY_TABLE'; tierId: TableTierId }
+  | { type: 'ADVANCE_CEREMONY' }
+  | { type: 'GIVE_SPEECH'; key: SpeechKey }
+  | { type: 'CLOSE_CEREMONY' }
+  | { type: 'TOGGLE_TROPHY'; awardId: string; seasonIndex: number }
+  | { type: 'DEBUG_JUMP_TO_NOMINATIONS' }
+  | { type: 'DEBUG_FORCE_CEREMONY' }
+  | { type: 'DEBUG_GRANT_TROPHY'; awardId: string }

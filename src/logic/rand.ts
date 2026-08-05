@@ -1,17 +1,39 @@
-/* The ONLY source of randomness in the game. Seedable later without touching
-   any caller. */
+/* The ONLY source of randomness in the game.
+ *
+ * The seed lives here, but its OWNER is GameState.rngSeed: the reducer seeds
+ * from state on the way in and reads the cursor back out on the way out. That
+ * is what makes the reducer pure without threading a seed through the hundred
+ * or so call sites that draw from it — none of them changed, and none of them
+ * need to know. A draw taken outside the reducer (a component rendering, a
+ * test poking a helper directly) is harmless: the next dispatch re-seeds from
+ * state and overwrites whatever the cursor drifted to. */
+
+const MOD = 4294967296
 
 let _seed: number | null = null
 
 export function rand(): number {
   if (_seed === null) return Math.random()
-  _seed = (_seed * 1664525 + 1013904223) % 4294967296
-  return _seed / 4294967296
+  _seed = (_seed * 1664525 + 1013904223) % MOD
+  return _seed / MOD
 }
 
-/** Not called in Phase 1. Kept so a deterministic mode is a one-liner away. */
-export function setSeed(seed: number | null): void {
-  _seed = seed
+/** `null` hands the game back to Math.random — the unseeded escape hatch.
+ *  Anything that isn't a finite number is treated as null rather than stored:
+ *  a NaN seed would make every subsequent draw NaN, and every `chance()` built
+ *  on it silently false, which is a very quiet way to break a whole game. */
+export function setSeed(seed: number | null | undefined): void {
+  _seed = typeof seed === 'number' && Number.isFinite(seed) ? seed : null
+}
+
+/** Where the cursor is now, so the reducer can store it. Null while unseeded. */
+export function currentSeed(): number | null {
+  return _seed
+}
+
+/** A fresh unpredictable seed for a brand new game. */
+export function randomSeed(): number {
+  return Math.floor(Math.random() * MOD)
 }
 
 export const pick = <T,>(a: T[]): T => a[Math.floor(rand() * a.length)]

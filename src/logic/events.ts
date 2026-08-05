@@ -25,6 +25,8 @@ import type {
   PendingChoice,
 } from '../state/types'
 import { getChar } from './characters'
+import { hasPerk } from './perks'
+import { P7 } from '../data/p7'
 import { atLeastRank, clampRep, deriveStats } from './economy'
 import { arch, makeLead } from './leads'
 import { withLog } from './log'
@@ -78,11 +80,14 @@ export function selectEvent(state: GameState): EventDef | null {
   return chosen
 }
 
-/** Community Sponsorship halves how often bad reviews come up. */
+/** Community Sponsorship halves how often bad reviews come up. So does the
+ *  Community Service Honour — and they stack, because you earned both. */
 export function badReviewWeight(state: GameState): number {
-  return state.activeChannelIds.includes('communitySponsorship')
+  let w = state.activeChannelIds.includes('communitySponsorship')
     ? BAD_REVIEW_BASE_WEIGHT / 2
     : BAD_REVIEW_BASE_WEIGHT
+  if (hasPerk(state, 'goodNeighbour')) w *= 0.5
+  return w
 }
 
 /** The guaranteed 6–9 week VRBO cadence, independent of the 30% roll. */
@@ -106,10 +111,47 @@ export function scheduleNextVrbo(state: GameState): GameState {
 /** Fires independently of the 30% roll, once ego gets loud enough. The ego
  *  threshold never moves; only the character's chance modifier does. */
 export function shouldCringe(state: GameState): boolean {
+  /* Platinum sponsorship (and a Full Ego speech) is paid for the season after
+     it happened, in the currency of being perceived. */
+  const sponsor =
+    (state.sponsorCringeSeasons ?? 0) > 0 ? P7.SPONSOR_CRINGE_DELTA : 0
   return (
     deriveStats(state).ego >= 8 &&
-    chance(CRINGE_WEEKLY_CHANCE + getChar(state).cringeChanceDelta)
+    chance(CRINGE_WEEKLY_CHANCE + getChar(state).cringeChanceDelta + sponsor)
   )
+}
+
+/** How many PLAYABLE weeks a market swing lasts once it fires. */
+export const MARKET_MODIFIER_WEEKS = 2
+
+/**
+ * Installs a market swing, REPLACING whatever was running. Hot Market and Rate
+ * Spike are mutually exclusive: two of them stacking to a silent +20%, or
+ * cancelling into a banner that says nothing, is worse than a rule the player
+ * can hold in their head.
+ *
+ * It fires while week W is being resolved, and W is over, so the window it is
+ * paid for is W+1 and W+2. Modifiers are live while `week < expiresWeek`, so
+ * that window expires at W+3 — the `1 +` is the dead week being skipped, not
+ * an off-by-one.
+ */
+export function setMarketModifier(
+  state: GameState,
+  id: 'hotMarket' | 'rateSpike',
+  label: string,
+  closeChanceDelta: number,
+): GameState {
+  return {
+    ...state,
+    activeModifiers: [
+      {
+        id,
+        label,
+        closeChanceDelta,
+        expiresWeek: state.week + 1 + MARKET_MODIFIER_WEEKS,
+      },
+    ],
+  }
 }
 
 export function applyEvent(state: GameState, id: EventId): EventResult {
@@ -181,13 +223,7 @@ export function applyEvent(state: GameState, id: EventId): EventResult {
       break
     }
     case 'hotMarket': {
-      s = {
-        ...s,
-        activeModifiers: [
-          ...s.activeModifiers,
-          { closeChanceDelta: 0.1, expiresWeek: s.week + 2 },
-        ],
-      }
+      s = setMarketModifier(s, 'hotMarket', 'Hot Market', 0.1)
       s = withLog(
         s,
         'event',
@@ -197,13 +233,7 @@ export function applyEvent(state: GameState, id: EventId): EventResult {
       break
     }
     case 'rateSpike': {
-      s = {
-        ...s,
-        activeModifiers: [
-          ...s.activeModifiers,
-          { closeChanceDelta: -0.1, expiresWeek: s.week + 2 },
-        ],
-      }
+      s = setMarketModifier(s, 'rateSpike', 'Rate Spike', -0.1)
       s = withLog(
         s,
         'event',

@@ -6,7 +6,6 @@ import {
   START_CASH,
   bragFor,
   clampRep,
-  commissionFor,
   crossedThresholds,
   deriveStats,
   gatedOnMultipliedEarnings,
@@ -14,8 +13,10 @@ import {
   PRESET_SLOTS,
   rankIndex,
   repUnlocked,
+  sideHustleBand,
   SLOTS,
   swagOf,
+  sync,
   weeklyUpkeep,
 } from '../logic/economy'
 import {
@@ -70,6 +71,22 @@ import {
 import { RENO_OCCUPIED_REFUSAL } from '../data/properties'
 import { TENANT_FIX_LINES } from '../data/tenantEvents'
 import { withLog } from '../logic/log'
+import { resolveClose } from '../logic/close'
+import {
+  beatOf,
+  callSummaryLine,
+  clampMomentum,
+  clientReplyFor,
+  finalChanceFor,
+  isPerfect,
+  pickBeat,
+  readLineFor,
+  revealTell,
+  shouldCall,
+  startCall,
+  tacticDelta,
+} from '../logic/call'
+import { P8 } from '../data/p8'
 import {
   activeChannels,
   channelOf,
@@ -85,11 +102,19 @@ import {
   charLine,
   getChar,
   hasFlag,
-  pushStatModifier,
 } from '../logic/characters'
-import { DEFAULT_CHARACTER_ID, P5 } from '../data/p5'
+import { DEFAULT_CHARACTER_ID } from '../data/p5'
 import { UNKNOWN_CHARACTER_LINE } from '../data/characters'
-import { chance, money, pick, randInt, roundTo } from '../logic/rand'
+import {
+  chance,
+  currentSeed,
+  money,
+  pick,
+  randInt,
+  randomSeed,
+  roundTo,
+  setSeed,
+} from '../logic/rand'
 import {
   CONCEDE_LINE,
   DISTRICTS,
@@ -98,13 +123,12 @@ import {
   KING_TITLE,
 } from '../data/districts'
 import { P6, PLAYER } from '../data/p6'
-import { FALLBACK_RIVAL, rivalOf, UNDERCUT_SUFFIX } from '../data/rivals'
+import { FALLBACK_RIVAL, rivalOf } from '../data/rivals'
 import {
   districtsForType,
   gain,
   initialTerritory,
   perkActive,
-  pluralityOwner,
   setShares,
   transferShare,
 } from '../logic/territory'
@@ -121,15 +145,43 @@ import {
   territorySummary,
   thresholdSweep,
 } from '../logic/territoryWeek'
+import { awardOf, emptySeasonStats } from '../data/awards'
+import {
+  CEREMONY_CLOSE_LINE,
+  CEREMONY_OPEN_LINE,
+  GAME_OVER_CEREMONY_LINE,
+  NOMINATIONS_LINE,
+  NO_REFUNDS_LINE,
+  P7,
+  SHUTOUT_LINE,
+  SPEECH_OPTIONS,
+  SWEEP_LINE,
+  TABLE_LINES,
+  UPSET_LINE,
+} from '../data/p7'
+import {
+  PLAYER_NOMINEE,
+  bumpSeason,
+  computeNominations,
+  isUpgrade,
+  nomineeName,
+  playerWins,
+  runCeremony,
+  seasonWeek,
+  shelfFull,
+  tierOf,
+  upgradeCost,
+} from '../logic/awards'
+import { hasPerk } from '../logic/perks'
 import { INBOUND_LINES } from '../data/marketing'
 import {
   REP_DECAY_PER_WEEK,
   REP_FREE_LEAD_AT,
   REP_INBOUND_AT,
-  REP_PER_DEAL,
 } from '../data/reputation'
 import type {
   Action,
+  CallTurn,
   GameState,
   Lead,
   Property,
@@ -142,13 +194,21 @@ import type {
 } from './types'
 
 export function initialState(): GameState {
+  /* Minted, deliberately NOT installed. Calling setSeed here would clobber a
+     seed the caller had just set — which is exactly what a seeded test does
+     before building a fixture. The new seed takes effect on the first dispatch
+     instead; the draws below (the listing pool) run on whatever cursor is
+     current, which is unpredictable in a real game and pinned in a test. */
+  const rngSeed = randomSeed()
   const base: GameState = {
-    version: 5,
+    version: 8,
     week: 1,
     cash: START_CASH,
     careerEarnings: 0,
     ap: AP_PER_WEEK,
     rank: 'receptionist',
+    rngSeed,
+    sideHustlesThisWeek: 0,
     stats: { hustle: 1, swagger: 1, ego: 0 },
     permBonuses: { hustle: 0, swagger: 0, ego: 0 },
     leads: [],
@@ -202,6 +262,17 @@ export function initialState(): GameState {
     channelTargets: {},
     weekDealDistricts: [],
     weekFarmedDistricts: [],
+    call: null,
+    callsEnabled: true,
+    callStats: { calls: 0, perfectCalls: 0, hangups: 0 },
+    season: emptySeasonStats(0),
+    seasonStartWeek: 1,
+    nominations: null,
+    tableTier: 'none',
+    ceremony: null,
+    trophies: [],
+    awardHistory: [],
+    sponsorCringeSeasons: 0,
   }
   /* The pool is seeded as soon as anything is eligible so the Portfolio tab is
      never empty. Nothing unlocks below Seller Agent, so a week-one game keeps
@@ -322,21 +393,6 @@ function patchUnit(
 const propertyOf = (s: GameState, id: string): Property | undefined =>
   s.properties.find((p) => p.id === id)
 
-/** A failed close costs the accent, and the accent was the swagger. Does not
- *  stack: a slip while one is already live is a no-op. */
-function applyAccentSlip(state: GameState): GameState {
-  if (!hasFlag(state, 'accentSlip')) return state
-  const pushed = pushStatModifier(state, {
-    stat: 'swagger',
-    delta: -1,
-    expiresWeek: state.week + P5.ACCENT_SLIP_WEEKS,
-    label: 'Accent Slip',
-  })
-  if (!pushed) return state
-  const line = charLine(state, 'accentSlip')
-  return line ? withLog(pushed, 'event', line) : pushed
-}
-
 /** Why this character will not put this on, or null if they will. Some people
  *  have been doing this too long to wear a boa. */
 function equipRefusal(state: GameState, it: SwagItem): string | null {
@@ -347,18 +403,57 @@ function equipRefusal(state: GameState, it: SwagItem): string | null {
   )
 }
 
-/** Stats are derived, so every state change re-syncs them. */
-function sync(state: GameState): GameState {
-  return { ...state, stats: deriveStats(state) }
+/** Action types that still resolve while a call is in progress. Everything
+ *  else is blocked — a call is a modal, expressed in state. */
+const CALL_SAFE_ACTIONS: ReadonlySet<Action['type']> = new Set([
+  'PLAY_TACTIC',
+  'ADVANCE_CALL',
+  'CLOSE_CALL_MODAL',
+  'RESTART',
+  'NEW_GAME',
+  'IMPORT_SAVE',
+  'DEBUG_SET_MOMENTUM',
+  'DEBUG_REVEAL_TELLS',
+])
+
+/**
+ * The reducer React actually dispatches to. Pure: it seeds the RNG from the
+ * state it was handed, runs the real reducer, and stores the cursor it ended
+ * on. The same (state, action) pair therefore produces the same next state
+ * every time — under StrictMode's double-invoke, in a test, and after a
+ * refresh, because rngSeed rides along in the save.
+ *
+ * A no-op (an illegal move returning `state` unchanged) deliberately does NOT
+ * advance the stored seed: refusing an action must not consume the player's
+ * luck.
+ *
+ * An action that hands back a DIFFERENT rngSeed than it was given has minted
+ * its own RNG identity — a new game, a restart, an imported save — and keeps
+ * it. Only the ordinary case gets the cursor written back.
+ */
+export function reducer(state: GameState, action: Action): GameState {
+  /* A state with no seed on it — a hand-built test fixture, most of them —
+     does NOT get seeded from, because that would stomp on a seed the caller
+     deliberately installed. It still gets the cursor written back, so the
+     first real dispatch adopts the RNG and every one after it is reproducible. */
+  const seeded = Number.isFinite(state.rngSeed)
+  if (seeded) setSeed(state.rngSeed)
+  const out = baseReducer(state, action)
+  if (out === state || (seeded && out.rngSeed !== state.rngSeed)) return out
+  const seed = currentSeed()
+  return seed === null ? out : { ...out, rngSeed: seed }
 }
 
-export function reducer(state: GameState, action: Action): GameState {
+function baseReducer(state: GameState, action: Action): GameState {
   if (
     state.gameOver &&
     action.type !== 'RESTART' &&
     action.type !== 'IMPORT_SAVE'
   )
     return state
+  /* A call is a blocking modal in state form. While the line is open the only
+     legal moves are the call's own, plus the escapes that must always work. */
+  if (state.call !== null && !CALL_SAFE_ACTIONS.has(action.type)) return state
   switch (action.type) {
     case 'WORK_PHONES': {
       if (state.ap < 1) return state
@@ -387,6 +482,7 @@ export function reducer(state: GameState, action: Action): GameState {
         careerEarnings: s.careerEarnings + 100,
         counters: { ...s.counters, showingsRun: s.counters.showingsRun + 1 },
       }
+      s = bumpSeason(s, 'showingsRun')
       return sync(
         withLog(
           s,
@@ -401,9 +497,20 @@ export function reducer(state: GameState, action: Action): GameState {
     }
     case 'SIDE_HUSTLE': {
       if (state.ap < 1) return state
-      const amt = randInt(150, 400)
+      /* Diminishing within the week. The first one is the best money on the
+         board; the fourth is the reason you got a licence in the first place.
+         This is the whole counterweight to spamming gig work over the pipeline
+         — the leads have to be worth working, so the safety valve gets worse
+         the harder you lean on it. */
+      const [lo, hi] = sideHustleBand(state.sideHustlesThisWeek)
+      const amt = randInt(lo, hi)
       let s = spendAp(state, 1)
-      s = { ...s, cash: s.cash + amt, careerEarnings: s.careerEarnings + amt }
+      s = {
+        ...s,
+        cash: s.cash + amt,
+        careerEarnings: s.careerEarnings + amt,
+        sideHustlesThisWeek: s.sideHustlesThisWeek + 1,
+      }
       return sync(
         withLog(
           s,
@@ -430,6 +537,7 @@ export function reducer(state: GameState, action: Action): GameState {
         ),
         counters: { ...s.counters, showingsRun: s.counters.showingsRun + 1 },
       }
+      s = bumpSeason(s, 'showingsRun')
       let text =
         'You walked ' +
         lead.clientName +
@@ -451,78 +559,225 @@ export function reducer(state: GameState, action: Action): GameState {
       if (state.ap < 1 || state.rank === 'receptionist') return state
       const lead = state.leads.find((l) => l.id === action.leadId)
       if (!lead || lead.stage !== 'ready' || lead.sold) return state
-      const a = arch(lead.archetypeId)
       let s = spendAp(state, 1)
-      const success = chance(closeChance(state, lead))
-      if (!success) {
-        s = applyAccentSlip(s)
-        if (lead.retriedClose) {
-          s = {
-            ...s,
-            leads: s.leads.filter((l) => l.id !== lead.id),
-            counters: { ...s.counters, leadsLost: s.counters.leadsLost + 1 },
-          }
-          return sync(
-            withLog(
-              s,
-              'event',
-              lead.clientName +
-                ' walked for good. Second time at the table, second time watching a pen go back in a pocket.',
-            ),
-          )
-        }
-        s = {
-          ...s,
-          leads: s.leads.map((l) =>
-            l.id === lead.id
-              ? { ...l, patience: Math.max(0, l.patience - 1), retriedClose: true }
-              : l,
-          ),
+      /* Every attempt counts toward the Hustle Award, closed or not — and a
+         call is ONE attempt no matter how many turns it runs. Bumped here,
+         before the fork, so both paths count identically. */
+      s = bumpSeason(s, 'closeAttempts')
+      /* Big money gets a conversation. Everything else gets the dice it always
+         got — and so does everyone, if the player switched calls off. */
+      if (!state.callsEnabled || !shouldCall(lead)) {
+        /* closeChance reads only AP-independent stats, so pre-spend `state` and
+           post-spend `s` are equivalent here. Kept distinct so the formula's
+           inputs are visibly unchanged from the pre-refactor version. */
+        return resolveClose(s, lead, closeChance(state, lead)).state
+      }
+      const opened: GameState = {
+        ...s,
+        call: startCall(lead),
+        callStats: { ...s.callStats, calls: s.callStats.calls + 1 },
+      }
+      return sync(
+        withLog(
+          opened,
+          'flavor',
+          lead.retriedClose
+            ? 'Second call with ' +
+                lead.clientName +
+                '. They remember the first one. So do you.'
+            : 'You called ' +
+                lead.clientName +
+                '. This is a ' +
+                money(lead.salePrice) +
+                ' conversation. Your palms know it.',
+        ),
+      )
+    }
+    case 'PLAY_TACTIC': {
+      const call = state.call
+      if (!call || call.phase !== 'awaitingTactic') return state
+      const lead = state.leads.find((l) => l.id === call.leadId)
+      if (!lead) return state
+      const beat = beatOf(call.currentBeatId)
+
+      /* Read buys information instead of momentum. It costs the turn, keeps
+         the beat, and can only be played once. */
+      if (action.tacticId === 'read') {
+        if (call.usedTactics.includes('read')) return state
+        const found = revealTell(lead, beat, call.revealedTells)
+        const line = readLineFor(lead.clientName, found)
+        const entry: CallTurn = {
+          turn: call.turn,
+          beatId: beat.id,
+          tacticUsed: 'read',
+          reaction: 'neutral',
+          delta: 0,
+          clientReply: line,
         }
         return sync(
           withLog(
-            s,
-            'event',
-            lead.clientName +
-              ' needed to “sleep on it,” which is a thing people say while backing toward a door. One more shot at this.',
+            {
+              ...state,
+              call: {
+                ...call,
+                phase: 'showingReaction',
+                history: [...call.history, entry],
+                usedTactics: [...call.usedTactics, 'read'],
+                revealedTells: [...call.revealedTells, found.tactic],
+              },
+            },
+            'flavor',
+            line,
           ),
         )
       }
-      const isReferralCut = state.rank === 'junior'
-      const raw = commissionFor(lead.salePrice, state.rank).earnings
-      /* §9.6 — the Zambonis are undercutting, and it is their block. */
-      const undercut =
-        s.rivalEffects.undercutWeeksLeft > 0 &&
-        pluralityOwner(s, lead.districtId) === 'zambonis'
-      const earnings = undercut
-        ? Math.round(raw * P6.UNDERCUT_COMMISSION_MULT)
-        : raw
-      s = {
-        ...s,
-        cash: s.cash + earnings,
-        careerEarnings: s.careerEarnings + earnings,
-        leads: s.leads.map((l) => (l.id === lead.id ? { ...l, sold: true } : l)),
-        counters: { ...s.counters, dealsClosed: s.counters.dealsClosed + 1 },
-        reputation: clampRep(s.reputation + REP_PER_DEAL),
-        /* Closing here is the loudest thing you can do here. */
-        weekDealDistricts: s.weekDealDistricts.includes(lead.districtId)
-          ? s.weekDealDistricts
-          : [...s.weekDealDistricts, lead.districtId],
+
+      const { reaction, delta } = tacticDelta(
+        state,
+        lead,
+        beat,
+        action.tacticId,
+        call.usedTactics,
+      )
+      const entry: CallTurn = {
+        turn: call.turn,
+        beatId: beat.id,
+        tacticUsed: action.tacticId,
+        reaction,
+        delta,
+        clientReply: clientReplyFor(reaction),
       }
-      s = gain(s, lead.districtId, PLAYER, P6.GAIN_DEAL)
-      const line =
-        lead.clientName +
-        ' ' +
-        pick(a.successes) +
-        ' The house sold for ' +
-        money(lead.salePrice) +
-        '; ' +
-        (isReferralCut
-          ? 'the agent who signed it slid you a referral cut of ' +
-            money(earnings) +
-            ' and a compliment about your handwriting.'
-          : 'your share came to ' + money(earnings) + '.')
-      return sync(withLog(s, 'deal', line + (undercut ? UNDERCUT_SUFFIX : '')))
+      return {
+        ...state,
+        call: {
+          ...call,
+          phase: 'showingReaction',
+          momentum: clampMomentum(call.momentum + delta),
+          history: [...call.history, entry],
+          usedTactics: [...call.usedTactics, action.tacticId],
+        },
+      }
+    }
+    case 'ADVANCE_CALL': {
+      const call = state.call
+      if (!call || call.phase !== 'showingReaction') return state
+      const lead = state.leads.find((l) => l.id === call.leadId)
+      if (!lead) return { ...state, call: null }
+
+      /* Turn 2 is the only place a call can collapse early. Turn 3 was ending
+         anyway, so it resolves normally and is not charged for it. */
+      const hangup = call.turn === 2 && call.momentum <= P8.HANGUP_MOMENTUM
+      if (!hangup && call.turn < P8.TURNS) {
+        /* Read buys information about THIS beat, so the beat has to still be
+           there to use it on. The turn advances; the question does not. */
+        const wasRead =
+          call.history[call.history.length - 1]?.tacticUsed === 'read'
+        if (wasRead)
+          return {
+            ...state,
+            call: { ...call, turn: call.turn + 1, phase: 'awaitingTactic' },
+          }
+        const next = pickBeat(lead, call.turn + 1, call.usedBeatIds)
+        return {
+          ...state,
+          call: {
+            ...call,
+            turn: call.turn + 1,
+            currentBeatId: next.id,
+            usedBeatIds: call.usedBeatIds.includes(next.id)
+              ? call.usedBeatIds
+              : [...call.usedBeatIds, next.id],
+            phase: 'awaitingTactic',
+          },
+        }
+      }
+
+      let s: GameState = state
+      if (hangup) {
+        s = {
+          ...s,
+          callStats: { ...s.callStats, hangups: s.callStats.hangups + 1 },
+          leads: s.leads.map((l) =>
+            l.id === lead.id
+              ? {
+                  ...l,
+                  patience: Math.max(0, l.patience - P8.PATIENCE_ON_HANGUP),
+                }
+              : l,
+          ),
+        }
+        s = withLog(
+          s,
+          'event',
+          "'Let me think about it.' The line goes dead. That phrase has never once meant thinking.",
+        )
+      }
+
+      /* The lead may have lost patience above, so re-read it before resolving. */
+      const current = s.leads.find((l) => l.id === lead.id) ?? lead
+      const finalChance = finalChanceFor(s, current, call)
+      const perfect = isPerfect(call)
+      if (perfect)
+        s = {
+          ...s,
+          callStats: {
+            ...s.callStats,
+            perfectCalls: s.callStats.perfectCalls + 1,
+          },
+        }
+      s = withLog(s, 'flavor', callSummaryLine(call.momentum))
+      if (perfect)
+        s = withLog(
+          s,
+          'flavor',
+          'Three for three. Every single thing you said landed. You will be insufferable about this.',
+        )
+
+      const result = resolveClose(s, current, finalChance)
+      return {
+        ...result.state,
+        call: {
+          ...call,
+          phase: 'resolved',
+          outcome: {
+            success: result.success,
+            finalChance,
+            payout: result.payout,
+          },
+        },
+      }
+    }
+    case 'CLOSE_CALL_MODAL': {
+      if (!state.call || state.call.phase !== 'resolved') return state
+      return { ...state, call: null }
+    }
+    case 'SET_CALLS_ENABLED':
+      return { ...state, callsEnabled: action.enabled }
+    case 'DEBUG_FORCE_CALL': {
+      const lead = state.leads.find((l) => l.id === action.leadId)
+      if (!lead || state.call) return state
+      return {
+        ...state,
+        call: startCall(lead),
+        callStats: { ...state.callStats, calls: state.callStats.calls + 1 },
+      }
+    }
+    case 'DEBUG_SET_MOMENTUM': {
+      if (!state.call) return state
+      return {
+        ...state,
+        call: { ...state.call, momentum: clampMomentum(action.momentum) },
+      }
+    }
+    case 'DEBUG_REVEAL_TELLS': {
+      if (!state.call) return state
+      return {
+        ...state,
+        call: {
+          ...state.call,
+          revealedTells: ['empathize', 'push', 'namedrop', 'flex'],
+        },
+      }
     }
     case 'BUY_SWAG': {
       const it = swagOf(action.itemId)
@@ -530,11 +785,15 @@ export function reducer(state: GameState, action: Action): GameState {
         return state
       if (rankIndex(state.rank) < rankIndex(it.unlockRank)) return state
       if (state.cash < it.price) return state
-      let s = {
-        ...state,
-        cash: state.cash - it.price,
-        ownedSwagIds: [...state.ownedSwagIds, it.id],
-      }
+      let s = bumpSeason(
+        {
+          ...state,
+          cash: state.cash - it.price,
+          ownedSwagIds: [...state.ownedSwagIds, it.id],
+        },
+        'swagSpend',
+        it.price,
+      )
       /* Buying is always legal; wearing it is a separate opinion. */
       const refusal = equipRefusal(s, it)
       if (refusal)
@@ -814,6 +1073,7 @@ export function reducer(state: GameState, action: Action): GameState {
       }
       /* Buying a door on a street is the fastest way onto that street. */
       s = gain(s, l.districtId, PLAYER, P6.GAIN_PROPERTY_BUY)
+      s = bumpSeason(s, 'propertiesBought')
       s = fillPool(s)
       return sync(
         withLog(
@@ -1013,6 +1273,8 @@ export function reducer(state: GameState, action: Action): GameState {
         )
       const eventId = u.openIssue.eventId
       let s: GameState = { ...state, cash: state.cash - u.openIssue.fixCost }
+      /* Fixing things is the whole basis of the Community Service Honour. */
+      s = bumpSeason(s, 'tenantIssuesFixed')
       s = patchUnit(spendAp(s, 1), p.id, u.id, (x) => ({
         ...x,
         openIssue: null,
@@ -1279,7 +1541,7 @@ export function reducer(state: GameState, action: Action): GameState {
         PLAYER,
         P6.GAIN_FARM,
       )
-      let s = res.state
+      let s = bumpSeason(res.state, 'districtsFarmed')
       s = {
         ...s,
         weekFarmedDistricts: s.weekFarmedDistricts.includes(d.id)
@@ -1308,6 +1570,92 @@ export function reducer(state: GameState, action: Action): GameState {
       if (action.districtId) channelTargets[action.channelId] = action.districtId
       else delete channelTargets[action.channelId]
       return sync({ ...state, channelTargets })
+    }
+    /* ------------------------------------------------------------ phase 7 */
+    case 'BUY_TABLE': {
+      const target = tierOf(action.tierId)
+      if (target.id === 'none') return state
+      /* The window is the last two weeks of the season and nothing else. */
+      if (seasonWeek(state) < P7.NOMINATION_WEEK_OFFSET) return state
+      if (!state.nominations) return state
+      if (!isUpgrade(state.tableTier, action.tierId))
+        return withLog(state, 'flavor', NO_REFUNDS_LINE)
+      const cost = upgradeCost(state.tableTier, action.tierId)
+      if (state.cash < cost)
+        return withLog(
+          state,
+          'flavor',
+          'The Board takes cheques. The Board does not take this cheque.',
+        )
+      const s: GameState = {
+        ...state,
+        cash: state.cash - cost,
+        tableTier: action.tierId,
+      }
+      return sync(withLog(s, 'money', TABLE_LINES[action.tierId] ?? ''))
+    }
+    case 'ADVANCE_CEREMONY': {
+      const c = state.ceremony
+      if (!c) return state
+      if (c.revealIndex >= c.results.length) return state
+      return {
+        ...state,
+        ceremony: { ...c, revealIndex: c.revealIndex + 1 },
+      }
+    }
+    case 'GIVE_SPEECH': {
+      const c = state.ceremony
+      if (!c || c.speechGiven) return state
+      if (playerWins(c.results).length === 0) return state
+      const opt = SPEECH_OPTIONS.find((o) => o.key === action.key)
+      if (!opt) return state
+      let s: GameState = {
+        ...state,
+        ceremony: { ...c, speechGiven: true },
+        reputation: clampRep(state.reputation + opt.rep),
+        permBonuses: {
+          ...state.permBonuses,
+          ego: state.permBonuses.ego + opt.ego,
+        },
+      }
+      /* A Full Ego speech buys the same season of cringe a sponsorship does. */
+      if (opt.cringeSeason) s = { ...s, sponsorCringeSeasons: 1 }
+      return sync(withLog(s, 'event', opt.line))
+    }
+    case 'CLOSE_CEREMONY': {
+      const c = state.ceremony
+      if (!c) return state
+      const won = playerWins(c.results).length
+      const s: GameState = { ...state, ceremony: null }
+      return sync(
+        withLog(
+          s,
+          'event',
+          CEREMONY_CLOSE_LINE.replace('{season}', String(c.seasonIndex + 1))
+            .replace('{w}', String(won))
+            .replace('{n}', String(c.results.length)),
+        ),
+      )
+    }
+    case 'TOGGLE_TROPHY': {
+      const t = state.trophies.find(
+        (x) =>
+          x.awardId === action.awardId && x.seasonIndex === action.seasonIndex,
+      )
+      if (!t) return state
+      /* Six on the shelf is six. Taking one down is always allowed. */
+      if (!t.displayed && shelfFull(state))
+        return withLog(
+          state,
+          'flavor',
+          'The shelf holds six. Something has to come down first.',
+        )
+      return sync({
+        ...state,
+        trophies: state.trophies.map((x) =>
+          x === t ? { ...x, displayed: !x.displayed } : x,
+        ),
+      })
     }
     case 'END_WEEK':
       /* Unresolved decisions block the week. The button is disabled too, but
@@ -1352,6 +1700,27 @@ export function reducer(state: GameState, action: Action): GameState {
       return sync(applyEvent(state, 'showdown').state)
     case 'DEBUG_KING_CHECK':
       return sync(checkKing(state).state)
+    case 'DEBUG_JUMP_TO_NOMINATIONS':
+      /* Rewinds the season start so THIS week is season week 12. */
+      return sync({
+        ...state,
+        seasonStartWeek: state.week - (P7.NOMINATION_WEEK_OFFSET - 1),
+      })
+    case 'DEBUG_FORCE_CEREMONY':
+      return sync({
+        ...state,
+        seasonStartWeek: state.week - (P7.SEASON_WEEKS - 1),
+        nominations: state.nominations ?? computeNominations(state),
+      })
+    case 'DEBUG_GRANT_TROPHY': {
+      if (!awardOf(action.awardId)) return state
+      const trophy = {
+        awardId: action.awardId,
+        seasonIndex: state.season.seasonIndex,
+        displayed: !shelfFull(state),
+      }
+      return sync({ ...state, trophies: [...state.trophies, trophy] })
+    }
     case 'IMPORT_SAVE': {
       const s = sync({
         ...initialState(),
@@ -1370,6 +1739,136 @@ export function reducer(state: GameState, action: Action): GameState {
       return initialState()
     default:
       return state
+  }
+}
+
+/**
+ * §5 + §6 — the awards beat of End Week. Nominations land at season week 12;
+ * the ceremony runs at 13 and rolls the season over. Everything else is a
+ * no-op, which is most weeks.
+ *
+ * `events` is the Week Summary's incident list, appended in place the same way
+ * the milestone and event steps do it.
+ */
+function awardsStep(s: GameState, events: string[]): GameState {
+  const sw = seasonWeek(s)
+
+  if (sw === P7.NOMINATION_WEEK_OFFSET) {
+    const nominations = computeNominations(s)
+    const names = nominations
+      .map((id) => awardOf(id)?.name ?? id)
+      .join(', ')
+    return withLog(
+      { ...s, nominations },
+      'event',
+      NOMINATIONS_LINE.replace('{n}', String(nominations.length)).replace(
+        '{list}',
+        names,
+      ),
+    )
+  }
+
+  if (sw < P7.SEASON_WEEKS) return s
+
+  /* A career that ends this week does not attend. */
+  if (s.gameOver || s.cash < LOSE_AT)
+    return rollSeason(withLog(s, 'event', GAME_OVER_CEREMONY_LINE))
+
+  /* §6.6 — the previous season's sponsor penalty expires as this one opens. */
+  let out: GameState = {
+    ...s,
+    sponsorCringeSeasons: Math.max(0, s.sponsorCringeSeasons - 1),
+  }
+  /* Nominations exist even if the player never saw week 12 (a migrated save
+     landing straight on 13, or a debug jump). */
+  const nominations = out.nominations ?? computeNominations(out)
+  const seasonIndex = out.season.seasonIndex
+  const { results, upsets } = runCeremony(out)
+
+  out = withLog(out, 'event', CEREMONY_OPEN_LINE)
+  upsets.forEach(() => {
+    out = withLog(out, 'event', UPSET_LINE)
+  })
+
+  /* §6.5 — trophies first, so the shelf fills in ceremony order. */
+  const wins = playerWins(results)
+  for (const r of wins) {
+    const award = awardOf(r.awardId)!
+    out = {
+      ...out,
+      trophies: [
+        ...out.trophies,
+        {
+          awardId: r.awardId,
+          seasonIndex,
+          displayed: !shelfFull(out),
+        },
+      ],
+    }
+    out = withLog(
+      out,
+      'promotion',
+      award.winLine.replace('{weeks}', String(out.week)),
+    )
+  }
+
+  /* A loss only stings where you were nominated to lose. */
+  for (const r of results) {
+    if (r.winnerId === PLAYER_NOMINEE) continue
+    if (!nominations.includes(r.awardId)) continue
+    const award = awardOf(r.awardId)!
+    out = withLog(
+      out,
+      'event',
+      award.loseLine.replaceAll('{winner}', nomineeName(r.winnerId)),
+    )
+  }
+
+  /* The table pays its reputation once, on the night. */
+  const tier = tierOf(out.tableTier)
+  if (tier.repGain)
+    out = { ...out, reputation: clampRep(out.reputation + tier.repGain) }
+  if (tier.id === 'sponsor') out = { ...out, sponsorCringeSeasons: 1 }
+
+  if (wins.length >= 5) {
+    out = { ...out, reputation: clampRep(out.reputation + P7.SWEEP_BONUS_REP) }
+    out = withLog(out, 'promotion', SWEEP_LINE)
+  }
+  if (wins.length === 0 && nominations.length >= 3) {
+    out = {
+      ...out,
+      permBonuses: {
+        ...out.permBonuses,
+        hustle: out.permBonuses.hustle + P7.SHUTOUT_HUSTLE,
+      },
+    }
+    out = withLog(
+      out,
+      'event',
+      SHUTOUT_LINE.replace('{n}', String(nominations.length)),
+    )
+  }
+
+  events.push(
+    'The Goldies — ' + wins.length + ' of ' + results.length,
+  )
+
+  out = {
+    ...out,
+    awardHistory: [...out.awardHistory, { seasonIndex, results }],
+    ceremony: { seasonIndex, results, revealIndex: 0, speechGiven: false },
+  }
+  return rollSeason(out)
+}
+
+/** §6.6 — a fresh ledger for the season that starts next week. */
+function rollSeason(s: GameState): GameState {
+  return {
+    ...s,
+    season: emptySeasonStats(s.season.seasonIndex + 1),
+    seasonStartWeek: s.week + 1,
+    nominations: null,
+    tableTier: 'none',
   }
 }
 
@@ -1451,6 +1950,7 @@ export function endWeek(state: GameState): GameState {
 
   if (spend > 0) {
     s = { ...s, cash: s.cash - spend }
+    s = bumpSeason(s, 'marketingSpend', spend)
     money_out.push(['Marketing', spend])
   }
 
@@ -1485,8 +1985,14 @@ export function endWeek(state: GameState): GameState {
   /* Your benches, your blocks — Downtown dominance pays an extra point. */
   const benchBonus =
     s.activeChannelIds.length > 0 && perkActive(s, 'benchmark') ? 1 : 0
-  const repGain = weeklyChannelRep(s) + benchBonus
-  if (repGain) s = { ...s, reputation: clampRep(s.reputation + repGain) }
+  /* Two trophies pay reputation every week they are on the shelf. */
+  const trophyRep =
+    (hasPerk(s, 'benchLove') ? 1 : 0) + (hasPerk(s, 'agentOfTheYear') ? 2 : 0)
+  const repGain = weeklyChannelRep(s) + benchBonus + trophyRep
+  if (repGain) {
+    s = { ...s, reputation: clampRep(s.reputation + repGain) }
+    s = bumpSeason(s, 'repGained', repGain)
+  }
   if (s.activeChannelIds.length === 0) {
     const decayed = clampRep(s.reputation - repDecayFor(s, REP_DECAY_PER_WEEK))
     if (decayed < s.reputation) {
@@ -1584,7 +2090,7 @@ export function endWeek(state: GameState): GameState {
   /* 4. cringe event (independent, ego >= 8) */
   if (shouldCringe(s)) {
     const r = applyEvent(s, 'cringeEvent')
-    s = r.state
+    s = bumpSeason(r.state, 'cringeEvents')
     events.push(r.label)
     money_out.push([r.label, -r.cashDelta])
   }
@@ -1635,13 +2141,23 @@ export function endWeek(state: GameState): GameState {
     )
   }
 
+  /* 18. THE GOLDIES. Nominations at season week 12, the ceremony at 13. Sits
+     after promotions (a rank earned tonight is a rank you accept the award at)
+     and before the week rolls, so seasonWeek() still reads the week ending. */
+  s = awardsStep(s, events)
+
   /* 6. tidy modifiers, roll the week */
   s = {
     ...s,
     activeModifiers: s.activeModifiers.filter((m) => m.expiresWeek > s.week),
     statModifiers: s.statModifiers.filter((m) => m.expiresWeek > s.week),
     week: s.week + 1,
-    ap: getChar(s).apPerWeek,
+    /* The gig work resets with the week. */
+    sideHustlesThisWeek: 0,
+    /* Rookie of the Year buys one extra point every fourth week, forever. */
+    ap:
+      getChar(s).apPerWeek +
+      (hasPerk(s, 'rookieEnergy') && (s.week + 1) % 4 === 0 ? 1 : 0),
   }
   s = sync(s)
 
