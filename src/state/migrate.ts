@@ -23,6 +23,8 @@ import { gain, initialTerritory, pickLeadDistrict } from '../logic/territory'
 import { P6, PLAYER } from '../data/p6'
 import { emptySeasonStats } from '../data/awards'
 import { MIGRATION_LINE, P7 } from '../data/p7'
+import { CONTENT_MIGRATION_LINE } from '../data/postLines'
+import { unlockedCrewFor } from '../logic/content'
 import type { ActiveModifier, GameState, Slot } from './types'
 
 const TABLE_TIER_IDS: string[] = P7.TABLE_TIERS.map((t) => t.id)
@@ -83,7 +85,9 @@ function validModifiers(v: unknown, week: number): GameState['activeModifiers'] 
       const delta = m.closeChanceDelta as number
       const hot = delta >= 0
       return {
-        id: (m.id === 'hotMarket' || m.id === 'rateSpike'
+        id: (m.id === 'hotMarket' ||
+        m.id === 'rateSpike' ||
+        m.id === 'viralMoment'
           ? m.id
           : hot
             ? 'hotMarket'
@@ -101,7 +105,7 @@ function validModifiers(v: unknown, week: number): GameState['activeModifiers'] 
 export function migrate(raw: unknown): GameState | null {
   if (!raw || typeof raw !== 'object') return null
   const s = raw as AnySave
-  if (typeof s.version !== 'number' || s.version < 1 || s.version > 8)
+  if (typeof s.version !== 'number' || s.version < 1 || s.version > 9)
     return null
 
   const base = initialState()
@@ -141,7 +145,7 @@ export function migrate(raw: unknown): GameState | null {
 
   const out: GameState = {
     ...merged,
-    version: 8,
+    version: 9,
     /* --- the scalars. `merged` spread these straight off the file; a hostile
        or hand-edited save could put NaN, Infinity, or a string in any of them
        and the arithmetic downstream would quietly turn the whole game to NaN.
@@ -293,7 +297,37 @@ export function migrate(raw: unknown): GameState | null {
     },
     /* A call is never restored. See dropInterruptedCall below. */
     call: null,
+    /* ---- phase 9 ---- a pre-post save has never touched the composer ---- */
+    postEgo: num(s.postEgo, 0),
+    pendingLeadBias: Array.isArray(s.pendingLeadBias)
+      ? (s.pendingLeadBias as GameState['pendingLeadBias'])
+      : [],
+    contentHistory: Array.isArray(s.contentHistory)
+      ? (s.contentHistory as GameState['contentHistory'])
+      : [],
+    lastPost: (s.lastPost as GameState['lastPost'] | undefined) ?? null,
+    contentStats:
+      s.contentStats && typeof s.contentStats === 'object'
+        ? {
+            posts: num((s.contentStats as { posts?: unknown }).posts, 0),
+            viral: num((s.contentStats as { viral?: unknown }).viral, 0),
+            embarrassed: num(
+              (s.contentStats as { embarrassed?: unknown }).embarrassed,
+              0,
+            ),
+            skipStreak: num(
+              (s.contentStats as { skipStreak?: unknown }).skipStreak,
+              0,
+            ),
+          }
+        : { posts: 0, viral: 0, embarrassed: 0, skipStreak: 0 },
+    contentEnabled: s.contentEnabled !== false,
+    unlockedCrew: 'none', // recomputed just below
+    postComposerPending: false,
+    postComposerWeek: num(s.postComposerWeek, 0),
+    debugForcedPostOutcome: null,
   }
+  out.unlockedCrew = unlockedCrewFor(out)
 
   const mapped = fillPool(placeOnTheMap(out, typeof s.territory === 'object'))
   /* A v1/v2 save arrives with an empty pool; a v3-or-later save keeps the one
@@ -302,9 +336,14 @@ export function migrate(raw: unknown): GameState | null {
     typeof s.season === 'object'
       ? mapped
       : withLog(mapped, 'event', MIGRATION_LINE)
+  /* A pre-Phase-9 save (no contentStats) is told it has decided to post. */
+  const withPost =
+    typeof s.contentStats === 'object'
+      ? withGoldies
+      : withLog(withGoldies, 'flavor', CONTENT_MIGRATION_LINE)
   /* A call open at save time never survives — see dropInterruptedCall. */
   return dropInterruptedCall(
-    withGoldies,
+    withPost,
     s.call as { leadId?: string } | null | undefined,
   )
 }
