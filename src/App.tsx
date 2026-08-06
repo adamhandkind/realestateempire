@@ -13,6 +13,7 @@ import OfficeTab from './components/OfficeTab'
 import CallModal from './components/CallModal'
 import PortfolioChoiceModal from './components/PortfolioChoiceModal'
 import PortfolioTab from './components/PortfolioTab'
+import PostComposer from './components/PostComposer'
 import WeekSummaryModal from './components/WeekSummaryModal'
 import { activeMarketModifier, isPhase2Teaser, rankOf } from './logic/economy'
 import { money } from './logic/rand'
@@ -249,13 +250,17 @@ export default function App() {
       <CallModal state={state} dispatch={dispatch} />
       <PortfolioChoiceModal state={state} dispatch={dispatch} />
 
-      {showSummary && (
+      {!state.call && state.postComposerPending && (
+        <PostComposer state={state} dispatch={dispatch} />
+      )}
+
+      {showSummary && !state.postComposerPending && (
         <WeekSummaryModal state={state} onClose={() => setShowSummary(false)} />
       )}
 
       {/* Never stacked: the Week Summary always reads first, and dismissing it
           is what raises the curtain on the Goldies. */}
-      {!showSummary && state.ceremony && (
+      {!showSummary && !state.postComposerPending && state.ceremony && (
         <CeremonyModal state={state} dispatch={dispatch} />
       )}
 
