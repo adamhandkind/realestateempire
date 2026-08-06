@@ -336,7 +336,10 @@ export function pickLeadDistrict(s: GameState, archetypeId: string): string {
 export const LUX_ARCHETYPES = ['luxLorenzo', 'celebrityCleo']
 
 export function archetypeWeight(s: GameState, archetypeId: string): number {
-  return perkActive(s, 'luxPipeline') && LUX_ARCHETYPES.includes(archetypeId)
-    ? 2
-    : 1
+  const base =
+    perkActive(s, 'luxPipeline') && LUX_ARCHETYPES.includes(archetypeId) ? 2 : 1
+  const bias = (s.pendingLeadBias ?? []).filter(
+    (b) => b.archetypeId === archetypeId,
+  ).length
+  return base * (1 + 1.5 * bias)
 }

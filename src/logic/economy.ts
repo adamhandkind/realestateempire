@@ -124,6 +124,7 @@ export function deriveStats(state: GameState): Stats {
   hustle += char.statMods.hustle
   swagger += char.statMods.swagger
   ego += char.statMods.ego
+  ego += state.postEgo ?? 0
   /* The trophy is watching, and the shelf is loud. Both cap normally — an
      ego-capped character's trophies contribute nothing but pride. */
   if (hasPerk(state, 'hustleTrophy')) hustle += 1
