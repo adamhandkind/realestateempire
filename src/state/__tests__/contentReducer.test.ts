@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { reducer, initialState } from '../reducer'
+import { reducer, initialState, endWeek } from '../reducer'
+import { setSeed } from '../../logic/rand'
 import type { GameState } from '../types'
 
 const withComposer = (over: Partial<GameState> = {}): GameState => ({
@@ -98,5 +99,20 @@ describe('DEBUG_FORCE_POST_OUTCOME', () => {
     expect(s.reputation).toBe(67) // 80 - (8 + 5)
     expect(s.pendingLeadBias.length).toBe(0)
     expect(s.contentStats.embarrassed).toBe(1)
+  })
+})
+
+describe('endWeek opens the composer', () => {
+  it('sets postComposerPending once per week', () => {
+    setSeed(999)
+    const s = endWeek({ ...initialState(), rngSeed: 999 })
+    expect(s.postComposerPending).toBe(true)
+    expect(s.postComposerWeek).toBe(s.week)
+    expect(s.summary?.content).toBeNull()
+  })
+  it('does not open when contentEnabled is false', () => {
+    setSeed(999)
+    const s = endWeek({ ...initialState(), contentEnabled: false, rngSeed: 999 })
+    expect(s.postComposerPending).toBe(false)
   })
 })

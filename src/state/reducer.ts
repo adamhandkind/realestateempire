@@ -180,7 +180,12 @@ import {
   REP_FREE_LEAD_AT,
   REP_INBOUND_AT,
 } from '../data/reputation'
-import { activeCrew, computeChances, postAvailable } from '../logic/content'
+import {
+  activeCrew,
+  computeChances,
+  postAvailable,
+  unlockedCrewFor,
+} from '../logic/content'
 import { postOf } from '../data/posts'
 import { captionOf } from '../data/captions'
 import {
@@ -190,7 +195,7 @@ import {
   SKIP_DECAY_LINE,
   VIRAL_BANNER,
 } from '../data/postLines'
-import { P9 } from '../data/crew'
+import { CREW_UNLOCK_LINES, P9 } from '../data/crew'
 import { ARCHETYPES } from '../data/archetypes'
 import type {
   Action,
@@ -218,7 +223,7 @@ export function initialState(): GameState {
      current, which is unpredictable in a real game and pinned in a test. */
   const rngSeed = randomSeed()
   const base: GameState = {
-    version: 8,
+    version: 9,
     week: 1,
     cash: START_CASH,
     careerEarnings: 0,
@@ -2105,6 +2110,14 @@ export function endWeek(state: GameState): GameState {
       'You spent the rest of the week practicing your signature.',
     )
 
+  /* §6.6 — expire last week's lead-pool tilt before this week resolves. */
+  s = {
+    ...s,
+    pendingLeadBias: s.pendingLeadBias
+      .map((b) => ({ ...b, weeksLeft: b.weeksLeft - 1 }))
+      .filter((b) => b.weeksLeft > 0),
+  }
+
   /* 0. archive anything that closed this week (the SOLD stamp has had its moment) */
   s = { ...s, leads: s.leads.filter((l) => !l.sold) }
 
@@ -2390,6 +2403,23 @@ export function endWeek(state: GameState): GameState {
       )
     s = { ...s, gameOver: true }
   }
+
+  /* §11 — recompute the crew tier from the freshly-rolled rank/rep, and fire
+     the unlock line once on an upward change. */
+  const nextCrew = unlockedCrewFor(s)
+  if (nextCrew !== s.unlockedCrew) {
+    const up = { none: 0, freelancer: 1, team: 2 }
+    if (up[nextCrew] > up[s.unlockedCrew] && nextCrew !== 'none')
+      s = withLog(s, 'promotion', CREW_UNLOCK_LINES[nextCrew])
+    s = { ...s, unlockedCrew: nextCrew }
+  }
+
+  /* §7 — open the composer for this week, unless disabled or already shown. */
+  const openComposer =
+    s.contentEnabled && !s.gameOver && s.postComposerWeek !== s.week
+  s = openComposer
+    ? { ...s, postComposerPending: true, postComposerWeek: s.week }
+    : s
 
   const summary: WeekSummary = {
     week: state.week,
