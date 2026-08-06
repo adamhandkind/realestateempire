@@ -2405,13 +2405,15 @@ export function endWeek(state: GameState): GameState {
     s = { ...s, gameOver: true }
   }
 
-  /* Phase 9: recompute the content crew tier from the freshly-rolled
-     rank/rep; fire the unlock line once on an upward change. */
-  const nextCrew = unlockedCrewFor(s)
-  if (nextCrew !== s.unlockedCrew) {
-    if (CREW_INDEX[nextCrew] > CREW_INDEX[s.unlockedCrew] && nextCrew !== 'none')
-      s = withLog(s, 'promotion', CREW_UNLOCK_LINES[nextCrew])
-    s = { ...s, unlockedCrew: nextCrew }
+  /* Phase 9: crew is a high-water mark — recompute from rank/rep but never
+     downgrade (spec §11 "highest reached"). Fire the unlock line on upgrade. */
+  const computedCrew = unlockedCrewFor(s)
+  if (
+    computedCrew !== 'none' &&
+    CREW_INDEX[computedCrew] > CREW_INDEX[s.unlockedCrew]
+  ) {
+    s = withLog(s, 'promotion', CREW_UNLOCK_LINES[computedCrew])
+    s = { ...s, unlockedCrew: computedCrew }
   }
 
   /* Phase 9: open the weekly post composer, unless disabled or already shown

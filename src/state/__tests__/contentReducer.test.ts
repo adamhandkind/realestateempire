@@ -116,3 +116,17 @@ describe('endWeek opens the composer', () => {
     expect(s.postComposerPending).toBe(false)
   })
 })
+
+describe('endWeek crew recompute is a high-water mark', () => {
+  it('does not downgrade unlockedCrew when rank/rep drop below team threshold', () => {
+    setSeed(999)
+    const s = endWeek({
+      ...initialState(),
+      rngSeed: 999,
+      unlockedCrew: 'team',
+      rank: 'receptionist',
+      reputation: 0,
+    })
+    expect(s.unlockedCrew).toBe('team')
+  })
+})
