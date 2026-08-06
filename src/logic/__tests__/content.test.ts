@@ -10,6 +10,7 @@ import {
 import { postOf } from '../../data/posts'
 import { captionOf } from '../../data/captions'
 import type { GameState } from '../../state/types'
+import { archetypeWeight } from '../territory'
 
 const base = (over: Partial<GameState> = {}): GameState => ({
   ...initialState(),
@@ -116,5 +117,27 @@ describe('biasCount', () => {
 describe('activeCrew', () => {
   it('returns the def for the unlocked tier', () => {
     expect(activeCrew(base({ unlockedCrew: 'team' })).id).toBe('team')
+  })
+})
+
+describe('lead seeding tilts the pool (§13.5)', () => {
+  it('raises flip-bro odds when a flipper post seeded bias', () => {
+    const seeded = base({
+      rank: 'sellerAgent',
+      reputation: 40,
+      pendingLeadBias: [{ archetypeId: 'flipBro', weeksLeft: 1 }],
+    })
+    const plain = base({ rank: 'sellerAgent', reputation: 40 })
+    expect(archetypeWeight(seeded, 'flipBro')).toBeCloseTo(2.5, 5) // 1 * (1 + 1.5)
+    expect(archetypeWeight(plain, 'flipBro')).toBe(1)
+  })
+  it('bias expires after one endWeek decrement', () => {
+    const seeded = base({
+      pendingLeadBias: [{ archetypeId: 'flipBro', weeksLeft: 1 }],
+    })
+    const decremented = seeded.pendingLeadBias
+      .map((b) => ({ ...b, weeksLeft: b.weeksLeft - 1 }))
+      .filter((b) => b.weeksLeft > 0)
+    expect(decremented.length).toBe(0)
   })
 })
