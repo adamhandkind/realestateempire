@@ -79,7 +79,7 @@ function validLeads(v: unknown): GameState['leads'] {
  *  it is reconstructed from the only thing it did carry: the sign. */
 function validModifiers(v: unknown, week: number): GameState['activeModifiers'] {
   if (!Array.isArray(v)) return []
-  return (v as Partial<ActiveModifier>[])
+  const mapped = (v as Partial<ActiveModifier>[])
     .filter((m) => m && Number.isFinite(m.closeChanceDelta))
     .map((m) => {
       const delta = m.closeChanceDelta as number
@@ -97,8 +97,14 @@ function validModifiers(v: unknown, week: number): GameState['activeModifiers'] 
         expiresWeek: num(m.expiresWeek, week),
       }
     })
-    /* Mutual exclusivity is retroactive: a v7 save mid-stack keeps the newest. */
+  /* Mutual exclusivity is retroactive for market swings only: a v7 save
+     mid-stack keeps the newest hotMarket/rateSpike. viralMoment is a separate
+     concern and every entry of it survives the round-trip. */
+  const market = mapped
+    .filter((m) => m.id === 'hotMarket' || m.id === 'rateSpike')
     .slice(-1)
+  const viral = mapped.filter((m) => m.id === 'viralMoment')
+  return [...market, ...viral]
 }
 
 /** Returns a fully-populated v8 state, or null if `raw` isn't one of ours. */

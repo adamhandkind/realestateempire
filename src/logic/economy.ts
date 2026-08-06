@@ -174,9 +174,17 @@ export function activeModifierDelta(state: GameState): number {
 
 /** The market swing currently running, or null. At most one can be — see
  *  setMarketModifier. The banner reads this instead of inferring a mood from
- *  the sign of a number. */
+ *  the sign of a number. Restricted to actual market swings so a live
+ *  viralMoment (also in activeModifiers) never gets rendered as a market
+ *  banner. */
 export function activeMarketModifier(state: GameState): ActiveModifier | null {
-  return state.activeModifiers.find((m) => m.expiresWeek > state.week) ?? null
+  return (
+    state.activeModifiers.find(
+      (m) =>
+        (m.id === 'hotMarket' || m.id === 'rateSpike') &&
+        m.expiresWeek > state.week,
+    ) ?? null
+  )
 }
 
 export function splitFor(rankId: RankId): number {

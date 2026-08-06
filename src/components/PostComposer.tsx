@@ -2,11 +2,9 @@ import { useState } from 'react'
 import type { Dispatch } from 'react'
 import { POSTS, postOf } from '../data/posts'
 import { CAPTIONS, captionOf } from '../data/captions'
-import { activeCrew, computeChances } from '../logic/content'
-import { crewOf } from '../data/crew'
+import { activeCrew, computeChances, CREW_INDEX } from '../logic/content'
+import { crewOf, P9 } from '../data/crew'
 import type { Action, GameState, PostDef } from '../state/types'
-
-const CREW_ORDER = { none: 0, freelancer: 1, team: 2 }
 
 export default function PostComposer({
   state,
@@ -25,7 +23,7 @@ export default function PostComposer({
   const caption = captionOf(captionId)!
 
   const available = (p: PostDef) =>
-    CREW_ORDER[state.unlockedCrew] >= CREW_ORDER[p.crewRequired]
+    CREW_INDEX[state.unlockedCrew] >= CREW_INDEX[p.crewRequired]
 
   const preview = post && caption ? computeChances(state, post, caption) : null
   const trophyDisplayed =
@@ -160,7 +158,7 @@ export default function PostComposer({
           className="res-skip"
           onClick={() => {
             if (
-              state.contentStats.skipStreak + 1 >= 3 &&
+              state.contentStats.skipStreak + 1 >= P9.SKIP_STREAK_TRIGGER &&
               !window.confirm('Skipping again? People forget.')
             )
               return

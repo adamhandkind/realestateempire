@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { reducer, initialState, endWeek } from '../reducer'
 import { setSeed } from '../../logic/rand'
+import { setMarketModifier } from '../../logic/events'
 import type { GameState } from '../types'
 
 const withComposer = (over: Partial<GameState> = {}): GameState => ({
@@ -99,6 +100,25 @@ describe('DEBUG_FORCE_POST_OUTCOME', () => {
     expect(s.reputation).toBe(67) // 80 - (8 + 5)
     expect(s.pendingLeadBias.length).toBe(0)
     expect(s.contentStats.embarrassed).toBe(1)
+  })
+})
+
+describe('viralMoment coexists with a market swing', () => {
+  it('setMarketModifier does not clobber a live viralMoment, and vice versa', () => {
+    let s = withComposer({ reputation: 40, unlockedCrew: 'team' })
+    s = reducer(s, { type: 'DEBUG_FORCE_POST_OUTCOME', outcome: 'viral' })
+    s = reducer(s, {
+      type: 'CREATE_POST',
+      postId: 'justListedVideo',
+      captionId: 'humble',
+    })
+    expect(s.activeModifiers.some((m) => m.id === 'viralMoment')).toBe(true)
+
+    s = setMarketModifier(s, 'hotMarket', 'Hot Market', 0.1)
+
+    expect(s.activeModifiers.some((m) => m.id === 'viralMoment')).toBe(true)
+    expect(s.activeModifiers.some((m) => m.id === 'hotMarket')).toBe(true)
+    expect(s.activeModifiers.length).toBe(2)
   })
 })
 

@@ -1953,6 +1953,7 @@ function applySkip(state: GameState): GameState {
     postComposerPending: false,
     lastPost: null,
     summary: state.summary ? { ...state.summary, content: null } : state.summary,
+    debugForcedPostOutcome: null,
   }
   if (skipStreak >= P9.SKIP_STREAK_TRIGGER) {
     s = { ...s, reputation: clampRep(s.reputation - P9.SKIP_STREAK_REP_DECAY) }

@@ -144,6 +144,9 @@ export function setMarketModifier(
   return {
     ...state,
     activeModifiers: [
+      ...state.activeModifiers.filter(
+        (m) => m.id !== 'hotMarket' && m.id !== 'rateSpike',
+      ),
       {
         id,
         label,

@@ -35,6 +35,34 @@ const V1_SAVE = {
   gameOver: false,
 }
 
+describe('migrate v9 activeModifiers round-trip', () => {
+  it('keeps both a hotMarket swing and a viralMoment', () => {
+    const base = initialState()
+    const save = {
+      ...base,
+      version: 9,
+      activeModifiers: [
+        {
+          id: 'hotMarket',
+          label: 'Hot Market',
+          closeChanceDelta: 0.1,
+          expiresWeek: base.week + 2,
+        },
+        {
+          id: 'viralMoment',
+          label: 'Viral Moment',
+          closeChanceDelta: 0.05,
+          expiresWeek: base.week + 2,
+        },
+      ],
+    }
+    const s = migrate(save)!
+    expect(s.activeModifiers.some((m) => m.id === 'hotMarket')).toBe(true)
+    expect(s.activeModifiers.some((m) => m.id === 'viralMoment')).toBe(true)
+    expect(s.activeModifiers.length).toBe(2)
+  })
+})
+
 describe('migrate', () => {
   it('preserves every v1 field', () => {
     const s = migrate(V1_SAVE)!
