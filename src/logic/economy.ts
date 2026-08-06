@@ -38,6 +38,7 @@ import {
 import { P5 } from '../data/p5'
 import { hasPerk, trophyEgo } from './perks'
 import { AWARDS_BRAGS } from '../data/p7'
+import { CONTENT_BRAGS } from '../data/postLines'
 import { money, pick, weightedPick } from './rand'
 
 export {
@@ -238,6 +239,8 @@ export function bragFor(state: GameState): string {
   if (state.callStats.perfectCalls > 0) situational(CALL_BRAGS)
   /* One Goldie is enough to talk about Goldies forever. */
   if ((state.trophies ?? []).length > 0) situational(AWARDS_BRAGS)
+  /* One viral is a personality now. */
+  if ((state.contentStats?.viral ?? 0) > 0) situational(CONTENT_BRAGS)
   /* Character brags join the rotation at every rank, at double weight. */
   getChar(state).brags.forEach((text) =>
     pool.push({ text, weight: P5.BRAG_CHAR_WEIGHT }),
