@@ -865,6 +865,8 @@ export interface GameState {
     skipStreak: number
   }
   contentEnabled: boolean
+  /** Debug-only: forces the next post's outcome, then clears. */
+  debugForcedPostOutcome: PostOutcome | null
   /** Highest crew tier reached; recomputed each END_WEEK from rank/rep. */
   unlockedCrew: CrewId
   /** True while the composer is open (blocks the summary). */

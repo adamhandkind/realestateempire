@@ -210,9 +210,6 @@ import type {
   WeekSummary,
 } from './types'
 
-/** Debug-only forced next post outcome. Consumed by the next CREATE_POST. */
-let forcedPostOutcome: PostOutcome | null = null
-
 export function initialState(): GameState {
   /* Minted, deliberately NOT installed. Calling setSeed here would clobber a
      seed the caller had just set — which is exactly what a seeded test does
@@ -299,6 +296,7 @@ export function initialState(): GameState {
     lastPost: null,
     contentStats: { posts: 0, viral: 0, embarrassed: 0, skipStreak: 0 },
     contentEnabled: true,
+    debugForcedPostOutcome: null,
     unlockedCrew: 'none',
     postComposerPending: false,
     postComposerWeek: 0,
@@ -1785,8 +1783,7 @@ function baseReducer(state: GameState, action: Action): GameState {
     }
 
     case 'DEBUG_FORCE_POST_OUTCOME':
-      forcedPostOutcome = action.outcome
-      return state
+      return { ...state, debugForcedPostOutcome: action.outcome }
 
     case 'DEBUG_SET_CREW':
       return sync({ ...state, unlockedCrew: action.crew })
@@ -1819,9 +1816,8 @@ function resolvePost(
   const { viral, embarrass } = computeChances(state, post, caption)
   /* §6.2 — one roll, embarrass checked first. Debug override wins. */
   let outcome: PostOutcome
-  if (forcedPostOutcome) {
-    outcome = forcedPostOutcome
-    forcedPostOutcome = null
+  if (state.debugForcedPostOutcome) {
+    outcome = state.debugForcedPostOutcome
   } else {
     const r = rand()
     outcome =
@@ -1914,6 +1910,7 @@ function resolvePost(
       skipStreak: 0,
     },
     postComposerPending: false,
+    debugForcedPostOutcome: null,
     summary: s.summary
       ? {
           ...s.summary,
