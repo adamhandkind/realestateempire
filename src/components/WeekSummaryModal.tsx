@@ -1,6 +1,8 @@
 import { rankOf } from '../logic/economy'
 import { money } from '../logic/rand'
 import type { GameState } from '../state/types'
+import { postOf } from '../data/posts'
+import { captionOf } from '../data/captions'
 
 export default function WeekSummaryModal({
   state,
@@ -107,6 +109,40 @@ export default function WeekSummaryModal({
             This week's incidents: {summary.events.join(', ')}. Details in the
             Log.
           </div>
+        )}
+        {summary.content !== undefined && (
+          <>
+            <h3>Content</h3>
+            {summary.content ? (
+              <>
+                <div className="res-line">
+                  <span>
+                    {postOf(summary.content.postId)?.label ??
+                      summary.content.postId}
+                    {' · '}
+                    {captionOf(summary.content.captionId)?.label ??
+                      summary.content.captionId}
+                  </span>
+                  <b>
+                    {summary.content.outcome === 'viral'
+                      ? '📈 Viral'
+                      : summary.content.outcome === 'embarrass'
+                        ? '💀 Flopped'
+                        : '✓ Posted'}
+                  </b>
+                </div>
+                <div className="res-meta">
+                  Rep {summary.content.repDelta >= 0 ? '+' : ''}
+                  {summary.content.repDelta} · Ego{' '}
+                  {summary.content.egoDelta >= 0 ? '+' : ''}
+                  {summary.content.egoDelta} · Leads seeded{' '}
+                  {summary.content.leads}
+                </div>
+              </>
+            ) : (
+              <div className="res-meta">No post this week.</div>
+            )}
+          </>
         )}
         <div className="res-brag">
           <b style={{ color: 'var(--brass)' }}>Your post:</b>
