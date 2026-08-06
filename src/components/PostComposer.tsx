@@ -28,11 +28,19 @@ export default function PostComposer({
     CREW_ORDER[state.unlockedCrew] >= CREW_ORDER[p.crewRequired]
 
   const preview = post && caption ? computeChances(state, post, caption) : null
+  const trophyDisplayed =
+    post?.id === 'humbledAward' &&
+    (state.trophies ?? []).some((t) => t.displayed)
+  const effRepBase = post
+    ? trophyDisplayed
+      ? post.baseEffects.rep * 2
+      : post.baseEffects.rep
+    : 0
   const repDelta =
     post && caption
-      ? post.baseEffects.rep > 0
-        ? Math.round(post.baseEffects.rep * caption.repMult)
-        : post.baseEffects.rep
+      ? effRepBase > 0
+        ? Math.round(effRepBase * caption.repMult)
+        : effRepBase
       : 0
   const egoDelta = post ? post.egoBias + caption.egoDelta : 0
   const variance = post
