@@ -183,6 +183,7 @@ import {
 import {
   activeCrew,
   computeChances,
+  CREW_INDEX,
   postAvailable,
   unlockedCrewFor,
 } from '../logic/content'
@@ -2110,7 +2111,7 @@ export function endWeek(state: GameState): GameState {
       'You spent the rest of the week practicing your signature.',
     )
 
-  /* §6.6 — expire last week's lead-pool tilt before this week resolves. */
+  /* Phase 9: expire last week's lead-pool tilt before this week resolves. */
   s = {
     ...s,
     pendingLeadBias: s.pendingLeadBias
@@ -2404,17 +2405,17 @@ export function endWeek(state: GameState): GameState {
     s = { ...s, gameOver: true }
   }
 
-  /* §11 — recompute the crew tier from the freshly-rolled rank/rep, and fire
-     the unlock line once on an upward change. */
+  /* Phase 9: recompute the content crew tier from the freshly-rolled
+     rank/rep; fire the unlock line once on an upward change. */
   const nextCrew = unlockedCrewFor(s)
   if (nextCrew !== s.unlockedCrew) {
-    const up = { none: 0, freelancer: 1, team: 2 }
-    if (up[nextCrew] > up[s.unlockedCrew] && nextCrew !== 'none')
+    if (CREW_INDEX[nextCrew] > CREW_INDEX[s.unlockedCrew] && nextCrew !== 'none')
       s = withLog(s, 'promotion', CREW_UNLOCK_LINES[nextCrew])
     s = { ...s, unlockedCrew: nextCrew }
   }
 
-  /* §7 — open the composer for this week, unless disabled or already shown. */
+  /* Phase 9: open the weekly post composer, unless disabled or already shown
+     this week. */
   const openComposer =
     s.contentEnabled && !s.gameOver && s.postComposerWeek !== s.week
   s = openComposer

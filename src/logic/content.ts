@@ -9,7 +9,7 @@ import type {
   PostDef,
 } from '../state/types'
 
-const CREW_INDEX: Record<CrewId, number> = { none: 0, freelancer: 1, team: 2 }
+export const CREW_INDEX: Record<CrewId, number> = { none: 0, freelancer: 1, team: 2 }
 
 /** §11 recompute: team if Top Producer OR rep >= 60; else freelancer if
  *  Buyer Agent OR rep >= 25; else none. */
