@@ -35,6 +35,34 @@ const V1_SAVE = {
   gameOver: false,
 }
 
+describe('migrate v9 activeModifiers round-trip', () => {
+  it('keeps both a hotMarket swing and a viralMoment', () => {
+    const base = initialState()
+    const save = {
+      ...base,
+      version: 9,
+      activeModifiers: [
+        {
+          id: 'hotMarket',
+          label: 'Hot Market',
+          closeChanceDelta: 0.1,
+          expiresWeek: base.week + 2,
+        },
+        {
+          id: 'viralMoment',
+          label: 'Viral Moment',
+          closeChanceDelta: 0.05,
+          expiresWeek: base.week + 2,
+        },
+      ],
+    }
+    const s = migrate(save)!
+    expect(s.activeModifiers.some((m) => m.id === 'hotMarket')).toBe(true)
+    expect(s.activeModifiers.some((m) => m.id === 'viralMoment')).toBe(true)
+    expect(s.activeModifiers.length).toBe(2)
+  })
+})
+
 describe('migrate', () => {
   it('preserves every v1 field', () => {
     const s = migrate(V1_SAVE)!
@@ -47,15 +75,17 @@ describe('migrate', () => {
     expect(s.ownedSwagIds).toEqual(['discountSuit', 'gasSunnies'])
     expect(s.equipped.outfit).toBe('discountSuit')
     expect(s.counters.dealsClosed).toBe(11)
-    /* The original entry, plus Phase 7's inaugural-Goldies announcement. */
-    expect(s.log).toHaveLength(2)
-    expect(s.log[1].text).toBe('something happened')
-    expect(s.log[0].text).toContain('Golden Lockbox Awards')
+    /* The original entry, plus Phase 7's inaugural-Goldies announcement and
+       Phase 9's "start posting more" line. */
+    expect(s.log).toHaveLength(3)
+    expect(s.log[2].text).toBe('something happened')
+    expect(s.log[1].text).toContain('Golden Lockbox Awards')
+    expect(s.log[0].text).toContain('start posting more')
   })
 
   it('fills every new v2 field with a default', () => {
     const s = migrate(V1_SAVE)!
-    expect(s.version).toBe(8)
+    expect(s.version).toBe(9)
     expect(s.reputation).toBe(0)
     expect(s.activeChannelIds).toEqual([])
     expect(s.outfitPresets).toEqual([null, null, null])
@@ -153,7 +183,7 @@ describe('v2 -> v3 migration', () => {
     delete v2.peakNetWorth
     delete v2.firstP3Week
     const out = migrate(v2)!
-    expect(out.version).toBe(8)
+    expect(out.version).toBe(9)
     expect(out.properties).toEqual([])
     expect(out.marketState).toBe('normal')
     expect(out.crash).toEqual({ weeksLeft: 0, lastCrashWeek: -999 })
@@ -186,13 +216,13 @@ describe('v2 -> v3 migration', () => {
   it('chain-migrates a v1 save', () => {
     const v1 = { version: 1, week: 3, cash: 900, rank: 'sellerAgent' }
     const out = migrate(v1)!
-    expect(out.version).toBe(8)
+    expect(out.version).toBe(9)
     expect(out.reputation).toBe(0)
     expect(out.marketPool).toHaveLength(4)
   })
 
   it('rejects an unknown version', () => {
-    expect(migrate({ version: 9 })).toBeNull()
+    expect(migrate({ version: 10 })).toBeNull()
   })
 
   it('preserves an existing Phase 3 save', () => {
@@ -206,7 +236,7 @@ describe('phase 8 migration', () => {
 
   it('defaults the phase 8 fields on a v5 save', () => {
     const out = migrate(v5())!
-    expect(out.version).toBe(8)
+    expect(out.version).toBe(9)
     expect(out.call).toBeNull()
     expect(out.callsEnabled).toBe(true)
     expect(out.callStats).toEqual({ calls: 0, perfectCalls: 0, hangups: 0 })
@@ -215,7 +245,7 @@ describe('phase 8 migration', () => {
   it('accepts a v7 save', () => {
     const out = migrate({ ...initialState(), version: 7 })
     expect(out).not.toBeNull()
-    expect(out!.version).toBe(8)
+    expect(out!.version).toBe(9)
   })
 
   /* Phase 7 (the Goldies) also shipped as v6, so a save written by it is the
@@ -233,7 +263,7 @@ describe('phase 8 migration', () => {
     delete (v6 as Record<string, unknown>).callsEnabled
     delete (v6 as Record<string, unknown>).callStats
     const out = migrate(v6)!
-    expect(out.version).toBe(8)
+    expect(out.version).toBe(9)
     expect(out.trophies).toHaveLength(1)
     expect(out.seasonStartWeek).toBe(14)
     expect(out.sponsorCringeSeasons).toBe(2)
@@ -243,7 +273,7 @@ describe('phase 8 migration', () => {
   })
 
   it('rejects a version from the future', () => {
-    expect(migrate({ ...initialState(), version: 9 })).toBeNull()
+    expect(migrate({ ...initialState(), version: 10 })).toBeNull()
   })
 
   it('preserves a player toggle of callsEnabled', () => {
@@ -304,5 +334,42 @@ describe('phase 8 migration', () => {
     expect(out.leads[0].retriedClose).toBe(false)
     expect(out.log[0].text).toContain('The line dropped')
     expect(out.log[0].text).toContain('Marta Vance')
+  })
+})
+
+describe('v9 migration (phase 9)', () => {
+  it('defaults new fields and recomputes crew for an established save', () => {
+    const v8 = { version: 8, week: 30, reputation: 65, rank: 'topProducer' }
+    const out = migrate(v8)!
+    expect(out.version).toBe(9)
+    expect(out.postEgo).toBe(0)
+    expect(out.pendingLeadBias).toEqual([])
+    expect(out.contentHistory).toEqual([])
+    expect(out.contentStats).toEqual({
+      posts: 0,
+      viral: 0,
+      embarrassed: 0,
+      skipStreak: 0,
+    })
+    expect(out.contentEnabled).toBe(true)
+    expect(out.unlockedCrew).toBe('team') // rep 65 / Top Producer
+    expect(out.postComposerPending).toBe(false)
+    expect(out.debugForcedPostOutcome).toBeNull()
+    expect(out.log.some((l) => l.text.includes('start posting more'))).toBe(true)
+  })
+  it('keeps existing reputation and recomputes freelancer crew', () => {
+    const out = migrate({ version: 8, reputation: 42 })!
+    expect(out.reputation).toBe(42)
+    expect(out.unlockedCrew).toBe('freelancer')
+  })
+  it('round-trips a v9 save without re-logging the migration line', () => {
+    const v9 = migrate({ version: 8, reputation: 42 })!
+    const again = migrate(v9)!
+    expect(again.version).toBe(9)
+    // the migration line fires only for pre-phase-9 saves (no contentStats)
+    const count = again.log.filter((l) =>
+      l.text.includes('start posting more'),
+    ).length
+    expect(count).toBeLessThanOrEqual(1)
   })
 })

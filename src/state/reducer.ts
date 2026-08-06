@@ -110,6 +110,7 @@ import {
   currentSeed,
   money,
   pick,
+  rand,
   randInt,
   randomSeed,
   roundTo,
@@ -179,11 +180,33 @@ import {
   REP_FREE_LEAD_AT,
   REP_INBOUND_AT,
 } from '../data/reputation'
+import {
+  activeCrew,
+  computeChances,
+  CREW_INDEX,
+  postAvailable,
+  unlockedCrewFor,
+} from '../logic/content'
+import { postOf } from '../data/posts'
+import { captionOf } from '../data/captions'
+import {
+  EMBARRASS_BANNER,
+  HUMBLED_TROPHY_SUFFIX,
+  POST_LINES,
+  SKIP_DECAY_LINE,
+  VIRAL_BANNER,
+} from '../data/postLines'
+import { CREW_UNLOCK_LINES, P9 } from '../data/crew'
+import { ARCHETYPES } from '../data/archetypes'
 import type {
   Action,
   CallTurn,
+  CaptionDef,
   GameState,
   Lead,
+  PostDef,
+  PostOutcome,
+  PostRecord,
   Property,
   RankDef,
   StartingProperty,
@@ -201,7 +224,7 @@ export function initialState(): GameState {
      current, which is unpredictable in a real game and pinned in a test. */
   const rngSeed = randomSeed()
   const base: GameState = {
-    version: 8,
+    version: 9,
     week: 1,
     cash: START_CASH,
     careerEarnings: 0,
@@ -273,6 +296,16 @@ export function initialState(): GameState {
     trophies: [],
     awardHistory: [],
     sponsorCringeSeasons: 0,
+    postEgo: 0,
+    pendingLeadBias: [],
+    contentHistory: [],
+    lastPost: null,
+    contentStats: { posts: 0, viral: 0, embarrassed: 0, skipStreak: 0 },
+    contentEnabled: true,
+    debugForcedPostOutcome: null,
+    unlockedCrew: 'none',
+    postComposerPending: false,
+    postComposerWeek: 0,
   }
   /* The pool is seeded as soon as anything is eligible so the Portfolio tab is
      never empty. Nothing unlocks below Seller Agent, so a week-one game keeps
@@ -1737,9 +1770,196 @@ function baseReducer(state: GameState, action: Action): GameState {
       return newGame(action.characterId)
     case 'RESTART':
       return initialState()
+
+    case 'SET_CONTENT_ENABLED':
+      return { ...state, contentEnabled: action.enabled }
+
+    case 'CREATE_POST': {
+      if (!state.postComposerPending) return state
+      const post = postOf(action.postId)
+      const caption = captionOf(action.captionId)
+      if (!post || !caption) return state
+      if (!postAvailable(state, post)) return state
+      return sync(resolvePost(state, post, caption))
+    }
+
+    case 'SKIP_POST': {
+      if (!state.postComposerPending) return state
+      return sync(applySkip(state))
+    }
+
+    case 'DEBUG_FORCE_POST_OUTCOME':
+      return { ...state, debugForcedPostOutcome: action.outcome }
+
+    case 'DEBUG_SET_CREW':
+      return sync({ ...state, unlockedCrew: action.crew })
+
+    case 'DEBUG_SKIP_WEEKS': {
+      let s = state
+      for (let i = 0; i < action.weeks; i++) {
+        const skipStreak = s.contentStats.skipStreak + 1
+        s = { ...s, contentStats: { ...s.contentStats, skipStreak } }
+        if (skipStreak >= P9.SKIP_STREAK_TRIGGER)
+          s = { ...s, reputation: clampRep(s.reputation - P9.SKIP_STREAK_REP_DECAY) }
+      }
+      return sync(s)
+    }
+
     default:
       return state
   }
+}
+
+const KNOWN_ARCHETYPE = (id: string): boolean =>
+  ARCHETYPES.some((a) => a.id === id)
+
+/** §6 — resolve a post into effects and patch the summary content section. */
+function resolvePost(
+  state: GameState,
+  post: PostDef,
+  caption: CaptionDef,
+): GameState {
+  const { viral, embarrass } = computeChances(state, post, caption)
+  /* §6.2 — one roll, embarrass checked first. Debug override wins. */
+  let outcome: PostOutcome
+  if (state.debugForcedPostOutcome) {
+    outcome = state.debugForcedPostOutcome
+  } else {
+    const r = rand()
+    outcome =
+      r < embarrass ? 'embarrass' : r < embarrass + viral ? 'viral' : 'neutral'
+  }
+
+  const crew = activeCrew(state)
+  const repBefore = state.reputation
+  const egoBefore = state.postEgo
+
+  /* §6.3 — base + caption. Positive rep only takes the multiplier; a zero or
+     negative base is unaffected. §10 Awards guard: humbledAward doubles when a
+     trophy is displayed. */
+  const trophyDisplayed =
+    post.id === 'humbledAward' && (state.trophies ?? []).some((t) => t.displayed)
+  const effRepBase = trophyDisplayed
+    ? post.baseEffects.rep * 2
+    : post.baseEffects.rep
+  const repGain =
+    effRepBase > 0 ? Math.round(effRepBase * caption.repMult) : effRepBase
+  let s: GameState = {
+    ...state,
+    reputation: clampRep(state.reputation + repGain),
+    cash: state.cash + post.baseEffects.cash,
+  }
+  const leadsSeed = post.baseEffects.leads + crew.teamLeadBonus
+
+  let line = POST_LINES[post.id]?.[outcome] ?? ''
+  if (outcome === 'neutral' && trophyDisplayed) line += HUMBLED_TROPHY_SUFFIX
+
+  if (outcome === 'neutral' || outcome === 'viral') {
+    s = { ...s, postEgo: s.postEgo + post.egoBias + caption.egoDelta }
+    const seedN =
+      outcome === 'viral'
+        ? Math.min(leadsSeed + 2, 5)
+        : Math.min(leadsSeed, P9.MAX_ATTRACT_LEADS)
+    s = seedBias(s, post.attract, seedN)
+  }
+
+  if (outcome === 'viral') {
+    const bonus = 10 + Math.round(crew.viralUpside * 100)
+    s = {
+      ...s,
+      reputation: clampRep(s.reputation + bonus),
+      activeModifiers: [
+        ...s.activeModifiers,
+        {
+          id: 'viralMoment',
+          label: 'Viral Moment',
+          closeChanceDelta: 0.05,
+          expiresWeek: s.week + 2,
+        },
+      ],
+      contentStats: { ...s.contentStats, viral: s.contentStats.viral + 1 },
+    }
+    s = withLog(s, 'event', VIRAL_BANNER + ' ' + line)
+  } else if (outcome === 'embarrass') {
+    s = {
+      ...s,
+      postEgo: s.postEgo + Math.max(0, caption.egoDelta - 1),
+      reputation: clampRep(
+        s.reputation - (8 + (repBefore >= P9.REP_HIGH ? 5 : 0)),
+      ),
+      contentStats: {
+        ...s.contentStats,
+        embarrassed: s.contentStats.embarrassed + 1,
+      },
+    }
+    s = withLog(s, 'event', EMBARRASS_BANNER + ' ' + line)
+  } else {
+    s = withLog(s, 'flavor', line)
+  }
+
+  const record: PostRecord = {
+    week: s.week,
+    postId: post.id,
+    captionId: caption.id,
+    outcome,
+    repDelta: s.reputation - repBefore,
+    egoDelta: s.postEgo - egoBefore,
+    leads: outcome === 'embarrass' ? 0 : leadsSeed,
+  }
+  return {
+    ...s,
+    lastPost: record,
+    contentHistory: [...s.contentHistory, record].slice(-20),
+    contentStats: {
+      ...s.contentStats,
+      posts: s.contentStats.posts + 1,
+      skipStreak: 0,
+    },
+    postComposerPending: false,
+    debugForcedPostOutcome: null,
+    summary: s.summary
+      ? {
+          ...s.summary,
+          content: {
+            postId: post.id,
+            captionId: caption.id,
+            outcome,
+            repDelta: record.repDelta,
+            egoDelta: record.egoDelta,
+            leads: record.leads,
+          },
+        }
+      : s.summary,
+  }
+}
+
+/** Seeds up to `n` attract-weighted archetypes as weeksLeft:1 bias entries.
+ *  Unknown archetypes are skipped silently (§10). */
+function seedBias(s: GameState, attract: string[], n: number): GameState {
+  const known = attract.filter(KNOWN_ARCHETYPE)
+  if (known.length === 0 || n <= 0) return s
+  const entries: { archetypeId: string; weeksLeft: number }[] = []
+  for (let i = 0; i < n; i++)
+    entries.push({ archetypeId: known[i % known.length], weeksLeft: 1 })
+  return { ...s, pendingLeadBias: [...s.pendingLeadBias, ...entries] }
+}
+
+/** §6.7 — skip with streak tracking. */
+function applySkip(state: GameState): GameState {
+  const skipStreak = state.contentStats.skipStreak + 1
+  let s: GameState = {
+    ...state,
+    contentStats: { ...state.contentStats, skipStreak },
+    postComposerPending: false,
+    lastPost: null,
+    summary: state.summary ? { ...state.summary, content: null } : state.summary,
+    debugForcedPostOutcome: null,
+  }
+  if (skipStreak >= P9.SKIP_STREAK_TRIGGER) {
+    s = { ...s, reputation: clampRep(s.reputation - P9.SKIP_STREAK_REP_DECAY) }
+    s = withLog(s, 'flavor', SKIP_DECAY_LINE)
+  }
+  return s
 }
 
 /**
@@ -1891,6 +2111,14 @@ export function endWeek(state: GameState): GameState {
       'flavor',
       'You spent the rest of the week practicing your signature.',
     )
+
+  /* Phase 9: expire last week's lead-pool tilt before this week resolves. */
+  s = {
+    ...s,
+    pendingLeadBias: s.pendingLeadBias
+      .map((b) => ({ ...b, weeksLeft: b.weeksLeft - 1 }))
+      .filter((b) => b.weeksLeft > 0),
+  }
 
   /* 0. archive anything that closed this week (the SOLD stamp has had its moment) */
   s = { ...s, leads: s.leads.filter((l) => !l.sold) }
@@ -2178,6 +2406,25 @@ export function endWeek(state: GameState): GameState {
     s = { ...s, gameOver: true }
   }
 
+  /* Phase 9: crew is a high-water mark — recompute from rank/rep but never
+     downgrade (spec §11 "highest reached"). Fire the unlock line on upgrade. */
+  const computedCrew = unlockedCrewFor(s)
+  if (
+    computedCrew !== 'none' &&
+    CREW_INDEX[computedCrew] > CREW_INDEX[s.unlockedCrew]
+  ) {
+    s = withLog(s, 'promotion', CREW_UNLOCK_LINES[computedCrew])
+    s = { ...s, unlockedCrew: computedCrew }
+  }
+
+  /* Phase 9: open the weekly post composer, unless disabled or already shown
+     this week. */
+  const openComposer =
+    s.contentEnabled && !s.gameOver && s.postComposerWeek !== s.week
+  s = openComposer
+    ? { ...s, postComposerPending: true, postComposerWeek: s.week }
+    : s
+
   const summary: WeekSummary = {
     week: state.week,
     moneyIn: money_in,
@@ -2193,6 +2440,7 @@ export function endWeek(state: GameState): GameState {
     brag: bragFor(s),
     portfolio: Array.from(ctx.rows.values()),
     territory,
+    content: null,
   }
   return { ...s, summary, promo: promo ? promo.name : null }
 }

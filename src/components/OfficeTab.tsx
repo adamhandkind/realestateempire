@@ -183,6 +183,22 @@ export default function OfficeTab({
             Off = instant dice roll, like the old days.
           </div>
         </div>
+        <div style={{ marginBottom: 12 }}>
+          <button
+            className={'res-tab' + (state.contentEnabled ? ' on' : '')}
+            onClick={() =>
+              dispatch({
+                type: 'SET_CONTENT_ENABLED',
+                enabled: !state.contentEnabled,
+              })
+            }
+          >
+            {state.contentEnabled ? '● ' : '○ '}Weekly social post
+          </button>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+            Off = you're too busy selling to post.
+          </div>
+        </div>
         <div className="res-mini" style={{ marginBottom: 8 }}>
           <button onClick={onExport}>Export Save</button>
           <button onClick={onImport} disabled={!importText.trim()}>
@@ -424,6 +440,53 @@ export default function OfficeTab({
               Market: {m}
             </button>
           ))}
+          {/* ---- phase 9 ---- */}
+          <button
+            className="res-tab"
+            onClick={() =>
+              dispatch({ type: 'DEBUG_FORCE_POST_OUTCOME', outcome: 'viral' })
+            }
+          >
+            Force post: viral
+          </button>
+          <button
+            className="res-tab"
+            onClick={() =>
+              dispatch({ type: 'DEBUG_FORCE_POST_OUTCOME', outcome: 'neutral' })
+            }
+          >
+            Force post: neutral
+          </button>
+          <button
+            className="res-tab"
+            onClick={() =>
+              dispatch({ type: 'DEBUG_FORCE_POST_OUTCOME', outcome: 'embarrass' })
+            }
+          >
+            Force post: embarrass
+          </button>
+          <label className="res-debug-field">
+            Crew tier
+            <select
+              value={state.unlockedCrew}
+              onChange={(e) =>
+                dispatch({
+                  type: 'DEBUG_SET_CREW',
+                  crew: e.target.value as GameState['unlockedCrew'],
+                })
+              }
+            >
+              <option value="none">none</option>
+              <option value="freelancer">freelancer</option>
+              <option value="team">team</option>
+            </select>
+          </label>
+          <button
+            className="res-tab"
+            onClick={() => dispatch({ type: 'DEBUG_SKIP_WEEKS', weeks: 3 })}
+          >
+            Skip 3 weeks
+          </button>
         </div>
       </div>
     </>

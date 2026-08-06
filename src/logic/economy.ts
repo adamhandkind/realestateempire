@@ -38,6 +38,7 @@ import {
 import { P5 } from '../data/p5'
 import { hasPerk, trophyEgo } from './perks'
 import { AWARDS_BRAGS } from '../data/p7'
+import { CONTENT_BRAGS } from '../data/postLines'
 import { money, pick, weightedPick } from './rand'
 
 export {
@@ -124,6 +125,7 @@ export function deriveStats(state: GameState): Stats {
   hustle += char.statMods.hustle
   swagger += char.statMods.swagger
   ego += char.statMods.ego
+  ego += state.postEgo ?? 0
   /* The trophy is watching, and the shelf is loud. Both cap normally — an
      ego-capped character's trophies contribute nothing but pride. */
   if (hasPerk(state, 'hustleTrophy')) hustle += 1
@@ -172,9 +174,17 @@ export function activeModifierDelta(state: GameState): number {
 
 /** The market swing currently running, or null. At most one can be — see
  *  setMarketModifier. The banner reads this instead of inferring a mood from
- *  the sign of a number. */
+ *  the sign of a number. Restricted to actual market swings so a live
+ *  viralMoment (also in activeModifiers) never gets rendered as a market
+ *  banner. */
 export function activeMarketModifier(state: GameState): ActiveModifier | null {
-  return state.activeModifiers.find((m) => m.expiresWeek > state.week) ?? null
+  return (
+    state.activeModifiers.find(
+      (m) =>
+        (m.id === 'hotMarket' || m.id === 'rateSpike') &&
+        m.expiresWeek > state.week,
+    ) ?? null
+  )
 }
 
 export function splitFor(rankId: RankId): number {
@@ -237,6 +247,8 @@ export function bragFor(state: GameState): string {
   if (state.callStats.perfectCalls > 0) situational(CALL_BRAGS)
   /* One Goldie is enough to talk about Goldies forever. */
   if ((state.trophies ?? []).length > 0) situational(AWARDS_BRAGS)
+  /* One viral is a personality now. */
+  if ((state.contentStats?.viral ?? 0) > 0) situational(CONTENT_BRAGS)
   /* Character brags join the rotation at every rank, at double weight. */
   getChar(state).brags.forEach((text) =>
     pool.push({ text, weight: P5.BRAG_CHAR_WEIGHT }),

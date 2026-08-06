@@ -453,7 +453,7 @@ describe('terri', () => {
 describe('saves and brags', () => {
   it('migrates a pre-roster save to "you" with no modifiers', () => {
     const out = migrate({ version: 3, week: 4, cash: 900, rank: 'junior' })!
-    expect(out.version).toBe(8)
+    expect(out.version).toBe(9)
     expect(out.characterId).toBe('you')
     expect(out.statModifiers).toEqual([])
   })
