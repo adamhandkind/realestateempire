@@ -4,14 +4,11 @@
 
 import type { GameState } from './types'
 import { migrate } from './migrate'
+import { parseImport, serialize } from './serial'
+
+export { parseImport, serialize }
 
 export const SAVE_KEY = 'res_save_v1'
-
-/** Strips the transient UI fields that never belong in a save file. */
-export function serialize(state: GameState): string {
-  const { summary: _summary, promo: _promo, ...rest } = state
-  return JSON.stringify(rest)
-}
 
 export function loadSave(): GameState | null {
   try {
@@ -29,10 +26,4 @@ export function writeSave(state: GameState): void {
   } catch {
     /* storage unavailable — game continues in memory */
   }
-}
-
-/** Returns the parsed save, or null if the JSON parsed but isn't one of ours.
- *  Throws on malformed JSON; the caller catches that and says so. */
-export function parseImport(text: string): GameState | null {
-  return migrate(JSON.parse(text))
 }

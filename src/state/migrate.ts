@@ -227,7 +227,7 @@ export function migrate(raw: unknown): GameState | null {
       : base.rank,
     /* ---- phase 3 ---- */
     properties: Array.isArray(s.properties)
-      ? (s.properties as GameState['properties'])
+      ? (s.properties as GameState['properties']).map(restoreForeverTenants)
       : [],
     marketPool: Array.isArray(s.marketPool)
       ? (s.marketPool as GameState['marketPool'])
@@ -352,6 +352,27 @@ export function migrate(raw: unknown): GameState | null {
     withPost,
     s.call as { leadId?: string } | null | undefined,
   )
+}
+
+/**
+ * JSON has no Infinity, so a tenant who never leaves voluntarily (stayMax null
+ * → plannedStayWeeks Infinity) comes back from a save as `null` — and
+ * `tenancyWeeks >= null` is true, so they would move out the first week after
+ * a reload. Anything that isn't a finite number of weeks is restored to
+ * Infinity. This is also what lets a server ship the state as plain JSON.
+ */
+function restoreForeverTenants(
+  p: GameState['properties'][number],
+): GameState['properties'][number] {
+  if (!Array.isArray(p?.units)) return p
+  return {
+    ...p,
+    units: p.units.map((u) =>
+      u?.tenant && !Number.isFinite(u.tenant.plannedStayWeeks)
+        ? { ...u, tenant: { ...u.tenant, plannedStayWeeks: Infinity } }
+        : u,
+    ),
+  }
 }
 
 /**
