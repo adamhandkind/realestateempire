@@ -1,8 +1,12 @@
 /* Bindings and settings the Worker runs with. Values live in wrangler.jsonc
    (vars) or `wrangler secret put` (secrets). */
 
+import type { CityObject } from './cityObject'
+
 export interface Env {
   DB: D1Database
+  /** One Durable Object per city: the live game and the nightly tick. */
+  CITY: DurableObjectNamespace<CityObject>
   /** The built SPA (dist/), served by Workers static assets. */
   ASSETS: Fetcher
   /** Public origin, no trailing slash: login and invite links point here. */
@@ -19,4 +23,7 @@ export interface Env {
   /** '1' in local dev only: login/invite links come back in API responses so
    *  nobody needs a mailbox to test. Never set this in production. */
   DEV_EXPOSE_LINKS?: string
+  /** '1' in local dev only: the city owner gets a "run the tick now"
+   *  button. Never set this in production. */
+  ALLOW_MANUAL_TICK?: string
 }

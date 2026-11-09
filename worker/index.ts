@@ -6,10 +6,11 @@
 import { confirmAdult, logout, me, requestLink, verifyLink } from './auth'
 import { acceptInvite, createCity, createInvite, listInvites, peekInvite, revokeInvite } from './cities'
 import type { Env } from './env'
-import { createAgent, getGame, leaderboard, postActions } from './game'
+import { act, bid, createAgent, getCity, getGame, leaderboard, manualTick, seasons, setSchedule, startSeason, withdraw } from './game'
 import { HttpError, errorResponse, json } from './http'
 
 export type { Env }
+export { CityObject } from './cityObject'
 
 type Handler = (env: Env, req: Request, params: string[]) => Promise<Response>
 
@@ -28,7 +29,14 @@ const routes: [method: string, pattern: RegExp, handler: Handler][] = [
   ['POST', new RegExp(`^/api/invites/${ID}/accept$`), (env, req, [t]) => acceptInvite(env, req, t)],
   ['POST', new RegExp(`^/api/cities/${ID}/agent$`), (env, req, [c]) => createAgent(env, req, c)],
   ['GET', new RegExp(`^/api/cities/${ID}/game$`), (env, req, [c]) => getGame(env, req, c)],
-  ['POST', new RegExp(`^/api/cities/${ID}/game/actions$`), (env, req, [c]) => postActions(env, req, c)],
+  ['POST', new RegExp(`^/api/cities/${ID}/act$`), (env, req, [c]) => act(env, req, c)],
+  ['GET', new RegExp(`^/api/cities/${ID}/city$`), (env, req, [c]) => getCity(env, req, c)],
+  ['POST', new RegExp(`^/api/cities/${ID}/bids$`), (env, req, [c]) => bid(env, req, c)],
+  ['DELETE', new RegExp(`^/api/cities/${ID}/bids/${ID}$`), (env, req, [c, l]) => withdraw(env, req, c, l)],
+  ['GET', new RegExp(`^/api/cities/${ID}/seasons$`), (env, req, [c]) => seasons(env, req, c)],
+  ['POST', new RegExp(`^/api/cities/${ID}/season/start$`), (env, req, [c]) => startSeason(env, req, c)],
+  ['POST', new RegExp(`^/api/cities/${ID}/schedule$`), (env, req, [c]) => setSchedule(env, req, c)],
+  ['POST', new RegExp(`^/api/cities/${ID}/tick$`), (env, req, [c]) => manualTick(env, req, c)],
   ['GET', new RegExp(`^/api/cities/${ID}/leaderboard$`), (env, req, [c]) => leaderboard(env, req, c)],
 ]
 
