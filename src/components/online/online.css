@@ -1,0 +1,55 @@
+/* Online play: sign-in, gates, agent creation, the League tab, save status.
+   Kept out of styles.css, which mirrors the frozen Phase 1 stylesheet. */
+
+.res-gate { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.res-gate .res-card { max-width: 440px; }
+.res-gate p { font-size: 13.5px; line-height: 1.6; }
+.res-gate .res-eyebrow { color: #8a6d12; }
+.res-field { display: block; margin-top: 12px; font-size: 11px; font-weight: 800; letter-spacing: .12em;
+  text-transform: uppercase; color: #5b5e6c; }
+.res-input { display: block; width: 100%; box-sizing: border-box; margin-top: 5px; padding: 11px 12px;
+  border: 1px solid #c3bdae; border-radius: 8px; background: #fff; color: var(--ink);
+  font: 15px Inter, system-ui, sans-serif; }
+.res-input:focus { outline: 2px solid var(--brass); outline-offset: 1px; }
+.res-go:disabled { opacity: .5; cursor: not-allowed; }
+.res-err { margin-top: 10px; padding: 8px 10px; border-radius: 8px; background: #f7dcd8; color: #7a1d16; font-size: 13px; }
+.res-ok { margin-top: 10px; padding: 8px 10px; border-radius: 8px; background: #dcebe2; color: #234a37; font-size: 13px; }
+.res-devlink { display: block; margin-top: 10px; font-size: 12px; word-break: break-all; color: #2e5e8b; }
+.res-check { display: flex; gap: 10px; align-items: flex-start; margin-top: 14px; font-size: 13.5px; line-height: 1.5; cursor: pointer; }
+.res-check input { margin-top: 3px; width: 18px; height: 18px; accent-color: var(--brass); }
+.res-linkbtn { background: none; border: none; padding: 0; margin-top: 12px; color: #5b5e6c; font-size: 12px;
+  text-decoration: underline; cursor: pointer; font-family: inherit; }
+
+.res-swatches { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 6px; }
+.res-swatch { aspect-ratio: 1; border-radius: 10px; border: 3px solid transparent; cursor: pointer; position: relative; }
+.res-swatch.on { border-color: var(--ink); box-shadow: 0 0 0 2px var(--brass); }
+.res-swatch:disabled { opacity: .25; cursor: not-allowed; }
+.res-swatch-name { margin-top: 6px; font-size: 12px; color: #5b5e6c; min-height: 1.2em; }
+
+.res-sync { display: flex; justify-content: flex-end; gap: 8px; align-items: center; font-size: 11px;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 4px 0 0; }
+.res-sync i { width: 7px; height: 7px; border-radius: 50%; background: var(--mint); display: inline-block; }
+.res-sync.pending i, .res-sync.saving i { background: var(--brass); }
+.res-sync.offline i, .res-sync.error i { background: var(--sold); }
+.res-notice { display: flex; justify-content: space-between; gap: 10px; }
+.res-notice button { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 16px; }
+
+.res-board { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.res-board th { text-align: left; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: #6d6f7c;
+  padding: 6px 6px; border-bottom: 2px solid var(--ink); }
+.res-board td { padding: 9px 6px; border-bottom: 1px dotted #cfc9ba; }
+.res-board td.num, .res-board th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.res-board tr.you td { background: #f3e7bd; font-weight: 700; }
+.res-board .dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 8px; vertical-align: -1px; }
+.res-board .place { font-family: "Archivo Black", sans-serif; width: 28px; }
+.res-board .sub { display: block; font-size: 11px; font-weight: 400; color: #6d6f7c; }
+.res-invite-link { display: flex; gap: 6px; margin-top: 10px; }
+.res-invite-link input { flex: 1; font-family: monospace; font-size: 12px; }
+.res-invites { list-style: none; padding: 0; margin: 10px 0 0; font-size: 13px; }
+.res-invites li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 7px 0;
+  border-bottom: 1px dotted rgba(245,242,234,.18); }
+.res-invites .st { font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.res-invites .st.open { color: var(--brass); }
+.res-panel.dark .res-input { background: var(--ink); color: var(--marble); border-color: rgba(245,242,234,.25); }
+.res-panel.dark .res-field { color: var(--muted); }
+@media (max-width: 560px) { .res-board .hide-sm { display: none; } }

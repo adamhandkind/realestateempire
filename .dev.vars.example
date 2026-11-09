@@ -1,0 +1,6 @@
+# Copy to .dev.vars for `npm run dev:api`. Never commit .dev.vars.
+APP_URL=http://localhost:5173
+MAIL_PROVIDER=log
+# Login and invite links come back in API responses, and the sign-in screen
+# shows them, so local testing needs no mailbox. NEVER set this in production.
+DEV_EXPOSE_LINKS=1

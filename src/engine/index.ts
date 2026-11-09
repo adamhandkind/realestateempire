@@ -16,13 +16,19 @@
    - A state survives a JSON round trip (toWire/fromWire) and keeps playing
      exactly as the in-memory one would. */
 
+import { CHARACTERS } from '../data/characters'
+import { rankOf } from '../logic/economy'
+import { netWorth } from '../logic/portfolio'
 import { setSeed, currentSeed } from '../logic/rand'
 import { endWeek, initialState, newGame, reducer } from '../state/reducer'
-import { parseImport, serialize } from '../state/serial'
+import { parseWire, serialize } from '../state/serial'
 import type { Action, GameState } from '../state/types'
 
 export type { Action, GameState }
 export { endWeek, initialState }
+export { canonicalJson, digestText, stateDigest } from './digest'
+export { isClientAction } from './clientActions'
+export { AGENT_COLORS } from '../data/agentColors'
 
 /** A brand new game for `characterId`, fully determined by `seed`. */
 export function createGame(characterId: string, seed: number): GameState {
@@ -47,11 +53,37 @@ export function applyActions(state: GameState, actions: Action[]): GameState {
 /** The state as text for storage or the wire. Drops transient UI fields. */
 export const toWire: (state: GameState) => string = serialize
 
-/** Back from text, through the save migrator. Null if it isn't a game. */
+/** Back from text exactly as it went out (an older save version is
+ *  migrated first). Null if it isn't a game. */
 export function fromWire(text: string): GameState | null {
   try {
-    return parseImport(text)
+    return parseWire(text)
   } catch {
     return null
+  }
+}
+
+/* ---- What the server copies out of a save for the leaderboard ---- */
+
+export const isCharacterId = (id: string): boolean =>
+  CHARACTERS.some((c) => c.id === id)
+
+export interface GameSummary {
+  week: number
+  cash: number
+  netWorth: number
+  rank: string
+  rankName: string
+  gameOver: boolean
+}
+
+export function summarize(state: GameState): GameSummary {
+  return {
+    week: state.week,
+    cash: Math.round(state.cash),
+    netWorth: Math.round(netWorth(state)),
+    rank: state.rank,
+    rankName: rankOf(state.rank).name,
+    gameOver: state.gameOver,
   }
 }

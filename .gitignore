@@ -25,3 +25,7 @@ dist-ssr
 
 # local tooling (machine-specific paths)
 .claude/
+
+# wrangler
+.wrangler/
+.dev.vars

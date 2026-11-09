@@ -48,6 +48,7 @@ export default function OfficeTab({
   onExport,
   onImport,
   onNewGame,
+  online = false,
 }: {
   state: GameState
   dispatch: Dispatch<Action>
@@ -58,6 +59,8 @@ export default function OfficeTab({
   onExport: () => void
   onImport: () => void
   onNewGame: () => void
+  /** Online games are refereed by the server: no imports, no cheat codes. */
+  online?: boolean
 }) {
   const [debugDistrict, setDebugDistrict] = useState(DISTRICTS[0].id)
   const st = state.stats
@@ -201,9 +204,11 @@ export default function OfficeTab({
         </div>
         <div className="res-mini" style={{ marginBottom: 8 }}>
           <button onClick={onExport}>Export Save</button>
-          <button onClick={onImport} disabled={!importText.trim()}>
-            Import Save
-          </button>
+          {!online && (
+            <button onClick={onImport} disabled={!importText.trim()}>
+              Import Save
+            </button>
+          )}
         </div>
         {exported && (
           <textarea
@@ -213,12 +218,14 @@ export default function OfficeTab({
             onFocus={(e) => e.target.select()}
           />
         )}
-        <textarea
-          className="res-ta"
-          placeholder="Paste a save here, then hit Import Save."
-          value={importText}
-          onChange={(e) => setImportText(e.target.value)}
-        />
+        {!online && (
+          <textarea
+            className="res-ta"
+            placeholder="Paste a save here, then hit Import Save."
+            value={importText}
+            onChange={(e) => setImportText(e.target.value)}
+          />
+        )}
       </div>
 
       {/* Phase 2 shipped its channel logic but not its channel cards, so the
@@ -273,6 +280,7 @@ export default function OfficeTab({
         })} */}
       </div>
 
+      {!online && (
       <div className="res-panel dark">
         <h3 className="res-h2 res-display">Cheat Codes (We Won't Tell)</h3>
         <p className="res-debug-note">Development controls. They change this save immediately.</p>
@@ -489,6 +497,7 @@ export default function OfficeTab({
           </button>
         </div>
       </div>
+      )}
     </>
   )
 }

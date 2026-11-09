@@ -361,7 +361,7 @@ export function migrate(raw: unknown): GameState | null {
  * a reload. Anything that isn't a finite number of weeks is restored to
  * Infinity. This is also what lets a server ship the state as plain JSON.
  */
-function restoreForeverTenants(
+export function restoreForeverTenants(
   p: GameState['properties'][number],
 ): GameState['properties'][number] {
   if (!Array.isArray(p?.units)) return p
