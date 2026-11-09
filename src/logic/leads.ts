@@ -19,6 +19,9 @@ import {
   priceMultOf,
 } from './territory'
 
+/** Range of one id draw: a full 32-bit rand() step. */
+const MOD32 = 4294967296
+
 export const arch = (id: string): Archetype =>
   ARCHETYPES.find((a) => a.id === id)!
 
@@ -70,7 +73,10 @@ export function makeLead(
   const extra =
     districtId === 'northEnd' && perkActive(state, 'firstNamesBasis') ? 1 : 0
   return {
-    id: 'L' + Date.now().toString(36) + Math.floor(rand() * 1e6).toString(36),
+    /* No clock in the id: the rules must give the same result wherever and
+       whenever they run (a server tick replays them). One draw, as before. */
+    id:
+      'L' + state.week.toString(36) + '-' + Math.floor(rand() * MOD32).toString(36),
     archetypeId: a.id,
     clientName: makeName(a),
     stage: 'new',

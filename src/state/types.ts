@@ -222,6 +222,9 @@ export interface Property {
   vrboProfitStreak: number
   /** Set true when a `full` renovation completes on the VRBO. */
   vrboRenoDone: boolean
+  /** The listing this was bought as, so the city keeps it on the same lot.
+   *  Absent for starting properties, the VRBO and pre-city saves. */
+  fromListingId?: string
 }
 
 export interface Listing {

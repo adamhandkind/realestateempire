@@ -52,6 +52,20 @@ src/
     WeekSummaryModal
 ```
 
+### The city (multiplayer Phase 1)
+
+```
+src/
+  engine/               the one door into the rules: createGame, applyAction,
+                        toWire/fromWire. Server-safe (see boundary test).
+  city/                 pure: lot grid from the district map + river
+                        (layout), who's on each lot (occupancy), seasons
+  components/city/      three.js isometric view, lot card, HUD (lazy-loaded)
+```
+
+The City tab opens on the 3D city; "Territory" is the flat district map.
+Plan and decisions: `docs/superpowers/plans/2026-11-09-city-phase-1-see-the-city.md`.
+
 Import direction is one-way: `components → state/logic → data`. Data files hold
 constant arrays and import nothing but types. Logic files are pure — no React,
 no direct storage access, randomness only through `rand()`. Components hold no
