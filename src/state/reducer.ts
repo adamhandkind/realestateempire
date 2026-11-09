@@ -1096,6 +1096,7 @@ function baseReducer(state: GameState, action: Action): GameState {
         isVrbo: false,
         vrboProfitStreak: 0,
         vrboRenoDone: false,
+        fromListingId: l.id,
       }
       let s: GameState = {
         ...state,

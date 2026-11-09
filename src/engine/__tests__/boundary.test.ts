@@ -58,7 +58,8 @@ describe('rules boundary', () => {
       const lines = stripComments(readFileSync(f, 'utf8')).split('\n')
       lines.forEach((line, i) => {
         for (const [re, why] of FORBIDDEN) {
-          if (rel === 'logic/rand.ts' && why.startsWith('uses Math.random')) continue
+          if (rel === 'logic/rand.ts' && why.startsWith('uses Math.random'))
+            continue
           if (re.test(line)) problems.push(`${rel}:${i + 1} ${why}`)
         }
       })

@@ -23,11 +23,11 @@ import { loadSave, parseImport, serialize, writeSave } from './state/save'
 type TabId = 'office' | 'marketing' | 'leads' | 'portfolio' | 'city' | 'closet' | 'log'
 
 const TABS: [TabId, string][] = [
+  ['city', 'City'],
   ['office', 'Office'],
   ['marketing', 'Marketing'],
   ['leads', 'Leads'],
   ['portfolio', 'Portfolio'],
-  ['city', 'City'],
   ['closet', 'Closet'],
   ['log', 'Log'],
 ]
@@ -42,7 +42,8 @@ export default function App() {
   /* No save means no agent has been chosen yet. Game over → New Game comes
      back here too, so the next run can be somebody else entirely. */
   const [choosing, setChoosing] = useState(!saved.current)
-  const [tab, setTab] = useState<TabId>('office')
+  /* The city is the front door: it's what the game looks like now. */
+  const [tab, setTab] = useState<TabId>('city')
   const [showSummary, setShowSummary] = useState(false)
   const [confetti, setConfetti] = useState(false)
   const [importText, setImportText] = useState('')

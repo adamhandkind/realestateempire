@@ -1,12 +1,13 @@
-/* The city, as one screen. No zoom, no pan — the whole map is always visible,
-   and every district is a button.
+/* The City tab. Two views of the same Brantford:
+   - City: the isometric 3D city (components/city), lazy-loaded with three.js.
+   - Territory: the flat district map, one screen, every district a button.
 
    Pin placement is deterministic: a property's id hashes to an offset inside a
    120x80 box around its district's label, and that box sits inside every
    polygon in data/districts.ts. No point-in-polygon needed, and a property
    never wanders between renders. */
 
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import {
   DISTRICTS,
   MAP_VIEWBOX,
@@ -23,6 +24,8 @@ import {
 } from '../logic/territory'
 import DistrictSheet from './DistrictSheet'
 import type { Action, DistrictDef, GameState } from '../state/types'
+
+const CityView = lazy(() => import('./city/CityView'))
 
 const PIN_BOX = { x: 120, y: 80 }
 
@@ -84,12 +87,40 @@ export default function MapTab({
   dispatch: (a: Action) => void
 }) {
   const [open, setOpen] = useState<string | null>(null)
+  const [view, setView] = useState<'city' | 'territory'>('city')
   const sheet = open ? districtOf(open) : null
   const intel = state.chadwickIntel
 
   return (
     <div className="res-maptab">
-      <div className="res-mapwrap">
+      <nav className="res-tabs res-city-views">
+        <button
+          className={'res-tab' + (view === 'city' ? ' on' : '')}
+          onClick={() => setView('city')}
+        >
+          City
+        </button>
+        <button
+          className={'res-tab' + (view === 'territory' ? ' on' : '')}
+          onClick={() => setView('territory')}
+        >
+          Territory
+        </button>
+      </nav>
+
+      {view === 'city' && (
+        <Suspense
+          fallback={
+            <div className="res-city res-city-loading">
+              Pouring the foundations…
+            </div>
+          }
+        >
+          <CityView state={state} dispatch={dispatch} />
+        </Suspense>
+      )}
+
+      {view === 'territory' && <div className="res-mapwrap">
         <svg
           className="res-map"
           viewBox={MAP_VIEWBOX}
@@ -250,9 +281,9 @@ export default function MapTab({
             )
           })}
         </svg>
-      </div>
+      </div>}
 
-      <div className="res-maplegend">
+      {view === 'territory' && <div className="res-maplegend">
         <span>
           <b style={{ background: 'var(--brass)' }} />
           You
@@ -267,7 +298,7 @@ export default function MapTab({
           <b style={{ background: '#232734' }} />
           Independents
         </span>
-      </div>
+      </div>}
 
       {intel && (
         <div className="res-banner">

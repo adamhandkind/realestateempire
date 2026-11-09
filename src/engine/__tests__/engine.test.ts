@@ -49,7 +49,9 @@ function play(s: GameState, weeks: number, log: Action[] = []): GameState {
 describe('engine', () => {
   it('creates the same game from the same seed', () => {
     expect(toWire(createGame('you', 42))).toBe(toWire(createGame('you', 42)))
-    expect(toWire(createGame('you', 42))).not.toBe(toWire(createGame('you', 43)))
+    expect(toWire(createGame('you', 42))).not.toBe(
+      toWire(createGame('you', 43)),
+    )
   })
 
   it('plays the same season twice from the same seed', () => {

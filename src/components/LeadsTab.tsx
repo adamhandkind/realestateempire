@@ -6,7 +6,7 @@ import { arch, byStage, closeChance, fusePct } from '../logic/leads'
 import { money } from '../logic/rand'
 import type { Action, GameState, Lead, Stage } from '../state/types'
 
-function LeadCard({
+export function LeadCard({
   lead,
   state,
   dispatch,
