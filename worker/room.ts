@@ -247,6 +247,24 @@ export class Room {
     return this.viewFor(cityId, userId, r.city)
   }
 
+  /** The phone check-in: no moves, but it counts as showing up, so the
+   *  houses don't fall apart while you're on the road. */
+  async checkIn(cityId: string, userId: string): Promise<CityView> {
+    const s = await this.stored(userId)
+    if (!s) throw new RoomError(404, 'no_agent', 'Create your agent first.')
+    const city = await this.city()
+    if (city.status === 'running' && s.lastActiveWeek !== city.week) await this.storage.put('p:' + userId, { ...s, lastActiveWeek: city.week })
+    return this.viewFor(cityId, userId, city)
+  }
+
+  /** Who a live connection belongs to, and whether they wear the kit. */
+  async agentOf(userId: string): Promise<{ name: string; color: string; characterId: string; champion: boolean } | null> {
+    const s = await this.stored(userId)
+    if (!s) return null
+    const city = await this.city()
+    return { name: s.name, color: s.color, characterId: s.characterId, champion: city.lastSeason?.standings[0]?.userId === userId }
+  }
+
   async withdraw(cityId: string, userId: string, listingId: string): Promise<CityView> {
     const city = withdrawBid(await this.city(), userId, listingId)
     await this.storage.put('city', city)
@@ -347,8 +365,8 @@ export class Room {
     const champ = result.standings[0]
     await this.env.DB.prepare(
       `INSERT INTO seasons (city_id, season, finished_at, champion_user_id, champion_name, champion_color,
-                            champion_character_id, champion_net_worth, standings)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            champion_character_id, champion_net_worth, standings, champion_title, awards)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (city_id, season) DO NOTHING`,
     )
       .bind(
@@ -361,6 +379,8 @@ export class Room {
         champ?.characterId ?? null,
         champ?.netWorth ?? null,
         JSON.stringify(result.standings),
+        result.title ?? null,
+        JSON.stringify(result.awards ?? []),
       )
       .run()
   }

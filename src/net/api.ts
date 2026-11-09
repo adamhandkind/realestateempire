@@ -50,6 +50,7 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 
 /* ---------------------------------------------------------------- types */
 
+import type { Award, SeasonStanding } from '../citygame/types'
 import type { CityGameReply, CityTransport } from './cityStore'
 
 export interface Me {
@@ -71,8 +72,9 @@ export type SaveText = CityGameReply
 export interface HallSeason {
   season: number
   finishedAt: number
-  champion: { name: string; color: string; characterId: string; netWorth: number } | null
-  standings: { name: string; color: string; characterId: string; rank: string; netWorth: number; place: number }[]
+  champion: { name: string; color: string; characterId: string; netWorth: number; title: string | null } | null
+  standings: SeasonStanding[]
+  awards: Award[]
 }
 
 export interface InvitePeek {
@@ -166,5 +168,6 @@ export function cityTransport(cityId: string): CityTransport {
     start: () => raw('POST', base + '/season/start', {}),
     schedule: (body) => raw('POST', base + '/schedule', body),
     tick: () => raw('POST', base + '/tick', {}),
+    checkIn: () => raw('POST', base + '/checkin', {}),
   }
 }

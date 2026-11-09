@@ -47,12 +47,54 @@ export interface Marker {
 
 export interface CityGeometry {
   main: THREE.BufferGeometry
+  /** Windows and lamp heads: lit from inside at night. */
+  glow: THREE.BufferGeometry
+  /** Holiday lights on the eaves, winter only (null otherwise). */
+  lights: THREE.BufferGeometry | null
   markers: Marker[]
   /** Roof height per lot index, for selection boxes and client markers. */
   heights: number[]
 }
 
 const pick = <T>(arr: T[], key: string): T => arr[hash(key) % arr.length]
+
+/** Where the night-time and holiday extras go while a city is built. */
+interface Fx {
+  glow: MeshBuilder
+  lights: MeshBuilder | null
+}
+
+const WINDOW = '#4d5f73'
+const BULBS = ['#ff4a4a', '#4cff7a', '#ffd84a', '#5aa8ff', '#ff7ae0']
+
+/** One window in the middle of each wall of a small building. */
+function houseWindows(fx: Fx, x: number, y0: number, z: number, w: number, h: number, d: number, key: string) {
+  const y = y0 + h * 0.42
+  const s = Math.min(0.1, h * 0.32)
+  /* Not every window is lit: somebody's always asleep. */
+  const lit = (i: number) => unit('win' + key + i) < 0.7
+  const g = fx.glow
+  if (lit(0)) g.pane(x + w * 0.18, y, z + d / 2 + 0.004, 'z', s, s, WINDOW)
+  if (lit(1)) g.pane(x - w * 0.18, y, z - d / 2 - 0.004, '-z', s, s, WINDOW)
+  if (lit(2)) g.pane(x + w / 2 + 0.004, y, z - d * 0.18, 'x', s, s, WINDOW)
+  if (lit(3)) g.pane(x - w / 2 - 0.004, y, z + d * 0.18, '-x', s, s, WINDOW)
+}
+
+/** A string of bulbs round the eaves. */
+function eaveLights(fx: Fx, x: number, y: number, z: number, w: number, d: number, key: string) {
+  const L = fx.lights
+  if (!L) return
+  const per = 2
+  let k = hash('bulb' + key)
+  const bulb = (bx: number, bz: number) => L.pyramid(bx, y - 0.04, bz, 0.045, 0.05, 0.045, BULBS[k++ % BULBS.length])
+  for (let i = 0; i < per; i++) {
+    const t = (i + 0.5) / per - 0.5
+    bulb(x + t * w, z + d / 2 + 0.01)
+    bulb(x + t * w, z - d / 2 - 0.01)
+    bulb(x + w / 2 + 0.01, z + t * d)
+    bulb(x - w / 2 - 0.01, z + t * d)
+  }
+}
 
 const rivalColor = (id: string) =>
   RIVALS.find((r) => r.id === id)?.color ?? '#888'
@@ -92,9 +134,12 @@ function bands(
   floors: number,
   floorH: number,
   color: string,
+  fx: Fx,
+  key: string,
 ) {
   for (let f = 0; f < floors; f++)
-    b.box(
+    /* Lit floors go in the glow mesh; the rest stay dark glass. */
+    (unit('fl' + key + f) < 0.45 ? fx.glow : b).box(
       x,
       y0 + f * floorH + floorH * 0.35,
       z,
@@ -114,6 +159,7 @@ function building(
   pal: Palette,
   key: string,
   priceMult: number,
+  fx: Fx,
 ): number {
   const wall = pick(WALLS, 'wall' + key)
   const roofBase = pick(ROOFS, 'roof' + key)
@@ -125,6 +171,8 @@ function building(
       b.box(x, y, z, 0.5, 0.36, 0.46, wall)
       b.pyramid(x, y + 0.36, z, 0.58, 0.3, 0.54, roof)
       b.box(x + 0.1, y, z + 0.231, 0.1, 0.18, 0.01, '#5b4330')
+      houseWindows(fx, x - 0.08, y, z, 0.5, 0.36, 0.46, key)
+      eaveLights(fx, x, y + 0.36, z, 0.58, 0.54, key)
       return y + 0.66
     }
     case 'townhouse': {
@@ -156,6 +204,8 @@ function building(
           tint,
         )
       }
+      houseWindows(fx, x, y, z, flip ? 0.72 : 0.48, 0.62, flip ? 0.48 : 0.72, key)
+      eaveLights(fx, x, y + 0.62, z, flip ? 0.72 : 0.5, flip ? 0.5 : 0.72, key)
       return y + 0.84
     }
     case 'duplex': {
@@ -171,6 +221,8 @@ function building(
         flip,
         wall,
       )
+      houseWindows(fx, x, y, z, flip ? 0.7 : 0.5, 0.56, flip ? 0.5 : 0.7, key)
+      eaveLights(fx, x, y + 0.56, z, flip ? 0.76 : 0.56, flip ? 0.56 : 0.76, key)
       return y + 0.82
     }
     case 'apartment': {
@@ -190,7 +242,7 @@ function building(
         brick,
         pal.roofSnow ? '#eef1f4' : '#5a5d66',
       )
-      bands(b, x, y, z, 0.74, 0.7, floors, fh, '#3b4552')
+      bands(b, x, y, z, 0.74, 0.7, floors, fh, '#3b4552', fx, key)
       b.box(x + 0.15, y + floors * fh, z - 0.1, 0.18, 0.12, 0.18, '#6a6d76')
       return y + floors * fh + 0.12
     }
@@ -210,7 +262,7 @@ function building(
         body,
         pal.roofSnow ? '#eef1f4' : '#7d838c',
       )
-      bands(b, x, y + 0.2, z, 0.56, 0.56, floors, fh, glass)
+      bands(b, x, y + 0.2, z, 0.56, 0.56, floors, fh, glass, fx, key)
       b.box(x, y + 0.2 + floors * fh, z, 0.2, 0.25, 0.2, '#9aa0a8')
       return y + 0.45 + floors * fh
     }
@@ -219,14 +271,19 @@ function building(
       b.box(x + 0.16, y, z + 0.14, 0.3, 0.42, 0.44, wall)
       b.pyramid(x - 0.08, y + 0.42, z - 0.06, 0.68, 0.24, 0.48, roof)
       b.pyramid(x + 0.16, y + 0.42, z + 0.14, 0.38, 0.24, 0.52, roof)
-      if (!pal.roofSnow)
-        b.box(x - 0.22, y, z + 0.27, 0.3, 0.012, 0.16, '#59b8d8')
+      /* Pools open for summer; the rest of the year they're under a tarp
+         (or the snow). */
+      b.box(x - 0.22, y, z + 0.27, 0.3, 0.012, 0.16, pal.pools ? '#59b8d8' : pal.roofSnow ? '#eef1f4' : '#5d7280')
       b.box(x - 0.4, y, z, 0.06, 0.12, 0.8, '#3f6e3a')
+      houseWindows(fx, x - 0.08, y, z - 0.06, 0.6, 0.42, 0.4, key)
+      eaveLights(fx, x - 0.08, y + 0.42, z - 0.06, 0.68, 0.48, key)
       return y + 0.66
     }
     default: {
       b.box(x, y, z, 0.5, 0.4, 0.5, wall)
       b.pyramid(x, y + 0.4, z, 0.58, 0.28, 0.58, roof)
+      houseWindows(fx, x, y, z, 0.5, 0.4, 0.5, key)
+      eaveLights(fx, x, y + 0.4, z, 0.58, 0.58, key)
       return y + 0.68
     }
   }
@@ -269,6 +326,7 @@ export function buildCityGeometry(
 ): CityGeometry {
   const pal = PALETTES[season]
   const b = new MeshBuilder()
+  const fx: Fx = { glow: new MeshBuilder(), lights: season === 'winter' ? new MeshBuilder() : null }
   const markers: Marker[] = []
   const heights: number[] = new Array(city.lots.length).fill(0.3)
   const lotIndex = new Map(city.lots.map((l, i) => [l.id, i]))
@@ -280,6 +338,7 @@ export function buildCityGeometry(
     const z = wz(t.row)
     const key = t.col + ':' + t.row
     b.lotIndex = t.lotId ? lotIndex.get(t.lotId)! : -1
+    fx.glow.lotIndex = b.lotIndex
 
     if (t.kind === 'water' || t.kind === 'bridge') {
       b.box(x, SLAB, z, 1, 0.3, 1, pal.earth)
@@ -297,6 +356,12 @@ export function buildCityGeometry(
       b.box(x, SLAB, z, 1, -SLAB - 0.01, 1, pal.earth, pal.road)
       const ns = isRoadCol(t.col)
       const ew = isRoadRow(t.row)
+      if (ns && ew) {
+        /* A street lamp on one corner of every crossing. */
+        b.box(x + 0.42, -0.01, z + 0.42, 0.035, 0.5, 0.035, '#3a3d45')
+        b.box(x + 0.36, 0.47, z + 0.42, 0.14, 0.025, 0.035, '#3a3d45')
+        fx.glow.box(x + 0.3, 0.43, z + 0.42, 0.07, 0.04, 0.06, '#d9d2b8')
+      }
       if (ns !== ew) {
         b.box(
           x,
@@ -380,7 +445,7 @@ export function buildCityGeometry(
         : use.kind === 'owned'
           ? use.property.typeId
           : use.typeId
-    const top = building(b, typeId, x, z, pal, lot.id, pm)
+    const top = building(b, typeId, x, z, pal, lot.id, pm, fx)
     heights[idx] = top
     const lowRise = typeId !== 'condo' && typeId !== 'apartment'
     if (lowRise && unit('tree' + key) < 0.55)
@@ -401,5 +466,5 @@ export function buildCityGeometry(
     }
   }
 
-  return { main: b.build(), markers, heights }
+  return { main: b.build(), glow: fx.glow.build(), lights: fx.lights && !fx.lights.empty ? fx.lights.build() : null, markers, heights }
 }

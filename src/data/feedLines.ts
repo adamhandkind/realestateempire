@@ -49,6 +49,19 @@ export const FEED_LINES = {
   bankAuction: ['Bank auction in {district}: a {house}, sold as-is. "As-is" is doing a lot of work.'],
   seasonStart: ['Season {n} is open. Fifty-two weeks. One blazer. Everybody back to the tent.'],
   seasonEnd: ['Season {n} is over. {a} finishes on top with {price}. Fetch the blazer.'],
+  crowned: [
+    'AWARDS NIGHT: {a} is crowned champion of season {n} and will be known, for one year, as "{title}". The blazer fits. Horribly.',
+  ],
+  award: ['{title}: {a}. {stat}.'],
+  champWon: [
+    'The reigning champ {a} just took a {house} in {district} for {price}. You could hear the crocodile boots from the river.',
+    'Blazer sighting: {a} won a {house} in {district}, {price}. The shoulder pads entered the room first.',
+    'Champion {a} added a {house} in {district} to the trophy cabinet for {price}. Somebody fetch a mirror; they want to watch.',
+  ],
+  champDeals: [
+    '{a} walked into a showing in the full kit and closed {n}. The clients asked for autographs. Two of them meant it.',
+    'The champ {a} closed {n} this week. The haircut did most of the talking.',
+  ],
 } as const
 
 export type FeedLineKey = keyof typeof FEED_LINES

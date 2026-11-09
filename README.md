@@ -133,6 +133,24 @@ Plan and decisions: `docs/superpowers/plans/2026-11-09-city-phase-3-shared-city.
 With `ALLOW_MANUAL_TICK=1` in `.dev.vars` (the example has it), the city
 owner gets a "Run the tick now" button for local testing.
 
+## Life and polish (multiplayer Phase 4)
+
+```
+src/live/presence.ts    the live room's protocol (agents walking the map)
+worker/live.ts          the live room on the server (hibernating WebSockets)
+src/net/live.ts         browser side: other agents in, "the tick ran" nudges
+src/city/paths.ts       routes for walking agents, road runs for traffic
+src/city/daylight.ts    day and night from the viewer's clock
+src/components/city/    agents.ts (figures, Champion's Kit), traffic.ts,
+                        weather.ts; windows, lamps, holiday lights in cityMesh
+src/components/online/  AwardsNight, Portrait (Hall of Fame), PhoneCheckIn
+```
+
+Click anywhere in the city to walk there. Online, friends see each other's
+agents, and last season's champion walks in the burgundy blazer. Week 52 ends
+with awards night. On a phone the game opens as a one-column check-in.
+Plan and decisions: `docs/superpowers/plans/2026-11-09-city-phase-4-life-and-polish.md`.
+
 ## Deploying
 
 `npm run deploy` builds, applies D1 migrations remotely and deploys the

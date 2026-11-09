@@ -2,7 +2,9 @@
    owner's invite desk, and the account bits (switch city, sign out). */
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import type { SeasonResult } from '../../citygame/types'
 import type { CityView, PlayerView } from '../../citygame/view'
+import Portrait from './Portrait'
 import type { CityStore } from '../../net/cityStore'
 import { AGENT_COLORS } from '../../data/agentColors'
 import { CHARACTERS } from '../../data/characters'
@@ -106,30 +108,51 @@ function Feed({ view }: { view: CityView }) {
   )
 }
 
-function HallOfFame({ cityId, view }: { cityId: string; view: CityView }) {
+function HallOfFame({ cityId, view, onAwards }: { cityId: string; view: CityView; onAwards: (r: SeasonResult) => void }) {
   const [seasons, setSeasons] = useState<HallSeason[] | null>(null)
   useEffect(() => {
     api.seasons(cityId).then((r) => setSeasons(r.seasons), () => setSeasons([]))
   }, [cityId, view.season, view.status])
   if (!seasons?.length) return null
   return (
-    <div className="res-panel">
+    <div className="res-panel dark">
       <h3 className="res-h2 res-display">Hall of Fame</h3>
-      <ul className="res-hall">
-        {seasons.map((s) => (
-          <li key={s.season}>
-            <span className="res-meta">Season {s.season}</span>
-            {s.champion ? (
-              <span>
-                <span className="dot" style={{ background: hexOf(s.champion.color) }} /> <b>{s.champion.name}</b> ·{' '}
-                {money(s.champion.netWorth)}
-              </span>
-            ) : (
-              <span>Nobody. Nobody at all.</span>
-            )}
-          </li>
-        ))}
-      </ul>
+      <p className="res-debug-note">Every champion keeps a portrait in full kit. The blazer is cleaned between wearers. Allegedly.</p>
+      <div className="res-hall-wall">
+        {seasons.map((s) => {
+          const champ = s.standings[0]
+          return (
+            <figure key={s.season} className="res-hall-frame">
+              {s.champion && champ ? (
+                <Portrait name={s.champion.name} color={hexOf(s.champion.color)} seed={s.season + ':' + champ.userId} size={118} />
+              ) : (
+                <div className="res-hall-empty">Nobody. Nobody at all.</div>
+              )}
+              <figcaption>
+                <span className="res-meta">Season {s.season}</span>
+                {s.champion && (
+                  <>
+                    <b>{s.champion.name}</b>
+                    {s.champion.title && <i>“{s.champion.title}”</i>}
+                    <span>
+                      {money(s.champion.netWorth)} · {rankName(champ?.rank ?? null)}
+                      {champ?.doors !== undefined ? ' · ' + champ.doors + ' doors' : ''}
+                    </span>
+                  </>
+                )}
+                {s.awards.length > 0 && (
+                  <button
+                    className="res-linkbtn"
+                    onClick={() => onAwards({ season: s.season, standings: s.standings, title: s.champion?.title ?? undefined, awards: s.awards })}
+                  >
+                    Relive awards night
+                  </button>
+                )}
+              </figcaption>
+            </figure>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -296,7 +319,9 @@ export default function LeagueTab({
   cityCount,
   onSwitchCity,
   onSignOut,
+  onAwards,
 }: {
+  onAwards: (r: SeasonResult) => void
   city: CitySummary
   view: CityView
   store: CityStore
@@ -309,7 +334,7 @@ export default function LeagueTab({
     <>
       <Leaderboard view={view} />
       <Feed view={view} />
-      <HallOfFame cityId={city.id} view={view} />
+      <HallOfFame cityId={city.id} view={view} onAwards={onAwards} />
       {city.role === 'owner' && <InviteDesk cityId={city.id} />}
       {city.role === 'owner' && <TickDesk view={view} store={store} />}
       <div className="res-panel dark">

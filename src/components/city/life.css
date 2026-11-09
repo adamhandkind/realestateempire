@@ -1,0 +1,8 @@
+/* Phase 4: life on the street. Agent name tags over the 3D city. */
+.res-agent-label { position: absolute; left: 0; top: 0; white-space: nowrap; font-size: 10.5px; font-weight: 800;
+  letter-spacing: .04em; color: var(--marble); padding: 2px 7px 2px 6px; border-radius: 999px;
+  background: rgba(20,22,31,.78); border-left: 3px solid var(--agent, #888); transition: opacity .25s;
+  pointer-events: none; }
+.res-agent-label.you { color: var(--brass); }
+.res-agent-label.champ { background: linear-gradient(90deg, #7a1f2b, #9b2c3a); border-left-color: #e9c94a; color: #fff3c4; }
+.res-city-buttons button.off { opacity: .45; }

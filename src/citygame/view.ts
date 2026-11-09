@@ -4,6 +4,7 @@
    the grudges. Never another player's bid amounts, and never anyone's
    dice. */
 
+import { championOf, type Champion } from './city'
 import { quarterOf } from '../logic/cityMode'
 import { netWorth } from '../logic/portfolio'
 import type { PropertyTypeId, RankId } from '../state/types'
@@ -55,6 +56,8 @@ export interface CityView {
   feed: FeedItem[]
   rivalries: { winner: string; loser: string; n: number }[]
   lastSeason: SeasonResult | null
+  /** Last season's winner, in the kit (null in a city's first season). */
+  champion: Champion | null
 }
 
 export interface Schedule {
@@ -115,5 +118,6 @@ export function cityView(city: CityState, players: CityPlayer[], me: string, sch
       .sort((a, b) => b.n - a.n)
       .slice(0, 6),
     lastSeason: city.lastSeason,
+    champion: championOf(city),
   }
 }

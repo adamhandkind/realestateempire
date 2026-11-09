@@ -30,6 +30,7 @@ export interface CityTransport {
   start(): Promise<RawResult>
   schedule(body: { hour: number; zone: string }): Promise<RawResult>
   tick(): Promise<RawResult>
+  checkIn(): Promise<RawResult>
 }
 
 export interface CityStoreOptions {
@@ -214,6 +215,8 @@ export class CityStore {
   startSeason = () => this.cityCall(() => this.transport.start(), true)
   setSchedule = (hour: number, zone: string) => this.cityCall(() => this.transport.schedule({ hour, zone }))
   runTick = () => this.cityCall(() => this.transport.tick())
+  /** The phone check-in: counts as showing up for the week. */
+  markCheckedIn = () => this.cityCall(() => this.transport.checkIn())
 
   dispose(): void {
     this.disposed = true
