@@ -156,6 +156,9 @@ describe('End Week — reputation from closed deals', () => {
     setSeed(52)
     const withLead: GameState = {
       ...base({ reputation: 40, rank: 'buyerAgent' }),
+      /* initialState() mints a random seed and the reducer seeds from it, so
+         without this the outcome was a coin flip per run. */
+      rngSeed: 52,
       ap: 5,
       leads: [
         {
@@ -183,7 +186,8 @@ describe('End Week — reputation from closed deals', () => {
         closed = r
         break
       }
-      closed = { ...closed, ap: 5, leads: withLead.leads }
+      /* Carry the RNG forward, or every retry replays the same roll. */
+      closed = { ...closed, ap: 5, leads: withLead.leads, rngSeed: r.rngSeed }
     }
     expect(closed.counters.dealsClosed).toBe(1)
     expect(closed.reputation).toBe(41)
