@@ -71,7 +71,12 @@ export function newCity(seed: number): CityState {
 const marketOf = (week: number): MarketState => (['normal', 'hot', 'normal', 'cold'] as const)[quarterOf(week)]
 
 function fill(template: string, vars: Record<string, string | number>): string {
-  return template.replace(/\{(\w+)\}/g, (_, k) => (k in vars ? String(vars[k]) : '{' + k + '}'))
+  return (
+    template
+      .replace(/\{(\w+)\}/g, (_, k) => (k in vars ? String(vars[k]) : '{' + k + '}'))
+      /* "a apartment building" → "an apartment building" */
+      .replace(/\b([Aa]) ([aeiou])/g, '$1n $2')
+  )
 }
 
 function post(city: CityState, dice: Dice, kind: FeedKind, key: FeedLineKey, vars: Record<string, string | number>, who: string[]): CityState {

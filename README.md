@@ -114,6 +114,25 @@ npm run dev         # Vite on :5173, proxies /api
 Plan, API, decisions and first-time deploy steps:
 `docs/superpowers/plans/2026-11-09-city-phase-2-accounts-and-cloud.md`.
 
+## The shared city (multiplayer Phase 3)
+
+```
+src/citygame/           pure: the shared city's rules (offers, the tick,
+                        the feed, absence, seasons), what a player may see,
+                        and the season bots the balance test plays
+worker/room.ts          one city on the server: storage, moves, the tick
+worker/cityObject.ts    the Durable Object around it (one per city, alarm)
+src/net/cityStore.ts    browser side: moves go up, the game comes back
+```
+
+Online, every city is shared: the server plays every move and keeps the
+dice, and the week ends for everyone at the overnight tick. City-mode tuning
+is `src/data/city.ts`; single player is unchanged.
+Plan and decisions: `docs/superpowers/plans/2026-11-09-city-phase-3-shared-city.md`.
+
+With `ALLOW_MANUAL_TICK=1` in `.dev.vars` (the example has it), the city
+owner gets a "Run the tick now" button for local testing.
+
 ## Deploying
 
 `npm run deploy` builds, applies D1 migrations remotely and deploys the

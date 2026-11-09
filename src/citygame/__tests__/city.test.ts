@@ -232,3 +232,11 @@ describe('the season', () => {
     expect(next.players.every((p) => p.game.week === 1 && p.game.properties.length === 0)).toBe(true)
   })
 })
+
+describe('the feed', () => {
+  it('minds its articles', () => {
+    let { city, players } = cityWith(3, 11)
+    for (let i = 0; i < 20; i++) ({ city, players } = tick(city, players))
+    expect(city.feed.some((f) => /\ba [aeiou]/.test(f.text))).toBe(false)
+  })
+})
