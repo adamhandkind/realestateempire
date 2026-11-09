@@ -5,6 +5,7 @@
 
 import { createContext, useContext } from 'react'
 import type { CityView } from '../../citygame/view'
+import type { LiveAgent, Tile } from '../../live/presence'
 
 export interface CityUi {
   view: CityView
@@ -13,6 +14,10 @@ export interface CityUi {
   /** Each returns an error message, or null when it worked. */
   bid: (listingId: string, amount: number, downPct: number) => Promise<string | null>
   withdraw: (listingId: string) => Promise<string | null>
+  /** Other agents walking the map right now (live room). */
+  agents: LiveAgent[]
+  /** Tell the city where our agent is walking. */
+  go: (from: Tile, to: Tile) => void
 }
 
 export const CityContext = createContext<CityUi | null>(null)

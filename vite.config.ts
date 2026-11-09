@@ -7,6 +7,6 @@ export default defineConfig({
   server: {
     // `npm run dev:api` runs the Worker on 8787. Without it, /api gets no
     // answer and the game falls back to local single-player play.
-    proxy: { '/api': 'http://localhost:8787' },
+    proxy: { '/api': { target: 'http://localhost:8787', ws: true } },
   },
 })

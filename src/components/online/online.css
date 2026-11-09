@@ -79,3 +79,75 @@
 .res-hall .dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; }
 .res-report-city { margin: 12px 0; padding: 10px 12px; border-radius: 8px; background: #efe9d9; }
 .res-report-city ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.5; }
+
+/* ---- life and polish (Phase 4) ---- */
+/* Awards night */
+.res-awards { max-width: 640px; width: calc(100% - 24px); max-height: calc(100vh - 32px); overflow-y: auto; box-sizing: border-box;
+  padding: 22px 22px 18px; border-radius: 16px; background: linear-gradient(180deg, #2a1418, var(--ink) 40%);
+  color: var(--marble); border: 2px solid #e9c94a; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+.res-awards > .res-eyebrow { color: #e9c94a; }
+.res-awards h2.res-display { margin: 2px 0 14px; font-size: 30px; letter-spacing: .04em; }
+.res-awards-crown { display: flex; gap: 18px; align-items: flex-start; }
+.res-awards-crown p { font-size: 13.5px; line-height: 1.55; margin: 8px 0; }
+.res-awards-name { font-family: "Archivo Black", sans-serif; font-size: 24px; color: #fff3c4; }
+.res-awards-title { font-style: italic; color: #e9c94a; font-size: 15px; margin-top: 2px; }
+.res-awards-stats { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--muted); }
+.res-awards-stats b { color: var(--marble); font-size: 14px; }
+.res-awards-kit { color: var(--muted); font-size: 12.5px !important; }
+.res-roasts { list-style: none; padding: 0; margin: 6px 0 0; }
+.res-roasts li { padding: 10px 0; border-bottom: 1px dotted rgba(245,242,234,.2); font-size: 13.5px; line-height: 1.5; }
+.res-roasts li.you { background: rgba(233,201,74,.08); }
+.res-roast-title { font-size: 10.5px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: #e9c94a; }
+.res-awards-final { margin: 14px 0; font-size: 13px; }
+.res-awards-final ol { margin: 6px 0 0; padding-left: 22px; line-height: 1.7; }
+.res-awards-final .dot { display: inline-block; width: 9px; height: 9px; border-radius: 3px; }
+@media (max-width: 560px) { .res-awards-crown { flex-direction: column; align-items: center; text-align: center; }
+  .res-awards-stats { justify-content: center; } }
+
+/* The Hall of Fame wall */
+.res-hall-wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; margin-top: 10px; }
+.res-hall-frame { margin: 0; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; }
+.res-hall-frame figcaption { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; }
+.res-hall-frame figcaption b { font-size: 14px; color: var(--marble); }
+.res-hall-frame figcaption i { color: #e9c94a; }
+.res-hall-frame figcaption span:last-of-type { color: var(--muted); }
+.res-hall-frame .res-linkbtn { margin-top: 4px; color: var(--muted); }
+.res-hall-empty { width: 118px; height: 138px; display: flex; align-items: center; justify-content: center; border-radius: 6px;
+  border: 2px dashed rgba(245,242,234,.25); color: var(--muted); font-size: 12px; padding: 8px; box-sizing: border-box; }
+.res-portrait { display: block; filter: drop-shadow(0 6px 14px rgba(0,0,0,.45)); flex-shrink: 0; }
+
+/* The phone check-in */
+.res-phone { max-width: 520px; margin: 0 auto; padding: 14px 16px 32px; box-sizing: border-box; }
+.res-phone-head h1 { margin: 2px 0; font-size: 30px; color: var(--marble); }
+.res-phone-head .res-eyebrow { color: var(--brass); }
+.res-phone-champ { margin: 10px 0; padding: 9px 12px; border-radius: 10px; font-size: 13px; line-height: 1.45;
+  background: linear-gradient(90deg, #5a1520, #7a1f2b); color: #fff3c4; }
+.res-phone-card { margin: 12px 0; padding: 14px; border-radius: 12px; background: var(--marble); color: var(--ink); }
+.res-phone-card.dark { background: var(--ink2); color: var(--marble); }
+.res-phone-card .res-h2 { margin: 0 0 8px; font-size: 17px; }
+.res-phone-card ul { margin: 6px 0 0; padding-left: 18px; font-size: 13.5px; line-height: 1.5; }
+.res-phone-checkin { display: flex; flex-direction: column; gap: 6px; border: 2px solid var(--brass); background: var(--ink); color: var(--marble); }
+.res-phone-checkin.done { border-color: var(--mint); }
+.res-phone-checkin b { font-size: 16px; }
+.res-phone-checkin span { font-size: 13px; line-height: 1.45; color: var(--muted); }
+.res-phone-checkin .res-go { margin-top: 6px; min-height: 48px; font-size: 16px; }
+.res-phone-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; }
+.res-phone-stats b { display: block; font-family: "Archivo Black", sans-serif; font-size: 17px; margin-top: 2px; }
+.res-phone-money { display: flex; gap: 12px; align-items: baseline; font-size: 13px; color: #5b5e6c; }
+.res-phone-money b { margin-left: auto; font-size: 18px; }
+.res-phone-money b.up { color: #2d7a4f; }
+.res-phone-money b.down { color: #a3291f; }
+.res-phone-offers { list-style: none; padding: 0 !important; }
+.res-phone-offers li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px dotted #cfc9ba; }
+.res-phone-offers small { display: block; color: #6d6f7c; font-size: 12px; }
+.res-phone-offers button { min-height: 40px; padding: 0 12px; border-radius: 8px; border: 1px solid #c3bdae; background: #fff; font: inherit; cursor: pointer; }
+.res-phone-board { margin: 0; padding: 0; list-style: none; font-size: 14px; }
+.res-phone-board li { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px dotted #cfc9ba; counter-increment: place; }
+.res-phone-board li::before { content: counter(place); width: 20px; font-family: "Archivo Black", sans-serif; }
+.res-phone-board li b { margin-left: auto; font-variant-numeric: tabular-nums; }
+.res-phone-board li.you { font-weight: 700; }
+.res-phone-board .dot { width: 10px; height: 10px; border-radius: 3px; }
+.res-phone-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+.res-phone-actions .res-go { min-height: 48px; }
+/* Awards night outranks every other dialog. */
+.res-modal.res-modal-top { z-index: 200; }

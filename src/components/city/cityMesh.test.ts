@@ -47,6 +47,17 @@ describe('city geometry', () => {
     expect(clients.size).toBeGreaterThan(0)
   })
 
+  it('lights windows and lamps every season, and strings bulbs only in winter', () => {
+    for (const season of SEASONS) {
+      const g = buildCityGeometry(city, uses, season, pm)
+      expect(g.glow.getAttribute('position').count).toBeGreaterThan(1000)
+      expect(!!g.lights).toBe(season === 'winter')
+    }
+    const tris = (g: ReturnType<typeof buildCityGeometry>) =>
+      (g.main.getAttribute('position').count + g.glow.getAttribute('position').count + (g.lights?.getAttribute('position').count ?? 0)) / 3
+    console.log('city triangles, winter:', tris(buildCityGeometry(city, uses, 'winter', pm)))
+  })
+
   it('rebuilds fast enough to redo on every state change', () => {
     buildCityGeometry(city, uses, 'winter', pm) // warm up the JIT
     const t0 = performance.now()

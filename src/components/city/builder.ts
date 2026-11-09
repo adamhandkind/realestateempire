@@ -141,6 +141,18 @@ export class MeshBuilder {
     this.tri([x0, y0, z0], [x0, y0, z1], [x0, y1, z], gableEnd)
   }
 
+  /** A flat rectangle on a wall, facing out along +x, -x, +z or -z: two
+   *  triangles, for windows. Centered on (x, y, z). */
+  pane(x: number, y: number, z: number, face: 'x' | '-x' | 'z' | '-z', w: number, h: number, color: string) {
+    const y0 = y - h / 2,
+      y1 = y + h / 2,
+      a = w / 2
+    if (face === 'z') this.quad([x - a, y0, z], [x + a, y0, z], [x + a, y1, z], [x - a, y1, z], color)
+    else if (face === '-z') this.quad([x + a, y0, z], [x - a, y0, z], [x - a, y1, z], [x + a, y1, z], color)
+    else if (face === 'x') this.quad([x, y0, z + a], [x, y0, z - a], [x, y1, z - a], [x, y1, z + a], color)
+    else this.quad([x, y0, z - a], [x, y0, z + a], [x, y1, z + a], [x, y1, z - a], color)
+  }
+
   /** Low-poly cone (trees). */
   cone(
     x: number,

@@ -4,7 +4,7 @@
    it data; this file only draws and reports what was clicked. */
 
 import * as THREE from 'three'
-import { COLS, ROWS, type CityLayout } from '../../city/layout'
+import { COLS, ROWS, cityLayout as cityLayoutOf, type CityLayout } from '../../city/layout'
 import type { LotUse } from '../../city/occupancy'
 import type { Season } from '../../city/season'
 import { DISTRICTS } from '../../data/districts'
@@ -15,6 +15,11 @@ import {
   type Marker,
 } from './cityMesh'
 import { BRASS_LIGHT, CLIENT, MARBLE, PALETTES } from './palette'
+import { daylightFor, type Daylight, type TimeMode } from '../../city/daylight'
+import type { Tile } from '../../city/paths'
+import { AgentLayer, type AgentSpec } from './agents'
+import { Traffic } from './traffic'
+import { Weather } from './weather'
 
 /** True isometric: the camera looks down 35.264° (atan(1/√2)). */
 const ELEVATION = Math.atan(1 / Math.SQRT2)
@@ -26,6 +31,8 @@ const DRAG_THRESHOLD = 5
 export interface SceneCallbacks {
   onSelect: (lotId: string | null) => void
   onHover: (lotId: string | null) => void
+  /** Any click on the ground (a lot, a road, a park): where to walk. */
+  onGround?: (tile: Tile) => void
 }
 
 export interface SceneData {
@@ -40,6 +47,22 @@ export class CityScene {
   private scene = new THREE.Scene()
   private camera: THREE.OrthographicCamera
   private cityMesh: THREE.Mesh | null = null
+  private glowMesh: THREE.Mesh
+  private glowMat: THREE.MeshLambertMaterial
+  private lightsMesh: THREE.Mesh | null = null
+  private lightsMat = new THREE.MeshBasicMaterial({ vertexColors: true })
+  private hemi: THREE.HemisphereLight
+  private sun: THREE.DirectionalLight
+  private weather: Weather | null = null
+  private weatherSeason: Season | null = null
+  private weatherOn = true
+  private traffic: Traffic | null = null
+  readonly agents: AgentLayer
+  private follow: string | null = null
+  private timeMode: TimeMode = 'auto'
+  private light: Daylight = { day: 1, golden: 0, arc: 0.5 }
+  private lightCheckedAt = -Infinity
+  private lastT = 0
   private water: THREE.Mesh
   private markerMeshes: THREE.InstancedMesh[] = []
   private heights: number[] = []
@@ -85,9 +108,9 @@ export class CityScene {
 
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 400)
 
-    const hemi = new THREE.HemisphereLight('#fff6e6', '#5a4a3a', 1.6)
+    const hemi = (this.hemi = new THREE.HemisphereLight('#fff6e6', '#5a4a3a', 1.6))
     this.scene.add(hemi)
-    const sun = new THREE.DirectionalLight('#ffe8c2', 2.2)
+    const sun = (this.sun = new THREE.DirectionalLight('#ffe8c2', 2.2))
     sun.position.set(-18, 30, 12)
     sun.castShadow = true
     sun.shadow.mapSize.set(2048, 2048)
@@ -100,7 +123,18 @@ export class CityScene {
     sc.far = 90
     sun.shadow.bias = -0.0008
     sun.shadow.normalBias = 0.02
-    this.scene.add(sun)
+    this.scene.add(sun, sun.target)
+
+    /* Windows and lamp heads: the same flat colours by day, lit at night. */
+    this.glowMat = new THREE.MeshLambertMaterial({ vertexColors: true, emissive: '#ffc46b', emissiveIntensity: 0 })
+    this.glowMesh = new THREE.Mesh(new THREE.BufferGeometry(), this.glowMat)
+    this.scene.add(this.glowMesh)
+
+    this.agents = new AgentLayer(cityLayoutOf(), labelLayer)
+    this.scene.add(this.agents.group)
+    /* Traffic and weather are motion for its own sake; respect the setting. */
+    const calm = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    this.weatherOn = !calm
 
     this.water = new THREE.Mesh(
       new THREE.PlaneGeometry(COLS, ROWS),
@@ -150,9 +184,12 @@ export class CityScene {
   /** Rebuilds the city. Call when what's built on the lots changes. */
   setData(data: SceneData) {
     this.data = data
-    const pal = PALETTES[data.season]
-    this.scene.background = new THREE.Color(pal.sky)
-    ;(this.water.material as THREE.MeshLambertMaterial).color.set(pal.water)
+    if (!this.traffic) {
+      this.traffic = new Traffic(data.city)
+      this.scene.add(this.traffic.group)
+    }
+    if (this.weatherSeason !== data.season) this.setWeather(data.season)
+    this.lightCheckedAt = -Infinity
 
     const geo = buildCityGeometry(
       data.city,
@@ -172,11 +209,56 @@ export class CityScene {
       this.cityMesh.receiveShadow = true
       this.scene.add(this.cityMesh)
     }
+    this.glowMesh.geometry.dispose()
+    this.glowMesh.geometry = geo.glow
+    if (this.lightsMesh) {
+      this.scene.remove(this.lightsMesh)
+      this.lightsMesh.geometry.dispose()
+      this.lightsMesh = null
+    }
+    if (geo.lights) {
+      this.lightsMesh = new THREE.Mesh(geo.lights, this.lightsMat)
+      this.scene.add(this.lightsMesh)
+    }
     this.heights = geo.heights
     this.cityMarkers = geo.markers
     this.setMarkers()
     this.placeBox(this.hoverBox, this.hoverLot)
     this.placeBox(this.selectBox, this.selectedLot)
+  }
+
+  private setWeather(season: Season) {
+    if (this.weather) {
+      this.scene.remove(this.weather.points)
+      this.weather.dispose()
+      this.weather = null
+    }
+    this.weatherSeason = season
+    if (!this.weatherOn) return
+    this.weather = new Weather(season)
+    this.scene.add(this.weather.points)
+  }
+
+  /** Snow, leaves and petals on or off. */
+  setWeatherOn(on: boolean) {
+    this.weatherOn = on
+    if (this.weatherSeason) this.setWeather(this.weatherSeason)
+  }
+
+  /** Auto follows the viewer's clock; day and night pin it. */
+  setTimeMode(mode: TimeMode) {
+    this.timeMode = mode
+    this.lightCheckedAt = -Infinity
+  }
+
+  /** The agents on the map. `follow` keeps the camera on one as it walks. */
+  setAgents(specs: AgentSpec[]) {
+    this.agents.setAgents(specs)
+  }
+
+  followAgent(id: string | null) {
+    this.follow = id
+    if (id) this.goalZoom = Math.max(this.goalZoom, 2)
   }
 
   /** Just the client markers — cheap, so leads can change every click. */
@@ -209,6 +291,7 @@ export class CityScene {
   }
 
   resetView() {
+    this.follow = null
     this.goalTarget.set(0, 0, 0)
     this.goalZoom = this.fitZoom()
   }
@@ -225,6 +308,7 @@ export class CityScene {
 
   /** Pan by a screen-space amount, in world units at the current zoom. */
   pan(dxWorld: number, dzWorld: number) {
+    this.follow = null
     /* Screen right and screen "up" projected onto the ground plane. */
     const right = new THREE.Vector3(
       Math.cos(this.azimuth),
@@ -282,6 +366,8 @@ export class CityScene {
     if (!d || d.moved) return
     const lot = this.pick(e.clientX, e.clientY)
     this.cb.onSelect(lot)
+    const tile = this.groundTile(e.clientX, e.clientY)
+    if (tile) this.cb.onGround?.(tile)
   }
 
   private onLeave = () => {
@@ -364,6 +450,21 @@ export class CityScene {
       this.cityMesh.geometry.getAttribute('lotIndex') as THREE.BufferAttribute
     ).getX(hit.face.a)
     return idx >= 0 ? (this.data.city.lots[idx]?.id ?? null) : null
+  }
+
+  /** The tile under the pointer, wherever it lands on the ground plane. */
+  private groundTile(clientX: number, clientY: number): Tile | null {
+    const lotId = this.pick(clientX, clientY)
+    const lot = lotId ? this.data?.city.lotById.get(lotId) : undefined
+    if (lot) return [lot.col, lot.row]
+    const r = this.renderer.domElement.getBoundingClientRect()
+    this.ndc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1)
+    this.raycaster.setFromCamera(this.ndc, this.camera)
+    const hit = new THREE.Vector3()
+    if (!this.raycaster.ray.intersectPlane(GROUND, hit)) return null
+    const col = Math.floor(hit.x + COLS / 2)
+    const row = Math.floor(hit.z + ROWS / 2)
+    return col >= 0 && row >= 0 && col < COLS && row < ROWS ? [col, row] : null
   }
 
   private setHover(lotId: string | null) {
@@ -468,6 +569,21 @@ export class CityScene {
     if (this.disposed) return
     this.frame = requestAnimationFrame(this.loop)
     const t = performance.now() / 1000
+    const dt = this.lastT ? t - this.lastT : 0
+    this.lastT = t
+
+    if (t - this.lightCheckedAt > 1) {
+      this.lightCheckedAt = t
+      if (this.data) this.light = daylightFor(this.timeMode, new Date(), this.data.season)
+    }
+    this.applyLight(t)
+    this.agents.update(t)
+    if (this.follow) {
+      const p = this.agents.positionOf(this.follow)
+      if (p) this.goalTarget.set(p.x, 0, p.z)
+    }
+    this.traffic?.update(dt, this.light.day)
+    this.weather?.update(t, dt, this.light.day, this.zoom, this.renderer.getPixelRatio())
 
     /* Ease toward the goals; a quarter turn takes about a third of a second. */
     this.azimuth += (this.goalAzimuth - this.azimuth) * 0.16
@@ -491,6 +607,34 @@ export class CityScene {
     this.animateMarkers(t)
     this.renderer.render(this.scene, cam)
     this.positionLabels()
+    this.agents.positionLabels(cam, this.host.clientWidth, this.host.clientHeight, this.zoom)
+  }
+
+  private col = new THREE.Color()
+  /** Day, golden hour or night, from this.light. Cheap enough per frame. */
+  private applyLight(t: number) {
+    if (!this.data) return
+    const { day, golden, arc } = this.light
+    const pal = PALETTES[this.data.season]
+    const night = 1 - day
+    const c = this.col
+    const mix = (dayHex: string, goldHex: string, nightHex: string, out: THREE.Color) =>
+      out.set(dayHex).lerp(c.set(goldHex), golden * day * 0.8).lerp(c.set(nightHex), night)
+    mix('#fff6e6', '#ffd9b0', '#7f95c9', this.hemi.color)
+    mix('#5a4a3a', '#5a3f2e', '#1d2233', this.hemi.groundColor)
+    this.hemi.intensity = 1.6 - 0.75 * night - 0.25 * golden * day
+    mix('#ffe8c2', '#ffa860', '#a8bfff', this.sun.color)
+    this.sun.intensity = 2.2 * day + 0.6 * night - 0.4 * golden * day
+    /* The sun crosses the sky by day; the moon sits high at night. */
+    if (day > 0.05) this.sun.position.set(-26 + 52 * arc, 9 + 24 * Math.sin(Math.PI * arc), 12)
+    else this.sun.position.set(-10, 30, -14)
+    const bg = (this.scene.background as THREE.Color | null) ?? new THREE.Color()
+    this.scene.background = bg.set(pal.sky).lerp(c.set('#0b0d16'), night * 0.5)
+    ;(this.water.material as THREE.MeshLambertMaterial).color.set(pal.water).lerp(c.set('#1b2c44'), night * 0.6)
+    this.glowMat.emissiveIntensity = night * 0.8
+    /* Holiday lights: always on, brighter after dark, and they twinkle. */
+    const tw = 0.85 + 0.15 * Math.sin(t * 2.3)
+    this.lightsMat.color.setScalar((0.6 + 0.4 * night) * tw)
   }
 
   private positionLabels() {
@@ -509,6 +653,9 @@ export class CityScene {
 
   dispose() {
     this.disposed = true
+    this.agents.dispose()
+    this.traffic?.dispose()
+    this.weather?.dispose()
     cancelAnimationFrame(this.frame)
     this.resizeObs.disconnect()
     for (const l of this.labels) l.el.remove()
@@ -525,6 +672,7 @@ export class CityScene {
 }
 
 const UP = new THREE.Vector3(0, 1, 0)
+const GROUND = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
 const clamp = (v: number, lo: number, hi: number) =>
   Math.max(lo, Math.min(hi, v))
 

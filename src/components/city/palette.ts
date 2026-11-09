@@ -17,6 +17,8 @@ export interface Palette {
   leaves: string[]
   roofSnow: boolean
   groundSnow: number
+  /** Backyard pools uncovered. */
+  pools: boolean
 }
 
 export const PALETTES: Record<Season, Palette> = {
@@ -34,6 +36,7 @@ export const PALETTES: Record<Season, Palette> = {
     leaves: ['#f2a7c3', '#79b04f', '#e98fb3', '#6fa84a'],
     roofSnow: false,
     groundSnow: 0,
+    pools: false,
   },
   summer: {
     sky: '#1a1d2a',
@@ -49,6 +52,7 @@ export const PALETTES: Record<Season, Palette> = {
     leaves: ['#3f8a3a', '#4f9a3f', '#2f7a35', '#5aa548'],
     roofSnow: false,
     groundSnow: 0,
+    pools: true,
   },
   fall: {
     sky: '#1c1b26',
@@ -64,6 +68,7 @@ export const PALETTES: Record<Season, Palette> = {
     leaves: ['#d9772b', '#c9502e', '#e3a93a', '#a8432a'],
     roofSnow: false,
     groundSnow: 0,
+    pools: false,
   },
   winter: {
     sky: '#171a25',
@@ -79,6 +84,7 @@ export const PALETTES: Record<Season, Palette> = {
     leaves: ['#2f5e45', '#e9eef2', '#35664b', '#f1f4f6'],
     roofSnow: true,
     groundSnow: 1,
+    pools: false,
   },
 }
 

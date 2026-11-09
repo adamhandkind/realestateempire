@@ -44,9 +44,54 @@ export interface Standing {
   place: number
 }
 
+export interface SeasonStanding extends Standing {
+  name: string
+  color: string
+  characterId: string
+  rank: string
+  /** Buildings held at the end (Phase 4; missing on older seasons). */
+  doors?: number
+  /** Deals closed as an agent over the season. */
+  deals?: number
+  /** Listings won at the tick. */
+  won?: number
+}
+
+/** A roast (or the crown) handed out on awards night. */
+export interface Award {
+  id: AwardId
+  userId: string
+  name: string
+  color: string
+  /** e.g. "Outbid 6 times". */
+  stat: string
+}
+
+export type AwardId = 'champion' | 'outbid' | 'landlord' | 'flop' | 'lowball' | 'warrior'
+
 export interface SeasonResult {
   season: number
-  standings: (Standing & { name: string; color: string; characterId: string; rank: string })[]
+  standings: SeasonStanding[]
+  /** The champion's haircut, which is also their title: "The Closer". */
+  title?: string
+  /** Awards night, champion first. */
+  awards?: Award[]
+}
+
+/** What the city remembers about each player over one season, for awards
+ *  night. Reset when a season opens. */
+export interface SeasonLedger {
+  /** Times someone else won a listing they bid on. */
+  outbid: number
+  /** Listings they won at the tick. */
+  won: number
+  /** Lone offers the seller turned down. */
+  lowballs: number
+  /** Houses the bank took back. */
+  foreclosed: number
+  /** Highest net worth at any tick this season. */
+  peak: number
+  bankrupt: boolean
 }
 
 export interface CityState {
@@ -68,8 +113,11 @@ export interface CityState {
   rivalries: Record<string, number>
   /** As of the last tick. */
   standings: Standing[]
-  /** The season that just finished, while the city is `finished`. */
+  /** The season that just finished. It stays through the next season too:
+   *  its champion wears the kit. */
   lastSeason: SeasonResult | null
+  /** userId -> this season's record (Phase 4; absent on older cities). */
+  ledger?: Record<string, SeasonLedger>
 }
 
 /** What the morning report shows: the week the tick just ran, the game's

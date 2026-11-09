@@ -7,22 +7,7 @@ import { SEASON_LABEL, seasonOf } from '../../city/season'
 import type { CityView } from '../../citygame/view'
 import type { CityStore } from '../../net/cityStore'
 import type { GameState } from '../../state/types'
-
-function countdown(ms: number): string {
-  if (ms <= 0) return 'any minute now'
-  const m = Math.round(ms / 60_000)
-  if (m < 60) return m + ' min'
-  const h = Math.floor(m / 60)
-  return h + 'h ' + String(m % 60).padStart(2, '0') + 'm'
-}
-
-function clockTime(t: number, zone: string): string {
-  try {
-    return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', timeZone: zone, timeZoneName: 'short' }).format(new Date(t))
-  } catch {
-    return new Date(t).toLocaleTimeString()
-  }
-}
+import { clockTime, countdown } from './time'
 
 export default function TickBar({
   view,

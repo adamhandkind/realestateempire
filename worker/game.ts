@@ -12,7 +12,9 @@
      GET    /api/cities/:id/seasons       the Hall of Fame
      POST   /api/cities/:id/season/start  owner: open the season
      POST   /api/cities/:id/schedule      owner: { hour, zone }
-     POST   /api/cities/:id/tick          owner, ALLOW_MANUAL_TICK only */
+     POST   /api/cities/:id/tick          owner, ALLOW_MANUAL_TICK only
+     POST   /api/cities/:id/checkin       the phone check-in: counts as showing up
+     GET    /api/cities/:id/live          WebSocket: live agents on the map, tick pushes */
 
 import { AGENT_COLORS, isCharacterId } from '../src/engine'
 import { requireUser } from './auth'
@@ -142,6 +144,26 @@ export async function manualTick(env: Env, req: Request, cityId: string): Promis
   return json(unwrap(await room.game(cityId, user.id)))
 }
 
+/** POST /api/cities/:id/checkin */
+export async function checkIn(env: Env, req: Request, cityId: string): Promise<Response> {
+  const { user, room } = await member(env, req, cityId)
+  return json(unwrap(await room.checkIn(cityId, user.id)))
+}
+
+/** GET /api/cities/:id/live — upgrades to a WebSocket held by the city's
+ *  Durable Object. Who's asking is checked here; the object trusts the
+ *  header because only this Worker can reach it. */
+export async function live(env: Env, req: Request, cityId: string): Promise<Response> {
+  if (req.headers.get('upgrade')?.toLowerCase() !== 'websocket') throw new HttpError(426, 'websocket_only', 'This one is a WebSocket.')
+  /* Cookies are Lax, but a WebSocket handshake isn't a POST, so check the
+     origin here too: nobody else's page gets a socket on your session. */
+  const origin = req.headers.get('origin')
+  if (origin !== null && origin !== new URL(env.APP_URL).origin) throw new HttpError(403, 'cross_origin')
+  const { user } = await member(env, req, cityId)
+  const headers = new Headers({ upgrade: 'websocket', 'x-res-user': user.id, 'x-res-city': cityId })
+  return cityRoom(env, cityId).fetch(new Request('https://city/live', { headers }))
+}
+
 /** GET /api/cities/:id/leaderboard — every agent, richest first. */
 export async function leaderboard(env: Env, req: Request, cityId: string): Promise<Response> {
   const { user, room } = await member(env, req, cityId)
@@ -175,7 +197,8 @@ export async function leaderboard(env: Env, req: Request, cityId: string): Promi
 export async function seasons(env: Env, req: Request, cityId: string): Promise<Response> {
   await member(env, req, cityId)
   const { results } = await env.DB.prepare(
-    `SELECT season, finished_at, champion_name, champion_color, champion_character_id, champion_net_worth, standings
+    `SELECT season, finished_at, champion_name, champion_color, champion_character_id, champion_net_worth, standings,
+            champion_title, awards
        FROM seasons WHERE city_id = ? ORDER BY season DESC`,
   )
     .bind(cityId)
@@ -187,15 +210,24 @@ export async function seasons(env: Env, req: Request, cityId: string): Promise<R
       champion_character_id: string | null
       champion_net_worth: number | null
       standings: string
+      champion_title: string | null
+      awards: string | null
     }>()
   return json({
     seasons: results.map((r) => ({
       season: r.season,
       finishedAt: r.finished_at,
       champion: r.champion_name
-        ? { name: r.champion_name, color: r.champion_color, characterId: r.champion_character_id, netWorth: r.champion_net_worth }
+        ? {
+            name: r.champion_name,
+            color: r.champion_color,
+            characterId: r.champion_character_id,
+            netWorth: r.champion_net_worth,
+            title: r.champion_title,
+          }
         : null,
       standings: JSON.parse(r.standings),
+      awards: r.awards ? JSON.parse(r.awards) : [],
     })),
   })
 }

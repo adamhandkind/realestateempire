@@ -46,6 +46,7 @@ const transport = (fail = { on: false }): CityTransport => {
     start: () => guard(() => call('POST', base() + '/season/start', {})),
     schedule: (b) => guard(() => call('POST', base() + '/schedule', b)),
     tick: () => guard(() => call('POST', base() + '/tick', {})),
+    checkIn: () => guard(() => call('POST', base() + '/checkin', {})),
   }
 }
 

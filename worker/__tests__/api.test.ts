@@ -490,6 +490,10 @@ describe('the shared city', () => {
     const hof = await owner.get(`/api/cities/${cityId}/seasons`)
     expect(hof.data.seasons).toHaveLength(1)
     expect(hof.data.seasons[0].champion.name).toBe(v.lastSeason.standings[0].name)
+    /* Awards night is on the record too. */
+    expect(hof.data.seasons[0].champion.title).toBe(v.lastSeason.title)
+    expect(hof.data.seasons[0].awards[0]).toMatchObject({ id: 'champion', name: v.lastSeason.standings[0].name })
+    expect(v.champion).toMatchObject({ name: v.lastSeason.standings[0].name, season: 1 })
     /* The next night opens season 2. */
     await city.fireAlarms(1)
     const v2 = (await owner.get(`/api/cities/${cityId}/city`)).data
@@ -507,6 +511,27 @@ describe('the shared city', () => {
     expect(r.data.tickHour).toBe(6)
     const local = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Vancouver', hour: 'numeric', hourCycle: 'h23' }).format(new Date(r.data.nextTickAt))
     expect(Number(local)).toBe(6)
+  })
+
+  it('counts a phone check-in as showing up', async () => {
+    const { owner, friend, cityId } = await twoPlayers()
+    await owner.post(`/api/cities/${cityId}/season/start`)
+    await city.fireAlarms(3)
+    const before = (await friend.get(`/api/cities/${cityId}/city`)).data
+    expect(before.players.find((p: { you: boolean }) => p.you).missed).toBe(3)
+    const r = await friend.post(`/api/cities/${cityId}/checkin`)
+    expect(r.status).toBe(200)
+    expect(r.data.players.find((p: { you: boolean }) => p.you).missed).toBe(0)
+    expect((await browser('9.9.9.9').post(`/api/cities/${cityId}/checkin`)).status).toBe(401)
+  })
+
+  it('only upgrades the live room for a member, from this site', async () => {
+    const { owner, cityId } = await twoPlayers()
+    expect((await owner.get(`/api/cities/${cityId}/live`)).status).toBe(426)
+    const evil = await owner.call('GET', `/api/cities/${cityId}/live`, undefined, { upgrade: 'websocket', origin: 'https://evil.test' })
+    expect(evil.status).toBe(403)
+    const stranger = await browser('7.7.7.7').call('GET', `/api/cities/${cityId}/live`, undefined, { upgrade: 'websocket' })
+    expect(stranger.status).toBe(401)
   })
 
   it('refuses the manual tick in production', async () => {

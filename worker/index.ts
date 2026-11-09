@@ -6,7 +6,7 @@
 import { confirmAdult, logout, me, requestLink, verifyLink } from './auth'
 import { acceptInvite, createCity, createInvite, listInvites, peekInvite, revokeInvite } from './cities'
 import type { Env } from './env'
-import { act, bid, createAgent, getCity, getGame, leaderboard, manualTick, seasons, setSchedule, startSeason, withdraw } from './game'
+import { act, bid, checkIn, createAgent, live, getCity, getGame, leaderboard, manualTick, seasons, setSchedule, startSeason, withdraw } from './game'
 import { HttpError, errorResponse, json } from './http'
 
 export type { Env }
@@ -38,6 +38,8 @@ const routes: [method: string, pattern: RegExp, handler: Handler][] = [
   ['POST', new RegExp(`^/api/cities/${ID}/schedule$`), (env, req, [c]) => setSchedule(env, req, c)],
   ['POST', new RegExp(`^/api/cities/${ID}/tick$`), (env, req, [c]) => manualTick(env, req, c)],
   ['GET', new RegExp(`^/api/cities/${ID}/leaderboard$`), (env, req, [c]) => leaderboard(env, req, c)],
+  ['POST', new RegExp(`^/api/cities/${ID}/checkin$`), (env, req, [c]) => checkIn(env, req, c)],
+  ['GET', new RegExp(`^/api/cities/${ID}/live$`), (env, req, [c]) => live(env, req, c)],
 ]
 
 /** Cookies are SameSite=Lax, which already stops cross-site POSTs carrying

@@ -6,6 +6,7 @@
    adds what ten friends share. The city's dice are its own (CityState.rng),
    so nothing here disturbs a player's luck, and a tick replays exactly. */
 
+import { AWARDS, CHAMP_HAIRCUTS, ROAST_ORDER } from '../data/cityAwards'
 import { ABSENCE, AUCTION, FEED_MAX, GRUDGE_AT, SEASON_WEEKS, SUPPLY } from '../data/city'
 import { districtOrFirst } from '../data/districts'
 import { FEED_LINES, type FeedLineKey } from '../data/feedLines'
@@ -18,7 +19,8 @@ import { conditionFactor, displayedValue, eligibleTypes, hasFreeMortgageSlot, la
 import { money } from '../logic/rand'
 import { districtsForType, priceMultOf } from '../logic/territory'
 import type { Action, GameState, MarketState, Property } from '../state/types'
-import type { Bid, CityListing, CityPlayer, CityState, FeedItem, FeedKind, MorningReport, SeasonResult, Standing } from './types'
+import { hash } from '../city/hash'
+import type { Award, AwardId, Bid, CityListing, CityPlayer, CityState, FeedItem, FeedKind, MorningReport, SeasonLedger, SeasonResult, Standing } from './types'
 
 /* ------------------------------------------------------------------ dice */
 
@@ -65,8 +67,105 @@ export function newCity(seed: number): CityState {
     rivalries: {},
     standings: [],
     lastSeason: null,
+    ledger: {},
   }
 }
+
+/* ---------------------------------------------------------------- ledger */
+
+const blankLedger = (): SeasonLedger => ({ outbid: 0, won: 0, lowballs: 0, foreclosed: 0, peak: 0, bankrupt: false })
+
+/** Adjusts one player's season record. */
+function bump(city: CityState, userId: string, f: (l: SeasonLedger) => Partial<SeasonLedger>): CityState {
+  const was = city.ledger?.[userId] ?? blankLedger()
+  return { ...city, ledger: { ...city.ledger, [userId]: { ...was, ...f(was) } } }
+}
+
+/* -------------------------------------------------------------- champion */
+
+export interface Champion {
+  userId: string
+  name: string
+  color: string
+  characterId: string
+  /** Their haircut: "The Closer". */
+  title: string
+  season: number
+}
+
+/** The reigning champion: last season's winner, who wears the kit all of
+ *  this season (and on the finished day, freshly crowned). */
+export function championOf(city: CityState): Champion | null {
+  const last = city.lastSeason
+  const top = last?.standings[0]
+  if (!last || !top) return null
+  return { userId: top.userId, name: top.name, color: top.color, characterId: top.characterId, title: last.title ?? haircutFor(last.season, top.userId), season: last.season }
+}
+
+export const haircutFor = (season: number, userId: string): string => CHAMP_HAIRCUTS[hash('hair:' + season + ':' + userId) % CHAMP_HAIRCUTS.length]
+
+const plural = (n: number, one: string, many = one + 's') => n + ' ' + (n === 1 ? one : many)
+
+/** Awards night: the crown, then a roast for the rest of the group. Each
+ *  roast goes to the worst offender who isn't the champion; nobody gets one
+ *  for doing nothing wrong. Pure and deterministic (ties: lower place). */
+export function awardsFor(result: SeasonResult, ledger: Record<string, SeasonLedger>, players: CityPlayer[]): Award[] {
+  const rows = result.standings
+  const champ = rows[0]
+  if (!champ) return []
+  const byId = new Map(players.map((p) => [p.userId, p]))
+  const led = (id: string) => ledger[id] ?? blankLedger()
+  const award = (id: AwardId, row: (typeof rows)[number], stat: string): Award => ({ id, userId: row.userId, name: row.name, color: row.color, stat })
+  const out: Award[] = [award('champion', champ, 'Finished on ' + money(champ.netWorth))]
+  const pool = rows.slice(1)
+  /** The highest score above zero wins; standings order breaks ties. */
+  const best = (score: (r: (typeof rows)[number]) => number) => {
+    let top: (typeof rows)[number] | null = null
+    let topScore = 0
+    for (const r of pool) {
+      const sc = score(r)
+      if (sc > topScore) {
+        top = r
+        topScore = sc
+      }
+    }
+    return top
+  }
+  const avgCondition = (id: string): number | null => {
+    const props = byId.get(id)?.game.properties.filter((x) => !x.isVrbo) ?? []
+    return props.length ? props.reduce((t, x) => t + x.condition, 0) / props.length : null
+  }
+  for (const id of ROAST_ORDER) {
+    if (id === 'outbid') {
+      const r = best((x) => led(x.userId).outbid)
+      if (r) out.push(award(id, r, 'Outbid ' + plural(led(r.userId).outbid, 'time')))
+    } else if (id === 'landlord') {
+      const score = (x: (typeof rows)[number]) => {
+        const c = avgCondition(x.userId)
+        return led(x.userId).foreclosed * 25 + (c !== null && c < 60 ? 60 - c : 0)
+      }
+      const r = best(score)
+      if (r) {
+        const c = avgCondition(r.userId)
+        const f = led(r.userId).foreclosed
+        out.push(award(id, r, f ? plural(f, 'house') + ' taken back by the bank' : 'Average condition ' + Math.round(c ?? 0) + '%'))
+      }
+    } else if (id === 'flop') {
+      const drop = (x: (typeof rows)[number]) => (led(x.userId).bankrupt ? Number.MAX_SAFE_INTEGER : Math.max(0, led(x.userId).peak - x.netWorth))
+      const r = best(drop)
+      if (r) out.push(award(id, r, led(r.userId).bankrupt ? 'Went broke' : 'Peaked at ' + money(led(r.userId).peak) + ', finished on ' + money(r.netWorth)))
+    } else if (id === 'lowball') {
+      const r = best((x) => led(x.userId).lowballs)
+      if (r) out.push(award(id, r, plural(led(r.userId).lowballs, 'lowball') + ' laughed off'))
+    } else if (id === 'warrior') {
+      const r = best((x) => led(x.userId).won)
+      if (r) out.push(award(id, r, plural(led(r.userId).won, 'listing') + ' won at the tick'))
+    }
+  }
+  return out
+}
+
+export const awardTitle = (id: AwardId): string => AWARDS[id].title
 
 const marketOf = (week: number): MarketState => (['normal', 'hot', 'normal', 'cold'] as const)[quarterOf(week)]
 
@@ -275,6 +374,7 @@ function settleAuctions(city: CityState, byId: Map<string, CityPlayer>, dice: Di
       const sellerSays = contested && ratio >= AUCTION.RESERVE ? true : dice.next() < acceptChance(b.amount, listing.askPrice, c.week)
       if (!sellerSays) {
         note(notes, b.userId, 'The seller of the ' + houseOf(listing.typeId) + ' in ' + districtName(listing.districtId) + ' turned down your ' + money(b.amount) + '.')
+        if (!contested) c = bump(c, b.userId, (l) => ({ lowballs: l.lowballs + 1 }))
         c = post(c, dice, 'flop', 'lowballRejected', { a: p.name, house: houseOf(listing.typeId), district: districtName(listing.districtId) }, [p.userId])
         /* A seller who says no to the best offer says no to the rest. */
         break
@@ -293,11 +393,14 @@ function settleAuctions(city: CityState, byId: Map<string, CityPlayer>, dice: Di
       const w = byId.get(winner.userId)!
       const vars = { a: w.name, house: houseOf(listing.typeId), district: districtName(listing.districtId), price: money(winner.amount) }
       note(notes, w.userId, 'You won the ' + vars.house + ' in ' + vars.district + ' for ' + vars.price + '.')
+      c = bump(c, w.userId, (l) => ({ won: l.won + 1 }))
+      const champ = c.status === 'running' && championOf(c)?.userId === w.userId
       const losers = [...new Set(bids.filter((b) => b.userId !== winner!.userId).map((b) => b.userId))]
       if (losers.length) {
         for (const lid of losers) {
           const loser = byId.get(lid)
           if (!loser) continue
+          c = bump(c, lid, (l) => ({ outbid: l.outbid + 1 }))
           note(notes, lid, w.name + ' beat you to the ' + vars.house + ' in ' + vars.district + '.')
           byId.set(lid, { ...loser, game: applyAction(loser.game, { type: 'CITY_LOG', kind: 'event', text: 'OUTBID: ' + w.name + ' took the ' + vars.house + ' in ' + vars.district + ' for ' + vars.price + '.' }) })
           const key = w.userId + '>' + lid
@@ -306,7 +409,9 @@ function settleAuctions(city: CityState, byId: Map<string, CityPlayer>, dice: Di
           c = post(c, dice, 'outbid', 'outbid', { ...vars, b: loser.name }, [w.userId, lid])
           if (GRUDGE_AT.includes(n)) c = post(c, dice, 'outbid', 'grudge', { a: w.name, b: loser.name, n }, [w.userId, lid])
         }
-      } else c = post(c, dice, 'deal', 'won', vars, [w.userId])
+      } else if (!champ) c = post(c, dice, 'deal', 'won', vars, [w.userId])
+      /* Fanfare: the feed makes a fuss whenever the champ wins one. */
+      if (champ) c = post(c, dice, 'deal', 'champWon', vars, [w.userId])
       c = { ...c, listings: c.listings.filter((l) => l.id !== listingId) }
     }
   }
@@ -328,6 +433,7 @@ function foreclose(city: CityState, dice: Dice, p: CityPlayer, all: boolean): { 
       : applyAction(player.game, { type: 'CITY_FORECLOSE', propertyId: prop.id, proceeds })
     player = { ...player, game }
     c = addListing(c, foreclosureListing(c, prop, value))
+    if (!all) c = bump(c, player.userId, (l) => ({ foreclosed: l.foreclosed + 1 }))
     if (!all) c = post(c, dice, 'drama', 'foreclosed', { a: player.name, house: houseOf(prop.typeId), district: districtName(prop.districtId) }, [player.userId])
   }
   return { city: c, player }
@@ -390,6 +496,8 @@ export function tick(city: CityState, players: CityPlayer[]): TickResult {
     const report: MorningReport = { week: c.week, summary: ended.summary, offers: notes.get(id) ?? [] }
     p = { ...p, game: { ...ended, summary: null, promo: null }, report }
     const was = before.get(id)!
+    const closed = ended.counters.dealsClosed - was.counters.dealsClosed
+    if (closed > 0 && championOf(c)?.userId === id) c = post(c, dice, 'promo', 'champDeals', { a: p.name, n: closed === 1 ? 'one' : closed }, [id])
     if (ended.rank !== was.rank)
       c = post(c, dice, 'promo', 'promoted', { a: p.name, rank: rankOf(ended.rank).name }, [id])
     /* Sold to an outside buyer (a flip, or a lowball they took). */
@@ -401,6 +509,7 @@ export function tick(city: CityState, players: CityPlayer[]): TickResult {
     }
     if (ended.gameOver) {
       c = post(c, dice, 'flop', 'bankrupt', { a: p.name }, [id])
+      c = bump(c, id, () => ({ bankrupt: true }))
       const r = foreclose(c, dice, p, true)
       c = r.city
       p = r.player
@@ -417,18 +526,33 @@ export function tick(city: CityState, players: CityPlayer[]): TickResult {
     c = post(c, dice, 'leader', 'leader', { a: name(standings[0].userId), b: name(oldLeader) }, [standings[0].userId, oldLeader])
   }
   c = { ...c, standings }
+  for (const s of standings) c = bump(c, s.userId, (l) => ({ peak: Math.max(l.peak, s.netWorth) }))
 
   /* 6. The season clock. */
   if (c.week >= SEASON_WEEKS) {
-    const result: SeasonResult = {
+    let result: SeasonResult = {
       season: c.season,
       standings: standings.map((s) => {
         const p = byId.get(s.userId)!
-        return { ...s, name: p.name, color: p.color, characterId: p.characterId, rank: p.game.rank }
+        return {
+          ...s,
+          name: p.name,
+          color: p.color,
+          characterId: p.characterId,
+          rank: p.game.rank,
+          doors: p.game.properties.filter((x) => !x.isVrbo).length,
+          deals: p.game.counters.dealsClosed,
+          won: c.ledger?.[s.userId]?.won ?? 0,
+        }
       }),
     }
     const champ = result.standings[0]
-    if (champ) c = post(c, dice, 'season', 'seasonEnd', { n: c.season, a: champ.name, price: money(champ.netWorth) }, [champ.userId])
+    if (champ) {
+      result = { ...result, title: haircutFor(c.season, champ.userId), awards: awardsFor(result, c.ledger ?? {}, after) }
+      c = post(c, dice, 'season', 'seasonEnd', { n: c.season, a: champ.name, price: money(champ.netWorth) }, [champ.userId])
+      c = post(c, dice, 'season', 'crowned', { n: c.season, a: champ.name, title: result.title! }, [champ.userId])
+      for (const a of result.awards!.slice(1)) c = post(c, dice, 'season', 'award', { title: awardTitle(a.id), a: a.name, stat: a.stat }, [a.userId])
+    }
     c = { ...c, status: 'finished', lastSeason: result, listings: [], bids: {}, rng: dice.a }
     return { city: c, players: after, seasonOver: result }
   }
@@ -442,7 +566,7 @@ export function tick(city: CityState, players: CityPlayer[]): TickResult {
 export function startSeason(city: CityState, players: CityPlayer[]): { city: CityState; players: CityPlayer[] } {
   const dice = new Dice(city.rng)
   const season = city.status === 'lobby' ? city.season : city.season + 1
-  let c: CityState = { ...city, season, week: 1, status: 'running', listings: [], bids: {}, standings: [] }
+  let c: CityState = { ...city, season, week: 1, status: 'running', listings: [], bids: {}, standings: [], ledger: {} }
   const fresh = [...players]
     .sort((a, b) => a.userId.localeCompare(b.userId))
     .map((p) => ({
