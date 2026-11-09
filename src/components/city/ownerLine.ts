@@ -14,7 +14,11 @@ export function ownerLine(use: LotUse): string {
       return 'Independent owner'
     case 'empty':
       return 'Empty lot'
+    case 'player':
+      return use.name
     case 'camp':
-      return 'Nobody, officially'
+      return use.campers?.length
+        ? 'Tent' + (use.campers.length > 1 ? 's' : '') + ': ' + use.campers.map((c) => c.name).join(', ')
+        : 'Nobody, officially'
   }
 }

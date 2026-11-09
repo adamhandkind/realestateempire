@@ -12,9 +12,10 @@ import { RIVALS } from '../../data/rivals'
 import { labelOf } from '../../logic/portfolio'
 import type { Action, GameState } from '../../state/types'
 import DistrictSheet from '../DistrictSheet'
-import BuyModal from '../portfolio/BuyModal'
+import ListingDeal from '../portfolio/ListingDeal'
 import PropertyCard from '../portfolio/PropertyCard'
 import { CityScene, webglAvailable } from './CityScene'
+import { useCity } from '../online/cityContext'
 import LotCard from './LotCard'
 import { ownerLine } from './ownerLine'
 import { BRASS, CLIENT, INDIE_GREY, MARBLE } from './palette'
@@ -41,11 +42,19 @@ export default function CityView({
 
   const city = cityLayout()
   const season = seasonOf(state.week)
+  /* In a shared city everyone else's buildings and tents are on the map. */
+  const shared = useCity()
+  const others = shared?.view.players
+  const me = shared?.me
+  const sharedMap = useMemo(
+    () => (others && me ? { me, players: others } : undefined),
+    [others, me],
+  )
   /* Only the parts of the state that show on the map rebuild the city. */
   const { properties, marketPool, territory } = state
   const uses = useMemo(
-    () => lotUses({ properties, marketPool, territory }, city),
-    [properties, marketPool, territory, city],
+    () => lotUses({ properties, marketPool, territory }, city, sharedMap),
+    [properties, marketPool, territory, city, sharedMap],
   )
   const clients = useMemo(
     () => leadLots(state.leads, uses, city),
@@ -79,7 +88,11 @@ export default function CityView({
             ? 'O' + u.property.typeId
             : u.kind === 'rival'
               ? 'R' + u.rivalId
-              : u.kind[0]) +
+              : u.kind === 'player'
+                ? 'P' + u.color + u.typeId
+                : u.kind === 'camp'
+                  ? 'C' + (u.campers ?? []).map((c) => c.color).join()
+                  : u.kind[0]) +
         '|'
     return sig
   }, [uses])
@@ -268,17 +281,7 @@ export default function CityView({
       </div>
 
       {listing && (
-        <BuyModal
-          state={state}
-          askPrice={listing.askPrice}
-          title={labelOf(listing.typeId)}
-          blurb={listing.blurb}
-          onCancel={() => setBuying(null)}
-          onBuy={(downPct) => {
-            dispatch({ type: 'BUY_PROPERTY', listingId: listing.id, downPct })
-            setBuying(null)
-          }}
-        />
+        <ListingDeal state={state} listing={listing} dispatch={dispatch} onDone={() => setBuying(null)} />
       )}
 
       {property && (

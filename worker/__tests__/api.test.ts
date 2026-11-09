@@ -3,7 +3,7 @@
    SQLite database built from migrations/. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fromWire, toWire, type Action } from '../../src/engine'
+import { fromWire, toWire } from '../../src/engine'
 import { isClientAction, parseAction, parseBatch, hasNaN } from '../../src/engine/clientActions'
 import type { Env } from '../env'
 import worker from '../index'

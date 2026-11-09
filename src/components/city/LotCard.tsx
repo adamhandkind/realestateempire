@@ -12,6 +12,7 @@ import { displayedValue, labelOf } from '../../logic/portfolio'
 import { money } from '../../logic/rand'
 import type { Action, GameState, Lead } from '../../state/types'
 import { LeadCard } from '../LeadsTab'
+import { useCity } from '../online/cityContext'
 
 export default function LotCard({
   state,
@@ -35,6 +36,9 @@ export default function LotCard({
   onDistrict: (districtId: string) => void
 }) {
   const d = districtOrFirst(lot.districtId)
+  const shared = useCity()
+  const lv = use.kind === 'listing' ? shared?.view.listings.find((l) => l.id === use.listing.id) : undefined
+  const bids = lv ? { count: lv.bids, mine: lv.myBid?.amount ?? 0 } : null
   return (
     <aside className="res-lotcard" aria-label={'Lot at ' + lot.address}>
       <button className="res-lotcard-x" onClick={onClose} aria-label="Close">
@@ -52,6 +56,7 @@ export default function LotCard({
             }}
           />
         )}
+        {use.kind === 'player' && <b style={{ background: use.color }} />}
         {ownerLine(use)}
       </div>
 
@@ -68,8 +73,14 @@ export default function LotCard({
           {state.crash.weeksLeft > 0 && (
             <div className="res-chip warn">crash pricing</div>
           )}
+          {bids && (
+            <div className="res-chip">
+              {bids.mine ? 'your offer: ' + money(bids.mine) + ' · ' : ''}
+              {bids.count ? bids.count + ' sealed offer' + (bids.count > 1 ? 's' : '') : 'no offers yet'}
+            </div>
+          )}
           <button className="res-go" onClick={() => onBuy(use.listing.id)}>
-            Make an offer
+            {bids?.mine ? 'Change my offer' : 'Make an offer'}
           </button>
         </>
       )}
@@ -133,9 +144,23 @@ export default function LotCard({
       )}
       {use.kind === 'camp' && (
         <p className="res-blurb">
-          Under the bridge, where every empire starts. In the shared city this
-          is where your agent pitches a tent on day one.
+          {use.campers?.length
+            ? 'Under the bridge, where every empire starts. ' +
+              use.campers.map((c) => c.name).join(' and ') +
+              (use.campers.length > 1 ? ' have' : ' has') +
+              ' a tent here.'
+            : 'Under the bridge, where every empire starts. In the shared city this is where your agent pitches a tent on day one.'}
         </p>
+      )}
+      {use.kind === 'player' && (
+        <>
+          <p className="res-blurb">
+            <b>{use.nickname}</b> — {labelOf(use.typeId)}. {use.name}'s sign is
+            on the lawn. If they stop mowing it, the bank will notice before
+            you do.
+          </p>
+          <Condition value={use.condition} />
+        </>
       )}
 
       {lead && (

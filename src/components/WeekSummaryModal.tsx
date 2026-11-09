@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { rankOf } from '../logic/economy'
 import { money } from '../logic/rand'
 import type { GameState } from '../state/types'
@@ -7,9 +8,12 @@ import { captionOf } from '../data/captions'
 export default function WeekSummaryModal({
   state,
   onClose,
+  extra,
 }: {
   state: GameState
   onClose: () => void
+  /** Shared city: how your offers went, from the morning report. */
+  extra?: ReactNode
 }) {
   const summary = state.summary
   if (!summary) return null
@@ -144,6 +148,7 @@ export default function WeekSummaryModal({
             )}
           </>
         )}
+        {extra}
         <div className="res-brag">
           <b style={{ color: 'var(--brass)' }}>Your post:</b>
           <br />

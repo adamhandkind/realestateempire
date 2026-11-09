@@ -37,6 +37,12 @@ export interface OnlineShell {
   league: ReactNode
   /** Save status, shown under the header. */
   status: ReactNode
+  /** Shared city: replaces the End Week button (the week ends at the tick). */
+  endWeek?: ReactNode
+  /** Shared city: the morning report's extra lines, under the Week Summary. */
+  summaryExtra?: ReactNode
+  /** Shared city: the morning report has been read. */
+  onSummaryClosed?: () => void
 }
 
 /** The game screen — header, tabs, End Week, modals — for any source of
@@ -229,6 +235,7 @@ export default function Game({
       {tab === 'log' && <LogTab state={state} />}
       {tab === 'league' && online?.league}
 
+      {online?.endWeek ?? (
       <button
         className="res-end res-display"
         disabled={state.pendingChoices.length > 0 || state.call !== null}
@@ -247,6 +254,7 @@ export default function Game({
             ? 'DECISIONS AWAIT'
             : 'END WEEK ' + state.week}
       </button>
+      )}
 
       <CallModal state={state} dispatch={dispatch} />
       <PortfolioChoiceModal state={state} dispatch={dispatch} />
@@ -256,7 +264,14 @@ export default function Game({
       )}
 
       {showSummary && !state.postComposerPending && (
-        <WeekSummaryModal state={state} onClose={() => setShowSummary(false)} />
+        <WeekSummaryModal
+          state={state}
+          extra={online?.summaryExtra}
+          onClose={() => {
+            setShowSummary(false)
+            online?.onSummaryClosed?.()
+          }}
+        />
       )}
 
       {/* Never stacked: the Week Summary always reads first, and dismissing it

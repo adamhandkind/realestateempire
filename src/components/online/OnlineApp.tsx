@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { ApiError, api, probe, type InvitePeek, type Me, type SaveText } from '../../net/api'
-import CloudGame from './CloudGame'
+import CityGame from './CityGame'
 import CreateAgent from './CreateAgent'
 import { AdultGate, CityPicker, FoundCity, Gate, NoCity, SignIn } from './screens'
 import './online.css'
@@ -183,7 +183,7 @@ export default function OnlineApp({ initial, onNoBackend }: { initial: Phase; on
           </div>
         </div>
       )}
-      <CloudGame
+      <CityGame
         key={city.id}
         city={city}
         email={m.user.email}

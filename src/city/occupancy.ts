@@ -30,7 +30,44 @@ export type LotUse =
   | { kind: 'rival'; rivalId: string; typeId: PropertyTypeId }
   | { kind: 'independent'; typeId: PropertyTypeId }
   | { kind: 'empty' }
-  | { kind: 'camp' }
+  | { kind: 'camp'; campers?: Camper[] }
+  /** Another player's building in a shared city. */
+  | {
+      kind: 'player'
+      userId: string
+      name: string
+      color: string
+      typeId: PropertyTypeId
+      nickname: string
+      condition: number
+    }
+
+/** Who pitched a tent here (shared city). */
+export interface Camper {
+  userId: string
+  name: string
+  color: string
+}
+
+/** The shared city's other players, as the map needs them. Everyone's
+ *  buildings are placed in one fixed order (by player, then building), so
+ *  every browser in the city draws the same street. */
+export interface SharedMap {
+  me: string
+  players: {
+    userId: string
+    name: string
+    color: string
+    buildings: {
+      id: string
+      typeId: PropertyTypeId
+      districtId: string
+      fromListingId?: string
+      nickname: string
+      condition: number
+    }[]
+  }[]
+}
 
 /** Of the lots left after listings and yours, how many rival share can claim.
  *  Under 1 so a 100% rival district still has some independents and gaps. */
@@ -67,6 +104,7 @@ export type MapState = Pick<
 export function lotUses(
   state: MapState,
   city: CityLayout,
+  shared?: SharedMap,
 ): Map<string, LotUse> {
   const uses = new Map<string, LotUse>()
   const taken = new Set<string>()
@@ -77,8 +115,46 @@ export function lotUses(
 
   for (const l of city.lots) if (l.camp) uses.set(l.id, { kind: 'camp' })
 
+  if (shared) {
+    /* Everyone starts under a bridge: one camp each, by the same hash. */
+    const camps = city.lots.filter((l) => l.camp)
+    const players = [...shared.players].sort((a, b) => a.userId.localeCompare(b.userId))
+    for (const pl of players) {
+      const lot = [...camps].sort((a, b) => hash('camp:' + pl.userId + a.id) - hash('camp:' + pl.userId + b.id))[0]
+      if (!lot) break
+      const u = uses.get(lot.id)
+      const campers = u?.kind === 'camp' ? (u.campers ?? []) : []
+      uses.set(lot.id, { kind: 'camp', campers: [...campers, { userId: pl.userId, name: pl.name, color: pl.color }] })
+    }
+    /* Everyone's buildings, in one order. Yours are drawn from your own
+       game (full detail); everyone else's from the city. */
+    for (const pl of players) {
+      const mine = pl.userId === shared.me
+      const list = mine
+        ? [...state.properties].filter((p) => !p.isVrbo).sort((a, b) => a.id.localeCompare(b.id))
+        : [...pl.buildings].sort((a, b) => a.id.localeCompare(b.id))
+      for (const b of list) {
+        const key = b.fromListingId ? 'listing:' + b.fromListingId : 'prop:' + pl.userId + ':' + b.id
+        const lot = claim(poolOf(b.districtId), taken, key)
+        if (!lot) continue
+        taken.add(lot.id)
+        if (mine) uses.set(lot.id, { kind: 'owned', property: b as Property })
+        else
+          uses.set(lot.id, {
+            kind: 'player',
+            userId: pl.userId,
+            name: pl.name,
+            color: pl.color,
+            typeId: b.typeId,
+            nickname: b.nickname,
+            condition: b.condition,
+          })
+      }
+    }
+  }
+
   /* Yours first, so a new listing can never bump a house you already own. */
-  const owned = [...state.properties].sort((a, b) => a.id.localeCompare(b.id))
+  const owned = shared ? [] : [...state.properties].sort((a, b) => a.id.localeCompare(b.id))
   for (const p of owned) {
     /* Same key as the listing it was bought as → the same lot it stood on. */
     const key = p.fromListingId ? 'listing:' + p.fromListingId : 'prop:' + p.id
