@@ -58,6 +58,11 @@ const ACTIONS: Record<Action['type'], Spec | null> = {
   SET_CONTENT_ENABLED: { enabled: 'boolean' },
 
   /* Never from a client. */
+  CITY_PURCHASE: null,
+  CITY_LOG: null,
+  CITY_NEGLECT: null,
+  CITY_FORECLOSE: null,
+  CITY_SETTLE: null,
   IMPORT_SAVE: null,
   RESTART: null,
   NEW_GAME: null,
@@ -90,6 +95,13 @@ export const MAX_BATCH = 200
 export const isClientAction = (type: string): boolean =>
   Object.prototype.hasOwnProperty.call(ACTIONS, type) &&
   ACTIONS[type as Action['type']] !== null
+
+/** In a shared city the week ends for everyone at the tick, and listings are
+ *  bid on rather than bought. */
+const CITY_REFUSED: ReadonlySet<string> = new Set(['END_WEEK', 'BUY_PROPERTY'])
+
+export const isCityClientAction = (type: string): boolean =>
+  isClientAction(type) && !CITY_REFUSED.has(type)
 
 function fieldOk(v: unknown, f: Field): boolean {
   switch (f) {
@@ -127,6 +139,7 @@ export function parseAction(
 
 export function parseBatch(
   raw: unknown,
+  opts: { city?: boolean } = {},
 ): { ok: true; actions: Action[] } | { ok: false; error: string } {
   if (!Array.isArray(raw)) return { ok: false, error: 'actions must be a list' }
   if (raw.length > MAX_BATCH) return { ok: false, error: 'too many actions' }
@@ -134,6 +147,8 @@ export function parseBatch(
   for (const r of raw) {
     const p = parseAction(r)
     if (!p.ok) return p
+    if (opts.city && CITY_REFUSED.has(p.action.type))
+      return { ok: false, error: p.action.type + ' happens at the tick in a shared city' }
     actions.push(p.action)
   }
   return { ok: true, actions }

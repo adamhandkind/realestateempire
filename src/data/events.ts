@@ -82,7 +82,10 @@ export const EVENTS: EventDef[] = [
   {
     id: 'marketCrash',
     weight: 3,
+    /* A crash in a shared city would have to hit everyone at once; it is
+       not a per-player roll there. */
     condition: (s) =>
+      !s.cityMode &&
       s.week >= s.firstP3Week + 8 &&
       s.crash.weeksLeft === 0 &&
       s.week - s.crash.lastCrashWeek >= 40,

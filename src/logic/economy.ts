@@ -37,6 +37,7 @@ import {
 } from './characters'
 import { P5 } from '../data/p5'
 import { hasPerk, trophyEgo } from './perks'
+import { promoDeals, promoEarningsMult } from './cityMode'
 import { AWARDS_BRAGS } from '../data/p7'
 import { CONTENT_BRAGS } from '../data/postLines'
 import { money, pick, weightedPick } from './rand'
@@ -202,7 +203,13 @@ export function commissionFor(
 /** The earnings bar for a rank, after the character's promotion multiplier.
  *  Showings and deals requirements are never multiplied. */
 export const reqEarningsFor = (state: GameState, rank: RankDef): number =>
-  Math.round(rank.req.earnings * getChar(state).promotionEarningsMult)
+  Math.round(
+    rank.req.earnings * getChar(state).promotionEarningsMult * promoEarningsMult(state, rank.id),
+  )
+
+/** The deals bar for a rank. Only the shared city moves it. */
+export const reqDealsFor = (state: GameState, rank: RankDef): number =>
+  promoDeals(state, rank.id, rank.req.deals)
 
 /** True when every requirement EXCEPT the multiplied earnings bar is met —
  *  i.e. the character's own multiplier is the only thing in the way. */
@@ -212,7 +219,7 @@ export function gatedOnMultipliedEarnings(state: GameState): RankDef | null {
   const r = nxt.req
   const others =
     state.counters.showingsRun >= r.showings &&
-    state.counters.dealsClosed >= r.deals &&
+    state.counters.dealsClosed >= reqDealsFor(state, nxt) &&
     state.reputation >= (r.rep ?? 0)
   const meetsBase = state.careerEarnings >= r.earnings
   const meetsMultiplied = state.careerEarnings >= reqEarningsFor(state, nxt)
@@ -228,7 +235,7 @@ export function nextRank(state: GameState): RankDef | null {
   const ok =
     state.careerEarnings >= reqEarningsFor(state, nxt) &&
     state.counters.showingsRun >= r.showings &&
-    state.counters.dealsClosed >= r.deals &&
+    state.counters.dealsClosed >= reqDealsFor(state, nxt) &&
     state.reputation >= (r.rep ?? 0)
   return ok ? nxt : null
 }

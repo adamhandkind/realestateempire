@@ -148,6 +148,8 @@ export function makeListing(s: GameState, id: number): Listing {
  *  Nothing is for sale below Seller Agent, so a low-rank state keeps an empty
  *  pool rather than asking makeListing to draw from no eligible types. */
 export function fillPool(s: GameState): GameState {
+  /* In a shared city the listings belong to the city, not to you. */
+  if (s.cityMode) return s
   if (eligibleTypes(s).length === 0) return s
   let next = s.nextListingId
   const pool = [...s.marketPool]
