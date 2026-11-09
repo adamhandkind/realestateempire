@@ -91,7 +91,31 @@ That evaluates the frozen file and deep-compares every ranks/archetype/swag/
 event/brag structure and the stylesheet against `src/`. It must print
 "All content identical."
 
+## Online play (multiplayer Phase 2)
+
+```
+worker/                 Cloudflare Worker: /api (email-link login, invites,
+                        cities, agents, cloud saves, leaderboard) + static assets
+migrations/             D1 schema
+src/net/                browser side: api client, CloudStore (optimistic play,
+                        batched saves the server replays and verifies)
+src/components/online/  sign-in, 18+ gate, agent creation, League tab
+```
+
+If a backend answers `/api`, the game is online; if not (plain `npm run dev`,
+a static host), it's the local single-player game exactly as before.
+
+```bash
+cp .dev.vars.example .dev.vars && npm run build
+npm run dev:api     # Worker + local D1 on :8787
+npm run dev         # Vite on :5173, proxies /api
+```
+
+Plan, API, decisions and first-time deploy steps:
+`docs/superpowers/plans/2026-11-09-city-phase-2-accounts-and-cloud.md`.
+
 ## Deploying
 
-`netlify.toml` builds with `npm run build` and publishes `dist`. Static SPA, no
-routing, no redirects or functions needed.
+`npm run deploy` builds, applies D1 migrations remotely and deploys the
+Worker (see the Phase 2 plan for one-time setup). `netlify.toml` still
+publishes `dist` as a static, local-play-only build.
