@@ -2,79 +2,175 @@
    owner's invite desk, and the account bits (switch city, sign out). */
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import type { CityView, PlayerView } from '../../citygame/view'
+import type { CityStore } from '../../net/cityStore'
 import { AGENT_COLORS } from '../../data/agentColors'
 import { CHARACTERS } from '../../data/characters'
 import { RANKS } from '../../data/ranks'
 import { money } from '../../logic/rand'
-import { ApiError, api, type BoardRow, type CitySummary, type InviteRow } from '../../net/api'
+import { ApiError, api, type CitySummary, type HallSeason, type InviteRow } from '../../net/api'
 
 const hexOf = (id: string) => AGENT_COLORS.find((c) => c.id === id)?.hex ?? '#888'
 const rankName = (id: string | null) => RANKS.find((r) => r.id === id)?.name ?? '—'
 const charName = (id: string) => CHARACTERS.find((c) => c.id === id)?.name ?? ''
 
-function ago(t: number | null): string {
-  if (!t) return 'never'
-  const m = Math.round((Date.now() - t) / 60_000)
-  if (m < 2) return 'just now'
-  if (m < 60) return m + ' min ago'
-  const h = Math.round(m / 60)
-  if (h < 36) return h + ' h ago'
-  return Math.round(h / 24) + ' days ago'
-}
-
-function Leaderboard({ cityId }: { cityId: string }) {
-  const [rows, setRows] = useState<BoardRow[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const load = useCallback(() => {
-    api
-      .leaderboard(cityId)
-      .then((b) => {
-        setRows(b.rows)
-        setError(null)
-      })
-      .catch((e) => setError(e instanceof ApiError ? e.message : "Couldn't load the leaderboard."))
-  }, [cityId])
-  useEffect(load, [load])
-
+function Leaderboard({ view }: { view: CityView }) {
   return (
     <div className="res-panel">
       <h3 className="res-h2 res-display">The Leaderboard</h3>
-      {error && <div className="res-err">{error}</div>}
-      {!rows && !error && <p>Counting everybody's money…</p>}
-      {rows && (
-        <table className="res-board">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Agent</th>
-              <th className="hide-sm">Rank</th>
-              <th className="num hide-sm">Week</th>
-              <th className="num">Net worth</th>
+      <p className="res-debug-note" style={{ color: '#6d6f7c' }}>
+        Net worth, as of {view.status === 'lobby' ? 'right now' : 'week ' + view.week}. The leader after week 52 wears the blazer.
+      </p>
+      <table className="res-board">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Agent</th>
+            <th className="hide-sm">Rank</th>
+            <th className="num hide-sm">Doors</th>
+            <th className="num">Net worth</th>
+          </tr>
+        </thead>
+        <tbody>
+          {view.players.map((r) => (
+            <tr key={r.userId} className={r.you ? 'you' : ''}>
+              <td className="place">{r.place}</td>
+              <td>
+                <span className="dot" style={{ background: hexOf(r.color) }} />
+                {r.name}
+                {r.gameOver ? ' 💀' : ''}
+                <span className="sub">
+                  {r.characterId !== 'you' && charName(r.characterId) + ' · '}
+                  {r.missed === 0 ? 'checked in this week' : r.missed === 1 ? 'missed a day' : 'missed ' + r.missed + ' days'}
+                </span>
+              </td>
+              <td className="hide-sm">{rankName(r.rank)}</td>
+              <td className="num hide-sm">{r.buildings.length}</td>
+              <td className="num">{money(r.netWorth)}</td>
             </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.place} className={r.you ? 'you' : ''}>
-                <td className="place">{r.place}</td>
-                <td>
-                  <span className="dot" style={{ background: hexOf(r.color) }} />
-                  {r.name}
-                  {r.gameOver ? ' 💀' : ''}
-                  <span className="sub">
-                    {r.characterId !== 'you' && charName(r.characterId) + ' · '}played {ago(r.lastPlayed)}
-                  </span>
-                </td>
-                <td className="hide-sm">{rankName(r.rank)}</td>
-                <td className="num hide-sm">{r.week}</td>
-                <td className="num">{money(r.netWorth)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/** Names in the feed, in their owners' colours. */
+function FeedText({ text, who, view }: { text: string; who: string[]; view: CityView }) {
+  const people = who.map((id) => view.players.find((p) => p.userId === id)).filter((p): p is PlayerView => !!p)
+  if (!people.length) return <>{text}</>
+  const names = people.map((p) => p.name).sort((a, b) => b.length - a.length)
+  const re = new RegExp('(' + names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')', 'g')
+  return (
+    <>
+      {text.split(re).map((part, i) => {
+        const p = people.find((x) => x.name === part)
+        return p ? (
+          <b key={i} style={{ color: hexOf(p.color) }}>
+            {part}
+          </b>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      })}
+    </>
+  )
+}
+
+function Feed({ view }: { view: CityView }) {
+  const name = (id: string) => view.players.find((p) => p.userId === id)?.name ?? 'Someone'
+  return (
+    <div className="res-panel dark">
+      <h3 className="res-h2 res-display">The City Feed</h3>
+      {view.rivalries.length > 0 && (
+        <div className="res-grudges">
+          {view.rivalries.slice(0, 3).map((r) => (
+            <span key={r.winner + r.loser} className="res-chip">
+              {name(r.winner)} over {name(r.loser)} ×{r.n}
+            </span>
+          ))}
+        </div>
       )}
-      <div className="res-mini">
-        <button onClick={load}>Refresh</button>
-      </div>
+      {view.feed.length === 0 && <p className="res-debug-note">Quiet. Suspiciously quiet.</p>}
+      <ul className="res-feed">
+        {view.feed.map((f) => (
+          <li key={f.id} className={'k-' + f.kind}>
+            <span className="wk">W{f.week}</span>
+            <span>
+              <FeedText text={f.text} who={f.who} view={view} />
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function HallOfFame({ cityId, view }: { cityId: string; view: CityView }) {
+  const [seasons, setSeasons] = useState<HallSeason[] | null>(null)
+  useEffect(() => {
+    api.seasons(cityId).then((r) => setSeasons(r.seasons), () => setSeasons([]))
+  }, [cityId, view.season, view.status])
+  if (!seasons?.length) return null
+  return (
+    <div className="res-panel">
+      <h3 className="res-h2 res-display">Hall of Fame</h3>
+      <ul className="res-hall">
+        {seasons.map((s) => (
+          <li key={s.season}>
+            <span className="res-meta">Season {s.season}</span>
+            {s.champion ? (
+              <span>
+                <span className="dot" style={{ background: hexOf(s.champion.color) }} /> <b>{s.champion.name}</b> ·{' '}
+                {money(s.champion.netWorth)}
+              </span>
+            ) : (
+              <span>Nobody. Nobody at all.</span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+const HOURS = Array.from({ length: 24 }, (_, h) => h)
+const hourLabel = (h: number) => (h === 0 ? '12 a.m.' : h < 12 ? h + ' a.m.' : h === 12 ? 'noon' : h - 12 + ' p.m.')
+
+function TickDesk({ view, store }: { view: CityView; store: CityStore }) {
+  const [hour, setHour] = useState(view.tickHour)
+  const [zone, setZone] = useState(view.tickZone)
+  const [msg, setMsg] = useState<string | null>(null)
+  const save = async (e: FormEvent) => {
+    e.preventDefault()
+    const err = await store.setSchedule(hour, zone)
+    setMsg(err ?? 'Saved. The tick runs at ' + hourLabel(hour) + ', ' + zone + '.')
+  }
+  return (
+    <div className="res-panel dark">
+      <h3 className="res-h2 res-display">The Overnight Tick</h3>
+      <p className="res-debug-note">
+        Every night at this hour the city runs the week for everyone at once: offers settle, rent comes in, the feed
+        writes the morning report.
+      </p>
+      <form onSubmit={save}>
+        <label className="res-field">
+          Hour
+          <select className="res-input" value={hour} onChange={(e) => setHour(Number(e.target.value))}>
+            {HOURS.map((h) => (
+              <option key={h} value={h}>
+                {hourLabel(h)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="res-field">
+          Time zone
+          <input className="res-input" value={zone} onChange={(e) => setZone(e.target.value)} />
+        </label>
+        {msg && <div className="res-ok">{msg}</div>}
+        <button className="res-go">Save the schedule</button>
+      </form>
     </div>
   )
 }
@@ -194,12 +290,16 @@ function InviteDesk({ cityId }: { cityId: string }) {
 
 export default function LeagueTab({
   city,
+  view,
+  store,
   email,
   cityCount,
   onSwitchCity,
   onSignOut,
 }: {
   city: CitySummary
+  view: CityView
+  store: CityStore
   email: string
   cityCount: number
   onSwitchCity: () => void
@@ -207,13 +307,16 @@ export default function LeagueTab({
 }) {
   return (
     <>
-      <Leaderboard cityId={city.id} />
+      <Leaderboard view={view} />
+      <Feed view={view} />
+      <HallOfFame cityId={city.id} view={view} />
       {city.role === 'owner' && <InviteDesk cityId={city.id} />}
+      {city.role === 'owner' && <TickDesk view={view} store={store} />}
       <div className="res-panel dark">
         <h3 className="res-h2 res-display">{city.name}</h3>
         <p className="res-debug-note">
-          Season {city.season}. Signed in as {email}. Your game saves to the cloud as you play, so you can pick it up on
-          any computer.
+          Season {view.season}. Signed in as {email}. The city runs on the server, so your game is the same on any
+          computer, and nobody, including you, can peek at tomorrow.
         </p>
         <div className="res-mini">
           {cityCount > 1 && <button onClick={onSwitchCity}>Switch city</button>}

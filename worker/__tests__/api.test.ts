@@ -3,18 +3,20 @@
    SQLite database built from migrations/. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { applyActions, fromWire, stateDigest, type Action } from '../../src/engine'
+import { fromWire, toWire } from '../../src/engine'
 import { isClientAction, parseAction, parseBatch, hasNaN } from '../../src/engine/clientActions'
 import type { Env } from '../env'
 import worker from '../index'
 import { outbox } from '../mail'
 import { makeD1 } from './d1'
+import { fakeCityNamespace } from './fakeCity'
 
 const APP = 'https://empire.test'
 const OWNER = 'adam@example.com'
 
 let env: Env
 let db: ReturnType<typeof makeD1>
+let city: ReturnType<typeof fakeCityNamespace>
 
 beforeEach(() => {
   db = makeD1()
@@ -28,7 +30,11 @@ beforeEach(() => {
     MAIL_PROVIDER: 'log',
     MAIL_FROM: 'test@example.com',
     DEV_EXPOSE_LINKS: '1',
+    ALLOW_MANUAL_TICK: '1',
+    CITY: null as unknown as Env['CITY'],
   }
+  city = fakeCityNamespace(() => env)
+  env.CITY = city.namespace as unknown as Env['CITY']
 })
 
 /** One browser: remembers its session cookie like a real one would. */
@@ -324,11 +330,18 @@ describe('agents', () => {
     await readyAgent(owner, cityId)
     const body = { name: 'Phoenix', color: 'gold', characterId: 'chip', restart: true }
     expect((await owner.post(`/api/cities/${cityId}/agent`, body)).data.error).toBe('game_running')
-    db.raw.exec('UPDATE saves SET game_over = 1')
+    /* Go broke, the hard way: straight into the city's storage. */
+    const { mem } = city.rooms.get(cityId)!
+    for (const [k, v] of mem.data)
+      if (k.startsWith('p:')) {
+        const p = v as { game: string }
+        mem.data.set(k, { ...p, game: toWire({ ...fromWire(p.game)!, gameOver: true }) })
+      }
     const r = await owner.post(`/api/cities/${cityId}/agent`, body)
     expect(r.status).toBe(201)
     expect(r.data.version).toBe(2)
     expect(fromWire(r.data.state)!.characterId).toBe('chip')
+    expect(fromWire(r.data.state)!.gameOver).toBe(false)
   })
 
   it('outsiders cannot see a city', async () => {
@@ -340,76 +353,167 @@ describe('agents', () => {
   })
 })
 
-describe('cloud saves', () => {
-  const week: Action[] = [
-    { type: 'WORK_PHONES' },
-    { type: 'WORK_PHONES' },
-    { type: 'SIDE_HUSTLE' },
-    { type: 'END_WEEK' },
-  ]
+describe('the shared city', () => {
+  const act = (b: ReturnType<typeof browser>, cityId: string, baseVersion: number, actions: unknown[]) =>
+    b.post(`/api/cities/${cityId}/act`, { baseVersion, actions })
 
-  it('replays the browser’s moves and agrees with it', async () => {
+  async function twoPlayers() {
     const { owner, cityId } = await ownerWithCity()
-    const g = await readyAgent(owner, cityId)
-    const local = applyActions(fromWire(g.state)!, week)
-    const r = await owner.post(`/api/cities/${cityId}/game/actions`, {
-      baseVersion: 1,
-      actions: week,
-      digest: await stateDigest(local),
-    })
+    await readyAgent(owner, cityId, 'gold')
+    const friend = await friendInCity(owner, cityId, 'f@example.com')
+    await readyAgent(friend, cityId, 'teal')
+    return { owner, friend, cityId }
+  }
+
+  it('starts in the lobby until the owner opens the season', async () => {
+    const { owner, friend, cityId } = await twoPlayers()
+    const v = await owner.get(`/api/cities/${cityId}/city`)
+    expect(v.data.status).toBe('lobby')
+    expect(v.data.players).toHaveLength(2)
+    expect((await friend.post(`/api/cities/${cityId}/season/start`)).status).toBe(403)
+    const s = await owner.post(`/api/cities/${cityId}/season/start`)
+    expect(s.status).toBe(200)
+    expect(s.data.status).toBe('running')
+    expect(s.data.listings.length).toBeGreaterThan(0)
+    expect(s.data.nextTickAt).toBeGreaterThan(city.clock.now)
+    /* Three in the morning, Toronto time. */
+    const local = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Toronto', hour: 'numeric', hourCycle: 'h23' }).format(new Date(s.data.nextTickAt))
+    expect(Number(local)).toBe(3)
+  })
+
+  it('plays moves on the server and never hands out the dice', async () => {
+    const { owner, cityId } = await twoPlayers()
+    await owner.post(`/api/cities/${cityId}/season/start`)
+    const g = await owner.get(`/api/cities/${cityId}/game`)
+    expect(fromWire(g.data.state)!.rngSeed).toBe(0)
+    expect(fromWire(g.data.state)!.cityMode).toBe(true)
+    const r = await act(owner, cityId, g.data.version, [{ type: 'ASSIST_SHOWING' }, { type: 'ASSIST_SHOWING' }])
     expect(r.status).toBe(200)
-    expect(r.data.version).toBe(2)
-    expect(r.data.state).toBeUndefined()
-    expect(r.data.digest).toBe(await stateDigest(local))
-
-    const saved = await owner.get(`/api/cities/${cityId}/game`)
-    expect(saved.data.version).toBe(2)
-    expect(fromWire(saved.data.state)!.week).toBe(2)
+    expect(r.data.version).toBe(g.data.version + 1)
+    const s = fromWire(r.data.state)!
+    expect(s.ap).toBe(fromWire(g.data.state)!.ap - 2)
+    expect(s.rngSeed).toBe(0)
+    /* The city's listings are the player's market. */
+    expect(s.marketPool.length).toBe(r.data.city.listings.length)
   })
 
-  it('a browser that got it wrong gets the server’s game', async () => {
-    const { owner, cityId } = await ownerWithCity()
-    await readyAgent(owner, cityId)
-    const r = await owner.post(`/api/cities/${cityId}/game/actions`, { baseVersion: 1, actions: week, digest: 'nope' })
-    expect(r.status).toBe(200)
-    expect(fromWire(r.data.state)!.week).toBe(2)
-  })
-
-  it('a stale browser is told so, with the current game', async () => {
-    const { owner, cityId } = await ownerWithCity()
-    await readyAgent(owner, cityId)
-    await owner.post(`/api/cities/${cityId}/game/actions`, { baseVersion: 1, actions: week })
-    const r = await owner.post(`/api/cities/${cityId}/game/actions`, { baseVersion: 1, actions: week })
-    expect(r.status).toBe(409)
-    expect(r.data.version).toBe(2)
-    expect(fromWire(r.data.state)!.week).toBe(2)
-  })
-
-  it('refuses debug moves, imports and bad payloads, and saves nothing', async () => {
-    const { owner, cityId } = await ownerWithCity()
-    const g = await readyAgent(owner, cityId)
-    const cheat = fromWire(g.state)!
+  it('refuses End Week, instant buys, cheats and junk', async () => {
+    const { owner, cityId } = await twoPlayers()
+    await owner.post(`/api/cities/${cityId}/season/start`)
+    const g = await owner.get(`/api/cities/${cityId}/game`)
     for (const action of [
+      { type: 'END_WEEK' },
+      { type: 'BUY_PROPERTY', listingId: 'CL1', downPct: 1 },
       { type: 'DEBUG_CASH' },
-      { type: 'DEBUG_SKIP_WEEKS', weeks: 10 },
-      { type: 'IMPORT_SAVE', state: { ...cheat, cash: 1e9 } },
-      { type: 'NEW_GAME', characterId: 'you' },
-      { type: 'BUY_PROPERTY', listingId: 'x', downPct: 'all of it' },
-      { type: 'SET_RENT', propertyId: 'p', unitId: 'u', r: null },
+      { type: 'IMPORT_SAVE', state: {} },
+      { type: 'CITY_PURCHASE', listing: {}, price: 1, downPct: 1 },
       { type: 'MAKE_IT_RAIN' },
     ]) {
-      const r = await owner.post(`/api/cities/${cityId}/game/actions`, { baseVersion: 1, actions: [action] })
+      const r = await act(owner, cityId, g.data.version, [action])
       expect(r.status, action.type).toBe(400)
     }
-    expect((await owner.get(`/api/cities/${cityId}/game`)).data.version).toBe(1)
+    expect((await owner.get(`/api/cities/${cityId}/game`)).data.version).toBe(g.data.version)
   })
 
-  it('an empty batch is a cheap check-in', async () => {
-    const { owner, cityId } = await ownerWithCity()
-    const g = await readyAgent(owner, cityId)
-    const r = await owner.post(`/api/cities/${cityId}/game/actions`, { baseVersion: 1, actions: [] })
-    expect(r.data.version).toBe(1)
-    expect(r.data.digest).toBe(await stateDigest(fromWire(g.state)!))
+  it('says so when the game moved on (another tab, or the tick)', async () => {
+    const { owner, cityId } = await twoPlayers()
+    await owner.post(`/api/cities/${cityId}/season/start`)
+    const g = await owner.get(`/api/cities/${cityId}/game`)
+    await act(owner, cityId, g.data.version, [{ type: 'ASSIST_SHOWING' }])
+    const r = await act(owner, cityId, g.data.version, [{ type: 'ASSIST_SHOWING' }])
+    expect(r.status).toBe(409)
+    expect(r.data.version).toBe(g.data.version + 1)
+  })
+
+  it('takes sealed offers, hides the amounts, and settles them at the tick', async () => {
+    const { owner, friend, cityId } = await twoPlayers()
+    await owner.post(`/api/cities/${cityId}/season/start`)
+    const view = (await owner.get(`/api/cities/${cityId}/city`)).data
+    const target = view.listings.find((l: { typeId: string }) => l.typeId === 'starter') ?? view.listings[0]
+    /* Nobody can buy as a receptionist. */
+    const early = await owner.post(`/api/cities/${cityId}/bids`, { listingId: target.id, amount: target.askPrice, downPct: 1 })
+    expect(early.status).toBe(400)
+    expect(early.data.error).toBe('rank_locked')
+    /* Promote both players the hard way, in storage. */
+    const { mem } = city.rooms.get(cityId)!
+    for (const [k, v] of mem.data)
+      if (k.startsWith('p:')) {
+        const p = v as { game: string }
+        mem.data.set(k, { ...p, game: toWire({ ...fromWire(p.game)!, rank: 'topProducer', cash: 3_000_000 }) })
+      }
+    const a = await owner.post(`/api/cities/${cityId}/bids`, { listingId: target.id, amount: target.askPrice, downPct: 1 })
+    expect(a.status).toBe(200)
+    const b = await friend.post(`/api/cities/${cityId}/bids`, { listingId: target.id, amount: target.askPrice + 10_000, downPct: 1 })
+    expect(b.status).toBe(200)
+    const seen = b.data.listings.find((l: { id: string }) => l.id === target.id)
+    expect(seen.bids).toBe(2)
+    expect(seen.myBid.amount).toBe(target.askPrice + 10_000)
+    expect(JSON.stringify(b.data)).not.toContain(String(target.askPrice) + ',"downPct"')
+
+    expect((await friend.post(`/api/cities/${cityId}/tick`)).status).toBe(403)
+    const t = await owner.post(`/api/cities/${cityId}/tick`)
+    expect(t.status).toBe(200)
+    expect(t.data.city.week).toBe(2)
+    expect(t.data.report.week).toBe(1)
+    expect(t.data.report.offers.join(' ')).toMatch(/beat you/)
+    const fg = await friend.get(`/api/cities/${cityId}/game`)
+    expect(fromWire(fg.data.state)!.properties.some((p) => p.fromListingId === target.id)).toBe(true)
+    expect(fg.data.city.feed.some((f: { kind: string }) => f.kind === 'outbid')).toBe(true)
+    /* The tick mirrors standings into D1. */
+    const row = db.raw.prepare('SELECT week FROM saves WHERE city_id = ? LIMIT 1').get(cityId) as { week: number }
+    expect(row.week).toBe(2)
+  })
+
+  it('withdraws an offer', async () => {
+    const { owner, cityId } = await twoPlayers()
+    await owner.post(`/api/cities/${cityId}/season/start`)
+    const { mem } = city.rooms.get(cityId)!
+    for (const [k, v] of mem.data)
+      if (k.startsWith('p:')) {
+        const p = v as { game: string }
+        mem.data.set(k, { ...p, game: toWire({ ...fromWire(p.game)!, rank: 'topProducer', cash: 3_000_000 }) })
+      }
+    const l = (await owner.get(`/api/cities/${cityId}/city`)).data.listings[0]
+    await owner.post(`/api/cities/${cityId}/bids`, { listingId: l.id, amount: l.askPrice, downPct: 1 })
+    const r = await owner.del(`/api/cities/${cityId}/bids/${l.id}`)
+    expect(r.data.listings.find((x: { id: string }) => x.id === l.id).myBid).toBeNull()
+  })
+
+  it('runs the tick on its alarm, every night, through to the Hall of Fame', async () => {
+    const { owner, cityId } = await twoPlayers()
+    await owner.post(`/api/cities/${cityId}/season/start`)
+    const nights = await city.fireAlarms(52)
+    expect(nights).toBe(52)
+    const v = (await owner.get(`/api/cities/${cityId}/city`)).data
+    expect(v.status).toBe('finished')
+    expect(v.lastSeason.standings).toHaveLength(2)
+    const hof = await owner.get(`/api/cities/${cityId}/seasons`)
+    expect(hof.data.seasons).toHaveLength(1)
+    expect(hof.data.seasons[0].champion.name).toBe(v.lastSeason.standings[0].name)
+    /* The next night opens season 2. */
+    await city.fireAlarms(1)
+    const v2 = (await owner.get(`/api/cities/${cityId}/city`)).data
+    expect(v2.season).toBe(2)
+    expect(v2.week).toBe(1)
+    expect((await owner.get('/api/me')).data.cities[0].season).toBe(2)
+  })
+
+  it('lets the owner move the tick', async () => {
+    const { owner, cityId } = await twoPlayers()
+    await owner.post(`/api/cities/${cityId}/season/start`)
+    expect((await owner.post(`/api/cities/${cityId}/schedule`, { hour: 25 })).status).toBe(400)
+    expect((await owner.post(`/api/cities/${cityId}/schedule`, { hour: 6, zone: 'Mars/Olympus' })).status).toBe(400)
+    const r = await owner.post(`/api/cities/${cityId}/schedule`, { hour: 6, zone: 'America/Vancouver' })
+    expect(r.data.tickHour).toBe(6)
+    const local = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Vancouver', hour: 'numeric', hourCycle: 'h23' }).format(new Date(r.data.nextTickAt))
+    expect(Number(local)).toBe(6)
+  })
+
+  it('refuses the manual tick in production', async () => {
+    const { owner, cityId } = await twoPlayers()
+    env.ALLOW_MANUAL_TICK = undefined
+    await owner.post(`/api/cities/${cityId}/season/start`)
+    expect((await owner.post(`/api/cities/${cityId}/tick`)).status).toBe(403)
   })
 })
 

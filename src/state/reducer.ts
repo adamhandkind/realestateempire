@@ -204,6 +204,7 @@ import type {
   CaptionDef,
   GameState,
   Lead,
+  Listing,
   PostDef,
   PostOutcome,
   PostRecord,
@@ -439,6 +440,8 @@ function equipRefusal(state: GameState, it: SwagItem): string | null {
 /** Action types that still resolve while a call is in progress. Everything
  *  else is blocked — a call is a modal, expressed in state. */
 const CALL_SAFE_ACTIONS: ReadonlySet<Action['type']> = new Set([
+  'CITY_SETTLE',
+  'CITY_LOG',
   'PLAY_TACTIC',
   'ADVANCE_CALL',
   'CLOSE_CALL_MODAL',
@@ -1051,79 +1054,51 @@ function baseReducer(state: GameState, action: Action): GameState {
       return sync(s)
     }
     case 'BUY_PROPERTY': {
+      /* A shared city's listings are bid on, and settle at the tick. */
+      if (state.cityMode) return state
       const l = state.marketPool.find((x) => x.id === action.listingId)
       if (!l) return state
-      const financed = action.downPct < 1
-      if (action.downPct < P3.DOWN_MIN || action.downPct > 1)
-        return withLog(
-          state,
-          'flavor',
-          'The bank laughed. Twenty percent down is the floor, not an opening bid.',
-        )
-      if (financed && !hasFreeMortgageSlot(state))
-        return withLog(
-          state,
-          'flavor',
-          'The underwriter counted your mortgages, then counted them again. No.',
-        )
-      const down = Math.round(l.askPrice * action.downPct)
-      if (state.cash < down)
-        return withLog(
-          state,
-          'flavor',
-          "You ran the numbers twice and got the same answer twice. You can't cover the down payment.",
-        )
-      const id = 'P' + state.nextPropertyId
-      const type = typeOf(l.typeId)!
-      const property: Property = {
-        id,
-        typeId: l.typeId,
-        nickname: nicknameFor(l.typeId),
-        baseValue: purchaseBaseValue(l),
-        condition: l.condition,
-        mortgage: financed ? { balance: l.askPrice - down } : null,
-        units: Array.from({ length: type.units }, (_, i) => ({
-          id: id + '-u' + i,
-          tenant: null,
-          rentR: 1.0,
-          openIssue: null,
-          evictionWeeksLeft: null,
-        })),
-        renovation: null,
-        districtId: l.districtId,
-        listedForSale: false,
-        boughtWeek: state.week,
-        isVrbo: false,
-        vrboProfitStreak: 0,
-        vrboRenoDone: false,
-        fromListingId: l.id,
-      }
-      let s: GameState = {
+      return buyListing(state, l, l.askPrice, action.downPct)
+    }
+    case 'CITY_PURCHASE':
+      return buyListing(
+        { ...state, marketPool: state.marketPool.filter((x) => x.id !== action.listing.id) },
+        action.listing,
+        action.price,
+        action.downPct,
+      )
+    case 'CITY_LOG':
+      return withLog(state, action.kind, action.text.slice(0, 300))
+    case 'CITY_NEGLECT': {
+      if (!state.properties.length || action.wear <= 0) return state
+      return {
         ...state,
-        cash: state.cash - down,
-        properties: [...state.properties, property],
-        marketPool: state.marketPool.filter((x) => x.id !== l.id),
-        nextPropertyId: state.nextPropertyId + 1,
+        properties: state.properties.map((p) =>
+          p.isVrbo ? p : { ...p, condition: Math.max(0, p.condition - action.wear) },
+        ),
       }
-      /* Buying a door on a street is the fastest way onto that street. */
-      s = gain(s, l.districtId, PLAYER, P6.GAIN_PROPERTY_BUY)
-      s = bumpSeason(s, 'propertiesBought')
-      s = fillPool(s)
+    }
+    case 'CITY_FORECLOSE': {
+      const p = propertyOf(state, action.propertyId)
+      if (!p) return state
+      const proceeds = Math.max(0, Math.round(action.proceeds))
       return sync(
         withLog(
-          s,
-          'money',
-          'Purchased ' +
-            property.nickname +
-            ' for ' +
-            money(l.askPrice) +
-            '. ' +
-            (financed
-              ? 'The bank owns most of it. You own the vibes.'
-              : "Cash. The seller's agent looked frightened."),
+          {
+            ...state,
+            cash: state.cash + proceeds,
+            properties: state.properties.filter((x) => x.id !== p.id),
+          },
+          'event',
+          'FORECLOSED: the bank took ' +
+            p.nickname +
+            ' back while you were away.' +
+            (proceeds ? ' It mailed you ' + money(proceeds) + ' and no apology.' : ' You got nothing but a letter.'),
         ),
       )
     }
+    case 'CITY_SETTLE':
+      return settleForTick(state)
     case 'RENAME_PROPERTY': {
       if (!propertyOf(state, action.propertyId)) return state
       const nickname = action.nickname.slice(0, 24).trim()
@@ -1809,6 +1784,124 @@ function baseReducer(state: GameState, action: Action): GameState {
     default:
       return state
   }
+}
+
+
+/** Buys listing `l` for `price`: the single-player buy at the asking price,
+ *  and the shared city's tick, where `price` is the winning bid. Either way
+ *  the house is worth what it's worth (purchaseBaseValue), not what you paid. */
+function buyListing(state: GameState, l: Listing, price: number, downPct: number): GameState {
+  const financed = downPct < 1
+  if (downPct < P3.DOWN_MIN || downPct > 1)
+    return withLog(
+      state,
+      'flavor',
+      'The bank laughed. Twenty percent down is the floor, not an opening bid.',
+    )
+  if (financed && !hasFreeMortgageSlot(state))
+    return withLog(
+      state,
+      'flavor',
+      'The underwriter counted your mortgages, then counted them again. No.',
+    )
+  const down = Math.round(price * downPct)
+  if (state.cash < down)
+    return withLog(
+      state,
+      'flavor',
+      "You ran the numbers twice and got the same answer twice. You can't cover the down payment.",
+    )
+  const id = 'P' + state.nextPropertyId
+  const type = typeOf(l.typeId)!
+  const property: Property = {
+    id,
+    typeId: l.typeId,
+    nickname: nicknameFor(l.typeId),
+    baseValue: purchaseBaseValue(l),
+    condition: l.condition,
+    mortgage: financed ? { balance: price - down } : null,
+    units: Array.from({ length: type.units }, (_, i) => ({
+      id: id + '-u' + i,
+      tenant: null,
+      rentR: 1.0,
+      openIssue: null,
+      evictionWeeksLeft: null,
+    })),
+    renovation: null,
+    districtId: l.districtId,
+    listedForSale: false,
+    boughtWeek: state.week,
+    isVrbo: false,
+    vrboProfitStreak: 0,
+    vrboRenoDone: false,
+    fromListingId: l.id,
+  }
+  let s: GameState = {
+    ...state,
+    cash: state.cash - down,
+    properties: [...state.properties, property],
+    marketPool: state.marketPool.filter((x) => x.id !== l.id),
+    nextPropertyId: state.nextPropertyId + 1,
+  }
+  /* Buying a door on a street is the fastest way onto that street. */
+  s = gain(s, l.districtId, PLAYER, P6.GAIN_PROPERTY_BUY)
+  s = bumpSeason(s, 'propertiesBought')
+  s = fillPool(s)
+  return sync(
+    withLog(
+      s,
+      'money',
+      'Purchased ' +
+        property.nickname +
+        ' for ' +
+        money(price) +
+        '. ' +
+        (financed
+          ? 'The bank owns most of it. You own the vibes.'
+          : "Cash. The seller's agent looked frightened."),
+    ),
+  )
+    }
+
+/** The safe answer to every open question, in the order they block. What a
+ *  player who didn't check in gets at the tick: the call drops, offers are
+ *  turned down, tenants are kept, fights are conceded, the post is skipped,
+ *  and the ceremony ends without a speech. */
+const SAFE_TAGS = ['reject', 'keep', 'concede', 'decline', 'skip', 'humble', 'eat']
+const safeTag = (tags: string[]): string =>
+  SAFE_TAGS.find((t) => tags.includes(t)) ?? tags[tags.length - 1] ?? 'reject'
+
+export function settleForTick(state: GameState): GameState {
+  let s = state
+  if (s.call) {
+    const lead = s.leads.find((l) => l.id === s.call!.leadId)
+    s = withLog(
+      { ...s, call: null },
+      'flavor',
+      'The line dropped overnight. ' +
+        (lead ? lead.clientName : 'Someone') +
+        ' is still in your pipeline, mercifully.',
+    )
+  }
+  if (s.pendingChoice) {
+    const key = safeTag(s.pendingChoice.options.map((o) => o.key))
+    const next = baseReducer(s, { type: 'RESOLVE_CHOICE_EVENT', key: key as never })
+    s = next.pendingChoice ? { ...next, pendingChoice: null } : next
+  }
+  for (let guard = 0; guard < 20 && s.pendingChoices.length; guard++) {
+    const c = s.pendingChoices[0]
+    const next = baseReducer(s, {
+      type: 'RESOLVE_PORTFOLIO_CHOICE',
+      choiceId: c.id,
+      actionTag: safeTag(c.options.map((o) => o.actionTag)),
+    })
+    s = next.pendingChoices.some((x) => x.id === c.id)
+      ? { ...next, pendingChoices: next.pendingChoices.filter((x) => x.id !== c.id) }
+      : next
+  }
+  if (s.postComposerPending) s = applySkip(s)
+  if (s.ceremony) s = baseReducer(s, { type: 'CLOSE_CEREMONY' })
+  return s === state ? state : sync(s)
 }
 
 const KNOWN_ARCHETYPE = (id: string): boolean =>

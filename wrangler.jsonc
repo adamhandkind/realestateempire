@@ -27,6 +27,13 @@
     }
   ],
 
+  // One Durable Object per city: the live game, its feed and the nightly
+  // tick (an alarm). SQLite-backed, so a city's storage is generous.
+  "durable_objects": {
+    "bindings": [{ "name": "CITY", "class_name": "CityObject" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["CityObject"] }],
+
   // Production settings. Secrets (RESEND_API_KEY) go in with
   // `wrangler secret put`, never here.
   "vars": {

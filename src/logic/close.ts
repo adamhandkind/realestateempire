@@ -10,6 +10,7 @@
 import { arch } from './leads'
 import { charLine, hasFlag, pushStatModifier } from './characters'
 import { chance, money, pick } from './rand'
+import { commissionMult } from './cityMode'
 import { clampRep, commissionFor, sync } from './economy'
 import { gain, pluralityOwner } from './territory'
 import { P5 } from '../data/p5'
@@ -101,7 +102,7 @@ export function resolveClose(
   }
 
   const isReferralCut = state.rank === 'junior'
-  const raw = commissionFor(lead.salePrice, state.rank).earnings
+  const raw = Math.round(commissionFor(lead.salePrice, state.rank).earnings * commissionMult(state))
   /* §9.6 — the Zambonis are undercutting, and it is their block. */
   const undercut =
     state.rivalEffects.undercutWeeksLeft > 0 &&

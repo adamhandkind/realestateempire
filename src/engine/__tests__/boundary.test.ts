@@ -7,7 +7,7 @@ import { join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const SRC = join(__dirname, '..', '..')
-const RULES_DIRS = ['engine', 'logic', 'data', 'state', 'city']
+const RULES_DIRS = ['engine', 'logic', 'data', 'state', 'city', 'citygame']
 /** Browser-side on purpose: localStorage lives here. */
 const ALLOWED = new Set(['state/save.ts'])
 

@@ -4,3 +4,5 @@ MAIL_PROVIDER=log
 # Login and invite links come back in API responses, and the sign-in screen
 # shows them, so local testing needs no mailbox. NEVER set this in production.
 DEV_EXPOSE_LINKS=1
+# The city owner can run the overnight tick by hand. NEVER in production.
+ALLOW_MANUAL_TICK=1

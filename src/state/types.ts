@@ -876,6 +876,13 @@ export interface GameState {
   postComposerPending: boolean
   /** The week the composer was last opened for; guards double-open (§13.11). */
   postComposerWeek: number
+
+  /* ------------------------------------------------------- shared city */
+
+  /** Set for every game in a shared city: the market follows the calendar,
+   *  listings come from the city, and the city tuning (data/city.ts) applies.
+   *  Absent in single player. */
+  cityMode?: boolean
 }
 
 /* --------------------------------------------------------------- actions */
@@ -951,3 +958,15 @@ export type Action =
   | { type: 'DEBUG_FORCE_POST_OUTCOME'; outcome: PostOutcome }
   | { type: 'DEBUG_SET_CREW'; crew: CrewId }
   | { type: 'DEBUG_SKIP_WEEKS'; weeks: number }
+  /* ---- shared city: only the city's server ever sends these ---- */
+  /** Won at the tick: buy `listing` at `price`. */
+  | { type: 'CITY_PURCHASE'; listing: Listing; price: number; downPct: number }
+  /** A line from the city (outbid, rejected, foreclosed…) into the log. */
+  | { type: 'CITY_LOG'; kind: LogKind; text: string }
+  /** The lawn has not been mowed in a while. Extra wear on every door. */
+  | { type: 'CITY_NEGLECT'; wear: number }
+  /** The bank takes a property back. Pays out `proceeds` (may be 0). */
+  | { type: 'CITY_FORECLOSE'; propertyId: string; proceeds: number }
+  /** Get ready for the tick: hang up, answer every open question the safe
+   *  way, skip the post, close the ceremony. What an absent player gets. */
+  | { type: 'CITY_SETTLE' }

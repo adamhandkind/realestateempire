@@ -50,6 +50,8 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 
 /* ---------------------------------------------------------------- types */
 
+import type { CityGameReply, CityTransport } from './cityStore'
+
 export interface Me {
   user: { id: string; email: string; adult: boolean; isOwner: boolean }
   cities: CitySummary[]
@@ -63,9 +65,14 @@ export interface CitySummary {
   agent: { name: string; color: string; characterId: string } | null
 }
 
-export interface SaveText {
-  version: number
-  state: string
+/** A player's game in a shared city, as the server sends it. */
+export type SaveText = CityGameReply
+
+export interface HallSeason {
+  season: number
+  finishedAt: number
+  champion: { name: string; color: string; characterId: string; netWorth: number } | null
+  standings: { name: string; color: string; characterId: string; rank: string; netWorth: number; place: number }[]
 }
 
 export interface InvitePeek {
@@ -144,4 +151,20 @@ export const api = {
   getGame: (cityId: string) => call<SaveText>('GET', `/api/cities/${cityId}/game`),
   leaderboard: (cityId: string) =>
     call<{ city: string; season: number; rows: BoardRow[] }>('GET', `/api/cities/${cityId}/leaderboard`),
+  seasons: (cityId: string) => call<{ seasons: HallSeason[] }>('GET', `/api/cities/${cityId}/seasons`),
+}
+
+/** The shared city's calls, for CityStore. */
+export function cityTransport(cityId: string): CityTransport {
+  const base = `/api/cities/${cityId}`
+  return {
+    act: (body) => raw('POST', base + '/act', body),
+    getGame: () => raw('GET', base + '/game'),
+    getCity: () => raw('GET', base + '/city'),
+    bid: (body) => raw('POST', base + '/bids', body),
+    withdraw: (listingId) => raw('DELETE', base + '/bids/' + encodeURIComponent(listingId)),
+    start: () => raw('POST', base + '/season/start', {}),
+    schedule: (body) => raw('POST', base + '/schedule', body),
+    tick: () => raw('POST', base + '/tick', {}),
+  }
 }

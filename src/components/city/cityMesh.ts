@@ -358,6 +358,8 @@ export function buildCityGeometry(
       tent(b, x + ox * 0.16 - 0.1, z + oz * 0.16, key)
       if (unit('t2' + key) < 0.6)
         tent(b, x - ox * 0.12 + 0.18, z - oz * 0.12 + 0.12, key + 'b')
+      /* A flag per player camped here, in their colour. */
+      use.campers?.forEach((c, i) => flag(b, x - 0.36 + i * 0.12, z + 0.36, c.color))
       b.box(x + 0.22, LAWN_Y, z - 0.24, 0.07, 0.05, 0.07, '#e3a93a')
       b.box(x - 0.28, LAWN_Y, z - 0.25, 0.16, 0.12, 0.12, '#a88a62')
       heights[idx] = 0.45
@@ -392,6 +394,10 @@ export function buildCityGeometry(
       markers.push({ lotId: lot.id, x, y: top + 0.35, z, kind: 'owned' })
     } else if (use.kind === 'rival') {
       flag(b, x + 0.36, z + 0.36, rivalColor(use.rivalId))
+    } else if (use.kind === 'player') {
+      /* Another agent's yard sign: their colour, and a band on the lot. */
+      flag(b, x + 0.36, z + 0.36, use.color)
+      b.box(x, LAWN_Y, z + 0.43, 0.88, 0.012, 0.03, use.color)
     }
   }
 

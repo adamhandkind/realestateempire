@@ -20,6 +20,7 @@ import { CHARACTERS } from '../data/characters'
 import { rankOf } from '../logic/economy'
 import { netWorth } from '../logic/portfolio'
 import { setSeed, currentSeed } from '../logic/rand'
+import { calendarMarket, quarterOf, quarterStart } from '../logic/cityMode'
 import { endWeek, initialState, newGame, reducer } from '../state/reducer'
 import { parseWire, serialize } from '../state/serial'
 import type { Action, GameState } from '../state/types'
@@ -27,7 +28,8 @@ import type { Action, GameState } from '../state/types'
 export type { Action, GameState }
 export { endWeek, initialState }
 export { canonicalJson, digestText, stateDigest } from './digest'
-export { isClientAction } from './clientActions'
+export { isClientAction, isCityClientAction } from './clientActions'
+export { settleForTick } from '../state/reducer'
 export { AGENT_COLORS } from '../data/agentColors'
 
 /** A brand new game for `characterId`, fully determined by `seed`. */
@@ -38,6 +40,31 @@ export function createGame(characterId: string, seed: number): GameState {
     return { ...s, rngSeed: currentSeed() ?? seed }
   } finally {
     setSeed(null)
+  }
+}
+
+/** A new game in a shared city, joining at city week `week` (1 for a
+ *  season's start; later for someone who joins mid-season). The calendar
+ *  numbers inside the game (log weeks, the Goldies quarter, the VRBO
+ *  salesman's schedule) are moved along so it plays as if it began then. */
+export function createCityGame(characterId: string, seed: number, week = 1): GameState {
+  const fresh = createGame(characterId, seed)
+  const d = Math.max(0, Math.floor(week) - 1)
+  const w = d + 1
+  return {
+    ...fresh,
+    cityMode: true,
+    marketPool: [],
+    week: w,
+    marketState: calendarMarket(w),
+    nextMarketState: calendarMarket(w + 1),
+    log: fresh.log.map((l) => ({ ...l, week: l.week + d })),
+    gagCounters: { ...fresh.gagCounters, nextVrboWeek: fresh.gagCounters.nextVrboWeek + d },
+    firstP3Week: fresh.firstP3Week + d,
+    properties: fresh.properties.map((p) => ({ ...p, boughtWeek: p.boughtWeek + d })),
+    /* The Goldies run every quarter, on the city's calendar. */
+    seasonStartWeek: quarterStart(w),
+    season: { ...fresh.season, seasonIndex: quarterOf(w) },
   }
 }
 

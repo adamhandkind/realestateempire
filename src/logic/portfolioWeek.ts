@@ -14,6 +14,7 @@
       let PropCo settle minors. A minor can be born and settled in the same
       week, which is the point of paying PropCo. */
 
+import { appreciation, calendarMarket } from './cityMode'
 import { MILESTONES } from '../data/milestones'
 import { P3 } from '../data/p3'
 import { RENO_COMPLETE_LINE } from '../data/properties'
@@ -570,6 +571,11 @@ export function tickProperties(state: GameState, ctx: WeekCtx): GameState {
       }))
     }
 
+    /* the shared city's slow climb: holding is the second engine */
+    const grow = appreciation(s)
+    if (grow && !p.isVrbo)
+      s = patch(s, p.id, (x) => ({ ...x, baseValue: Math.round(x.baseValue * (1 + grow)) }))
+
     /* renovation */
     const r = live()?.renovation
     if (r) {
@@ -690,6 +696,20 @@ export function tickMarket(state: GameState): {
     let s: GameState = { ...state, crash: { ...state.crash, weeksLeft } }
     if (weeksLeft === 0)
       s = withLog(s, 'event', 'The crash is over. Survivors get equity.')
+    return { state: s, regenerated: false }
+  }
+
+  /* A shared city's market is the calendar's, the same for everyone. The
+     week this runs in is ending, so the market being entered is next week's. */
+  if (state.cityMode) {
+    const marketState = calendarMarket(state.week + 1)
+    let s: GameState = {
+      ...state,
+      marketState,
+      nextMarketState: calendarMarket(state.week + 2),
+    }
+    if (marketState !== state.marketState)
+      s = withLog(s, 'event', MARKET_LINES[marketState])
     return { state: s, regenerated: false }
   }
 

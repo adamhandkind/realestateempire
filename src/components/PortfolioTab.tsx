@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { P3 } from '../data/p3'
 import {
-  labelOf,
   mortgageSlots,
   netWorth,
   occupiedUnitCount,
@@ -9,7 +8,7 @@ import {
 } from '../logic/portfolio'
 import { money } from '../logic/rand'
 import type { Action, GameState } from '../state/types'
-import BuyModal from './portfolio/BuyModal'
+import ListingDeal from './portfolio/ListingDeal'
 import ListingCard from './portfolio/ListingCard'
 import PropertyCard from './portfolio/PropertyCard'
 
@@ -101,17 +100,7 @@ export default function PortfolioTab({
       )}
 
       {listing && (
-        <BuyModal
-          state={state}
-          askPrice={listing.askPrice}
-          title={labelOf(listing.typeId)}
-          blurb={listing.blurb}
-          onCancel={() => setBuying(null)}
-          onBuy={(downPct) => {
-            dispatch({ type: 'BUY_PROPERTY', listingId: listing.id, downPct })
-            setBuying(null)
-          }}
-        />
+        <ListingDeal state={state} listing={listing} dispatch={dispatch} onDone={() => setBuying(null)} />
       )}
     </section>
   )
