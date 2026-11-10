@@ -14,7 +14,6 @@
 .res-go:disabled { opacity: .5; cursor: not-allowed; }
 .res-err { margin-top: 10px; padding: 8px 10px; border-radius: 8px; background: #f7dcd8; color: #7a1d16; font-size: 13px; }
 .res-ok { margin-top: 10px; padding: 8px 10px; border-radius: 8px; background: #dcebe2; color: #234a37; font-size: 13px; }
-.res-devlink { display: block; margin-top: 10px; font-size: 12px; word-break: break-all; color: #2e5e8b; }
 .res-check { display: flex; gap: 10px; align-items: flex-start; margin-top: 14px; font-size: 13.5px; line-height: 1.5; cursor: pointer; }
 .res-check input { margin-top: 3px; width: 18px; height: 18px; accent-color: var(--brass); }
 .res-linkbtn { background: none; border: none; padding: 0; margin-top: 12px; color: #5b5e6c; font-size: 12px;

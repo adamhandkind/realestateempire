@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "dev:api": "wrangler d1 migrations apply DB --local && wrangler dev --port 8787",
     "db:migrate": "wrangler d1 migrations apply DB --remote",
+    "login-link": "node scripts/login-link.mjs",
     "deploy": "npm run build && wrangler d1 migrations apply DB --remote && wrangler deploy"
   },
   "dependencies": {

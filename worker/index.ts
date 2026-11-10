@@ -3,8 +3,16 @@
    (wrangler.jsonc: run_worker_first = ["/api/*"]), so this only ever sees
    API calls, and anything else falls through to ASSETS. */
 
-import { confirmAdult, logout, me, requestLink, verifyLink } from './auth'
-import { acceptInvite, createCity, createInvite, listInvites, peekInvite, revokeInvite } from './cities'
+import { confirmAdult, joinWithInvite, logout, me, verifyLink } from './auth'
+import {
+  acceptInvite,
+  createCity,
+  createInvite,
+  listInvites,
+  memberLoginLink,
+  peekInvite,
+  revokeInvite,
+} from './cities'
 import type { Env } from './env'
 import { act, bid, checkIn, createAgent, live, getCity, getGame, leaderboard, manualTick, seasons, setSchedule, startSeason, withdraw } from './game'
 import { HttpError, errorResponse, json } from './http'
@@ -16,7 +24,7 @@ type Handler = (env: Env, req: Request, params: string[]) => Promise<Response>
 
 const ID = '([A-Za-z0-9_-]{1,64})'
 const routes: [method: string, pattern: RegExp, handler: Handler][] = [
-  ['POST', /^\/api\/auth\/request$/, (env, req) => requestLink(env, req)],
+  ['POST', /^\/api\/auth\/join$/, (env, req) => joinWithInvite(env, req)],
   ['POST', /^\/api\/auth\/verify$/, (env, req) => verifyLink(env, req)],
   ['POST', /^\/api\/auth\/logout$/, (env, req) => logout(env, req)],
   ['GET', /^\/api\/me$/, (env, req) => me(env, req)],
@@ -25,6 +33,9 @@ const routes: [method: string, pattern: RegExp, handler: Handler][] = [
   ['POST', new RegExp(`^/api/cities/${ID}/invites$`), (env, req, [c]) => createInvite(env, req, c)],
   ['GET', new RegExp(`^/api/cities/${ID}/invites$`), (env, req, [c]) => listInvites(env, req, c)],
   ['DELETE', new RegExp(`^/api/cities/${ID}/invites/${ID}$`), (env, req, [c, i]) => revokeInvite(env, req, c, i)],
+  ['POST', new RegExp(`^/api/cities/${ID}/members/${ID}/login-link$`), (env, req, [c, u]) =>
+    memberLoginLink(env, req, c, u),
+  ],
   ['GET', new RegExp(`^/api/invites/${ID}$`), (env, _req, [t]) => peekInvite(env, t)],
   ['POST', new RegExp(`^/api/invites/${ID}/accept$`), (env, req, [t]) => acceptInvite(env, req, t)],
   ['POST', new RegExp(`^/api/cities/${ID}/agent$`), (env, req, [c]) => createAgent(env, req, c)],

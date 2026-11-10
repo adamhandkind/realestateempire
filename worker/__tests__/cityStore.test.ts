@@ -6,6 +6,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fromWire, toWire } from '../../src/engine'
 import { CityStore, type CityGameReply, type CityTransport } from '../../src/net/cityStore'
+import { issueLoginLink } from '../auth'
 import type { Env } from '../env'
 import worker from '../index'
 import { makeD1 } from './d1'
@@ -63,16 +64,13 @@ beforeEach(async () => {
     ASSETS: { fetch: async () => new Response('') } as unknown as Fetcher,
     APP_URL: APP,
     OWNER_EMAILS: 'adam@example.com',
-    MAIL_PROVIDER: 'log',
-    MAIL_FROM: 't@example.com',
-    DEV_EXPOSE_LINKS: '1',
     ALLOW_MANUAL_TICK: '1',
     CITY: null as unknown as Env['CITY'],
   }
   city = fakeCityNamespace(() => env)
   env.CITY = city.namespace as unknown as Env['CITY']
-  const r = await call('POST', '/api/auth/request', { email: 'adam@example.com' })
-  const token = new URL(r.data.devLink as string).searchParams.get('login')
+  const { link } = await issueLoginLink(env, 'adam@example.com', 60_000)
+  const token = new URL(link).searchParams.get('login')
   await call('POST', '/api/auth/verify', { token })
   await call('POST', '/api/me/adult', { confirm: true })
   cityId = (await call('POST', '/api/cities', { name: 'Brantford' })).data.id as string

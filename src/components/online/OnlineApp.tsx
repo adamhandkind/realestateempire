@@ -1,4 +1,4 @@
-/* Online play, start to finish: login link → 18+ check → city → agent →
+/* Online play, start to finish: invite or sign-in link → 18+ check → city → agent →
    game. Each step asks the server where things stand (GET /api/me) rather
    than remembering, so a refresh always lands on the right screen. */
 
@@ -66,14 +66,12 @@ export default function OnlineApp({ initial, onNoBackend }: { initial: Phase; on
     }
   }, [onNoBackend])
 
-  /* First load: spend a login link, take an invite, then see who we are. */
+  /* First load: spend a sign-in link, look at the invite, then see who we are. */
   useEffect(() => {
     void (async () => {
       if (params.login) {
         try {
-          const r = await api.verify(params.login)
-          if (r.inviteMessage) setNotice(r.inviteMessage)
-          else if (invite) setInvite(null) // claimed during sign-in
+          await api.verify(params.login)
         } catch (e) {
           setNotice(e instanceof ApiError ? e.message : "Couldn't sign you in.")
         }
@@ -136,7 +134,20 @@ export default function OnlineApp({ initial, onNoBackend }: { initial: Phase; on
         </button>
       </Gate>
     )
-  if (phase.kind === 'signedOut') return <SignIn invite={invite} invitePeek={invitePeek} notice={notice} />
+  if (phase.kind === 'signedOut')
+    return (
+      <SignIn
+        invite={invite}
+        invitePeek={invitePeek}
+        notice={notice}
+        onJoined={(id) => {
+          setInvite(null)
+          setCityId(id)
+          rememberCity(id)
+          void refresh()
+        }}
+      />
+    )
 
   const m = phase.me
   if (!m.user.adult) return <AdultGate onDone={() => void refresh()} />

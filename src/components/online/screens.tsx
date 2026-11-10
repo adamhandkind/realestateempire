@@ -19,66 +19,57 @@ export function Gate({ eyebrow, title, children }: { eyebrow?: string; title: st
 const messageOf = (e: unknown) =>
   e instanceof ApiError ? e.message : "Couldn't reach the server. Check your connection."
 
-export function SignIn({ invite, invitePeek, notice }: { invite: string | null; invitePeek: InvitePeek | null; notice: string | null }) {
+export function SignIn({
+  invite,
+  invitePeek,
+  notice,
+  onJoined,
+}: {
+  invite: string | null
+  invitePeek: InvitePeek | null
+  notice: string | null
+  onJoined: (cityId: string) => void
+}) {
   const [email, setEmail] = useState('')
   const [busy, setBusy] = useState(false)
-  const [sent, setSent] = useState(false)
-  const [devLink, setDevLink] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
+    if (!invite) return
     setBusy(true)
     setError(null)
     try {
-      const r = await api.requestLink(email, invite ?? undefined)
-      setSent(true)
-      setDevLink(r.devLink ?? null)
+      const r = await api.join(email, invite)
+      onJoined(r.cityId)
     } catch (err) {
       setError(messageOf(err))
-    } finally {
       setBusy(false)
     }
   }
 
-  const invited = invitePeek?.ok
-  if (sent)
+  if (!invitePeek?.ok)
     return (
-      <Gate title="Check your email">
+      <Gate title="Sign in">
         <p>
-          If <b>{email}</b> {invited ? 'can take this invite' : 'has an account or an invite'}, a login link is on its way. It
-          works once and expires in 15 minutes.
+          Invite only, and there are no passwords. To get in, open the invite link your city owner sent you. Signed out?
+          Ask them for a fresh sign-in link.
         </p>
-        <p style={{ fontSize: 12.5, color: '#5b5e6c' }}>No email? Check spam, then try again.</p>
-        {devLink && (
-          <a className="res-devlink" href={devLink}>
-            Dev mode: open the login link →
-          </a>
-        )}
-        <button className="res-linkbtn" onClick={() => setSent(false)}>
-          Use a different address
-        </button>
+        {invitePeek && <div className="res-err">{invitePeek.message}</div>}
+        {notice && <div className="res-err">{notice}</div>}
       </Gate>
     )
 
   return (
-    <Gate
-      eyebrow={invited ? `${invitePeek!.from} invited you` : undefined}
-      title={invited ? `Join ${invitePeek!.city}` : 'Sign in'}
-    >
-      {invited ? (
-        <p>
-          A private city of {invitePeek!.members} agent{invitePeek!.members === 1 ? '' : 's'} and counting. You start in a
-          tent under a bridge. Where you end up is your problem.
-        </p>
-      ) : (
-        <p>Invite only. Enter your email and we'll send you a login link. No passwords.</p>
-      )}
-      {invitePeek && !invitePeek.ok && <div className="res-err">{invitePeek.message}</div>}
+    <Gate eyebrow={`${invitePeek.from} invited you`} title={`Join ${invitePeek.city}`}>
+      <p>
+        A private city of {invitePeek.members} agent{invitePeek.members === 1 ? '' : 's'} and counting. You start in a tent
+        under a bridge. Where you end up is your problem.
+      </p>
       {notice && <div className="res-err">{notice}</div>}
       <form onSubmit={submit}>
         <label className="res-field">
-          Email
+          Your email
           <input
             className="res-input"
             type="email"
@@ -87,12 +78,15 @@ export function SignIn({ invite, invitePeek, notice }: { invite: string | null; 
             autoFocus
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder={invitePeek?.emailLocked ? 'The address your invite was sent to' : 'you@example.com'}
+            placeholder={invitePeek.emailLocked ? 'The address your invite is for' : 'you@example.com'}
           />
         </label>
+        <p style={{ fontSize: 12.5, color: '#5b5e6c' }}>
+          It's your name tag here. We never email you. You'll stay signed in on this device.
+        </p>
         {error && <div className="res-err">{error}</div>}
         <button className="res-go" disabled={busy || !email.trim()}>
-          {busy ? 'Sending…' : 'Email me a login link'}
+          {busy ? 'Joining…' : 'Join the city'}
         </button>
       </form>
     </Gate>

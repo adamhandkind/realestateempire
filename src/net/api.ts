@@ -94,6 +94,8 @@ export interface InviteRow {
   createdAt: number
   expiresAt: number
   usedBy: string | null
+  /** Set while the person who used it is still in the city. */
+  memberId: string | null
   status: 'open' | 'used' | 'expired' | 'revoked'
 }
 
@@ -130,10 +132,9 @@ export async function probe(): Promise<{ kind: 'none' } | { kind: 'signedOut' } 
 }
 
 export const api = {
-  requestLink: (email: string, invite?: string) =>
-    call<{ ok: true; devLink?: string }>('POST', '/api/auth/request', { email, invite }),
-  verify: (token: string) =>
-    call<{ ok: true; inviteError?: string; inviteMessage?: string }>('POST', '/api/auth/verify', { token }),
+  join: (email: string, invite: string) =>
+    call<{ ok: true; cityId: string }>('POST', '/api/auth/join', { email, invite }),
+  verify: (token: string) => call<{ ok: true }>('POST', '/api/auth/verify', { token }),
   logout: () => call<{ ok: true }>('POST', '/api/auth/logout', {}),
   confirmAdult: () => call<{ ok: true }>('POST', '/api/me/adult', { confirm: true }),
   createCity: (name: string) => call<{ id: string; name: string }>('POST', '/api/cities', { name }),
@@ -141,13 +142,15 @@ export const api = {
   acceptInvite: (token: string) =>
     call<{ ok: true; cityId: string }>('POST', '/api/invites/' + encodeURIComponent(token) + '/accept', {}),
   createInvite: (cityId: string, email: string, note: string) =>
-    call<{ id: string; link: string; emailed: boolean; expiresAt: number }>(
+    call<{ id: string; link: string; expiresAt: number }>(
       'POST',
       `/api/cities/${cityId}/invites`,
       { email, note },
     ),
   listInvites: (cityId: string) => call<{ invites: InviteRow[] }>('GET', `/api/cities/${cityId}/invites`),
   revokeInvite: (cityId: string, id: string) => call<{ ok: true }>('DELETE', `/api/cities/${cityId}/invites/${id}`),
+  memberLoginLink: (cityId: string, userId: string) =>
+    call<{ link: string; expiresAt: number }>('POST', `/api/cities/${cityId}/members/${userId}/login-link`, {}),
   createAgent: (cityId: string, body: { name: string; color: string; characterId: string; restart?: boolean }) =>
     call<SaveText>('POST', `/api/cities/${cityId}/agent`, body),
   getGame: (cityId: string) => call<SaveText>('GET', `/api/cities/${cityId}/game`),

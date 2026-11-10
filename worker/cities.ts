@@ -1,14 +1,27 @@
 /* Cities and invites. A city is a private group of up to ten friends. Only
    addresses in OWNER_EMAILS can found one; each city's owner hands out
-   personal, single-use invite links. */
+   personal, single-use invite links, and sign-in links for members who get
+   signed out. Nothing is emailed: the owner sends every link themselves. */
 
-import { claimInvite, findInvite, inviteMessage, inviteProblem, normalizeEmail, requireUser, type User } from './auth'
+import {
+  claimInvite,
+  findInvite,
+  inviteMessage,
+  inviteProblem,
+  issueLoginLink,
+  normalizeEmail,
+  ownerEmails,
+  requireUser,
+  type User,
+} from './auth'
 import { hashToken, newId, randomToken } from './crypto'
 import type { Env } from './env'
 import { HttpError, json, readJson, str } from './http'
-import { inviteMail, send } from './mail'
 
-const INVITE_TTL = 14 * 24 * 60 * 60_000
+const DAY = 24 * 60 * 60_000
+const INVITE_TTL = 14 * DAY
+/** Long enough to reach someone by text who isn't looking at their phone. */
+const MEMBER_LINK_TTL = DAY
 
 export async function membership(env: Env, cityId: string, userId: string): Promise<'owner' | 'player'> {
   const row = await env.DB.prepare('SELECT role FROM city_members WHERE city_id = ? AND user_id = ?')
@@ -57,7 +70,8 @@ async function inviterName(env: Env, cityId: string, userId: string): Promise<st
   return u ? u.email.split('@')[0] : 'A friend'
 }
 
-/** POST /api/cities/:id/invites  { email?, note? } → a link, shown once. */
+/** POST /api/cities/:id/invites  { email?, note? } → a link, shown once.
+ *  An email locks the invite to that address; nothing is sent to it. */
 export async function createInvite(env: Env, req: Request, cityId: string): Promise<Response> {
   const user = await requireCityOwner(env, req, cityId)
   const body = await readJson(req)
@@ -77,13 +91,26 @@ export async function createInvite(env: Env, req: Request, cityId: string): Prom
     .bind(id, await hashToken(token), cityId, user.id, email, note, now, now + INVITE_TTL)
     .run()
   const link = `${env.APP_URL}/?invite=${encodeURIComponent(token)}`
-  let emailed = false
-  if (email) {
-    const city = await env.DB.prepare('SELECT name FROM cities WHERE id = ?').bind(cityId).first<{ name: string }>()
-    await send(env, inviteMail(email, link, city?.name ?? 'the city', await inviterName(env, cityId, user.id)))
-    emailed = true
-  }
-  return json({ id, link, email, note, emailed, expiresAt: now + INVITE_TTL }, { status: 201 })
+  return json({ id, link, email, note, expiresAt: now + INVITE_TTL }, { status: 201 })
+}
+
+/** POST /api/cities/:id/members/:userId/login-link → a one-time sign-in
+ *  link for a player in this city, for the owner to send them. Never for
+ *  another city's owner or a game owner: a city owner shouldn't be able to
+ *  open anything bigger than their own city. */
+export async function memberLoginLink(env: Env, req: Request, cityId: string, userId: string): Promise<Response> {
+  await requireCityOwner(env, req, cityId)
+  const member = await env.DB.prepare(
+    `SELECT u.email, m.role, (SELECT COUNT(*) FROM cities c WHERE c.owner_id = u.id) AS owns
+       FROM city_members m JOIN users u ON u.id = m.user_id
+      WHERE m.city_id = ? AND m.user_id = ?`,
+  )
+    .bind(cityId, userId)
+    .first<{ email: string; role: string; owns: number }>()
+  if (!member) throw new HttpError(404, 'no_member', "That agent isn't in this city.")
+  if (member.role !== 'player' || member.owns > 0 || ownerEmails(env).has(member.email))
+    throw new HttpError(403, 'not_for_owners', 'Owners make their own sign-in links.')
+  return json(await issueLoginLink(env, member.email, MEMBER_LINK_TTL), { status: 201 })
 }
 
 /** GET /api/cities/:id/invites — the owner's list. Links aren't stored, so
@@ -91,8 +118,11 @@ export async function createInvite(env: Env, req: Request, cityId: string): Prom
 export async function listInvites(env: Env, req: Request, cityId: string): Promise<Response> {
   await requireCityOwner(env, req, cityId)
   const { results } = await env.DB.prepare(
-    `SELECT i.id, i.email, i.note, i.created_at, i.expires_at, i.used_at, i.revoked_at, u.email AS used_by_email
-       FROM invites i LEFT JOIN users u ON u.id = i.used_by
+    `SELECT i.id, i.email, i.note, i.created_at, i.expires_at, i.used_at, i.revoked_at, u.email AS used_by_email,
+            m.user_id AS member_id
+       FROM invites i
+       LEFT JOIN users u ON u.id = i.used_by
+       LEFT JOIN city_members m ON m.city_id = i.city_id AND m.user_id = i.used_by
       WHERE i.city_id = ? ORDER BY i.created_at DESC LIMIT 100`,
   )
     .bind(cityId)
@@ -105,6 +135,7 @@ export async function listInvites(env: Env, req: Request, cityId: string): Promi
       used_at: number | null
       revoked_at: number | null
       used_by_email: string | null
+      member_id: string | null
     }>()
   const now = Date.now()
   return json({
@@ -115,6 +146,8 @@ export async function listInvites(env: Env, req: Request, cityId: string): Promi
       createdAt: r.created_at,
       expiresAt: r.expires_at,
       usedBy: r.used_by_email,
+      /* Still in the city: the owner can make them a sign-in link. */
+      memberId: r.member_id,
       status: r.revoked_at ? 'revoked' : r.used_at ? 'used' : r.expires_at < now ? 'expired' : 'open',
     })),
   })

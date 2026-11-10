@@ -1,4 +1,4 @@
-/* End to end through the Worker's fetch handler: sign-in links, invites, the
+/* End to end through the Worker's fetch handler: invites, sign-in links, the
    18+ gate, agent creation, cloud saves and the leaderboard, on a real
    SQLite database built from migrations/. */
 
@@ -7,7 +7,7 @@ import { fromWire, toWire } from '../../src/engine'
 import { isClientAction, parseAction, parseBatch, hasNaN } from '../../src/engine/clientActions'
 import type { Env } from '../env'
 import worker from '../index'
-import { outbox } from '../mail'
+import { issueLoginLink } from '../auth'
 import { makeD1 } from './d1'
 import { fakeCityNamespace } from './fakeCity'
 
@@ -20,16 +20,12 @@ let city: ReturnType<typeof fakeCityNamespace>
 
 beforeEach(() => {
   db = makeD1()
-  outbox.length = 0
   vi.spyOn(console, 'log').mockImplementation(() => {})
   env = {
     DB: db as unknown as D1Database,
     ASSETS: { fetch: async () => new Response('<html>spa</html>') } as unknown as Fetcher,
     APP_URL: APP,
     OWNER_EMAILS: OWNER + ', other-owner@example.com',
-    MAIL_PROVIDER: 'log',
-    MAIL_FROM: 'test@example.com',
-    DEV_EXPOSE_LINKS: '1',
     ALLOW_MANUAL_TICK: '1',
     CITY: null as unknown as Env['CITY'],
   }
@@ -71,13 +67,12 @@ function browser(ip = '1.2.3.4') {
     get: (p: string) => call('GET', p),
     post: (p: string, b: unknown = {}) => call('POST', p, b),
     del: (p: string) => call('DELETE', p),
-    /** Request a link and click it. */
+    /** A new player takes an invite; anyone else opens a sign-in link (made
+     *  here the way `npm run login-link` makes one). */
     async signIn(email: string, invite?: string) {
-      const r = await call('POST', '/api/auth/request', { email, invite })
-      expect(r.status).toBe(200)
-      expect(r.data.devLink).toBeTruthy()
-      const token = new URL(r.data.devLink).searchParams.get('login')!
-      return call('POST', '/api/auth/verify', { token })
+      if (invite) return call('POST', '/api/auth/join', { email, invite })
+      const { link } = await issueLoginLink(env, email, 60 * 60_000)
+      return call('POST', '/api/auth/verify', { token: new URL(link).searchParams.get('login') })
     },
   }
 }
@@ -118,59 +113,33 @@ describe('sign-in links', () => {
     expect(me.status).toBe(200)
     expect(me.data.user).toMatchObject({ email: OWNER, isOwner: true, adult: false })
     expect(me.data.cities).toEqual([])
-    expect(outbox).toHaveLength(1)
-    expect(outbox[0].text).toContain(APP + '/?login=')
   })
 
-  it('normalizes the address', async () => {
-    const b = browser()
-    const r = await b.post('/api/auth/request', { email: '  ADAM@Example.com ' })
-    expect(r.data.devLink).toBeTruthy()
-  })
-
-  it('sends nothing to a stranger, but answers the same', async () => {
-    const r = await browser().post('/api/auth/request', { email: 'nobody@example.com' })
-    expect(r.status).toBe(200)
-    expect(r.data).toEqual({ ok: true })
-    expect(outbox).toHaveLength(0)
-  })
-
-  it('rejects junk email', async () => {
-    const r = await browser().post('/api/auth/request', { email: 'not an email' })
-    expect(r.status).toBe(400)
+  it('has no way to ask for a link by email', async () => {
+    expect((await browser().post('/api/auth/request', { email: OWNER })).status).toBe(404)
   })
 
   it('burns a link on first use', async () => {
-    const b = browser()
-    const r = await b.post('/api/auth/request', { email: OWNER })
-    const token = tokenOf(r.data.devLink, 'login')
-    expect((await b.post('/api/auth/verify', { token })).status).toBe(200)
+    const { link } = await issueLoginLink(env, OWNER, 60_000)
+    const token = tokenOf(link, 'login')
+    expect((await browser().post('/api/auth/verify', { token })).status).toBe(200)
     const again = await browser().post('/api/auth/verify', { token })
     expect(again.status).toBe(400)
     expect(again.data.error).toBe('link_expired')
   })
 
   it('refuses an expired link', async () => {
-    const b = browser()
-    const r = await b.post('/api/auth/request', { email: OWNER })
+    const { link } = await issueLoginLink(env, OWNER, 60_000)
     db.raw.exec('UPDATE login_tokens SET expires_at = 0')
-    const v = await b.post('/api/auth/verify', { token: tokenOf(r.data.devLink, 'login') })
+    const v = await browser().post('/api/auth/verify', { token: tokenOf(link, 'login') })
     expect(v.data.error).toBe('link_expired')
   })
 
   it('stores only token hashes', async () => {
-    const b = browser()
-    const r = await b.post('/api/auth/request', { email: OWNER })
-    const token = tokenOf(r.data.devLink, 'login')
+    const { link } = await issueLoginLink(env, OWNER, 60_000)
     const row = db.raw.prepare('SELECT token_hash FROM login_tokens').get() as { token_hash: string }
-    expect(row.token_hash).not.toBe(token)
+    expect(row.token_hash).not.toBe(tokenOf(link, 'login'))
     expect(row.token_hash).toMatch(/^[0-9a-f]{64}$/)
-  })
-
-  it('rate-limits links per address', async () => {
-    const b = browser()
-    for (let i = 0; i < 5; i++) expect((await b.post('/api/auth/request', { email: OWNER })).status).toBe(200)
-    expect((await b.post('/api/auth/request', { email: OWNER })).status).toBe(429)
   })
 
   it('signs out', async () => {
@@ -227,22 +196,73 @@ describe('cities and invites', () => {
     const inv = await owner.post(`/api/cities/${cityId}/invites`, {})
     const token = tokenOf(inv.data.link, 'invite')
     await browser().signIn('one@example.com', token)
-    const r = await browser().post('/api/auth/request', { email: 'two@example.com', invite: token })
+    const r = await browser().signIn('two@example.com', token)
     expect(r.status).toBe(403)
     expect(r.data.error).toBe('invite_used')
   })
 
-  it('an email-locked invite is for that address only, and is emailed', async () => {
+  it('an email-locked invite is for that address only', async () => {
     const { owner, cityId } = await ownerWithCity()
     const inv = await owner.post(`/api/cities/${cityId}/invites`, { email: 'Dave@Example.com' })
-    expect(inv.data.emailed).toBe(true)
-    expect(outbox.at(-1)!.to).toBe('dave@example.com')
-    expect(outbox.at(-1)!.subject).toContain('Brantford')
+    expect(inv.data.email).toBe('dave@example.com')
     const token = tokenOf(inv.data.link, 'invite')
-    const wrong = await browser().post('/api/auth/request', { email: 'eve@example.com', invite: token })
+    const wrong = await browser().signIn('eve@example.com', token)
     expect(wrong.data.error).toBe('invite_wrong_email')
-    const right = await browser().signIn('dave@example.com', token)
+    const right = await browser().signIn('  DAVE@example.com ', token)
     expect(right.status).toBe(200)
+  })
+
+  it('joining needs an invite and a real address', async () => {
+    expect((await browser().post('/api/auth/join', { email: 'x@example.com' })).data.error).toBe('invite_required')
+    const { owner, cityId } = await ownerWithCity()
+    const inv = await owner.post(`/api/cities/${cityId}/invites`, {})
+    expect((await browser().signIn('not an email', tokenOf(inv.data.link, 'invite'))).status).toBe(400)
+  })
+
+  it('an invite cannot open an existing account or an owner account', async () => {
+    const { owner, cityId } = await ownerWithCity()
+    await friendInCity(owner, cityId, 'dave@example.com')
+    for (const email of ['dave@example.com', OWNER, 'other-owner@example.com']) {
+      const inv = await owner.post(`/api/cities/${cityId}/invites`, {})
+      const r = await browser().signIn(email, tokenOf(inv.data.link, 'invite'))
+      expect(r.status).toBe(409)
+      expect(r.data.error).toBe('has_account')
+      expect(r.setCookie).toBeNull()
+    }
+  })
+
+  it('the city owner can make a signed-out player a sign-in link', async () => {
+    const { owner, cityId } = await ownerWithCity()
+    const friend = await friendInCity(owner, cityId, 'dave@example.com')
+    await friend.post('/api/auth/logout')
+    const list = await owner.get(`/api/cities/${cityId}/invites`)
+    const row = list.data.invites[0]
+    expect(row).toMatchObject({ status: 'used', usedBy: 'dave@example.com' })
+    const r = await owner.post(`/api/cities/${cityId}/members/${row.memberId}/login-link`)
+    expect(r.status).toBe(201)
+    expect(r.data.expiresAt - Date.now()).toBeGreaterThan(23 * 60 * 60_000)
+    const back = browser()
+    expect((await back.post('/api/auth/verify', { token: tokenOf(r.data.link, 'login') })).status).toBe(200)
+    expect((await back.get('/api/me')).data.user.email).toBe('dave@example.com')
+  })
+
+  it('sign-in links are for players in your own city only', async () => {
+    const { owner, cityId } = await ownerWithCity()
+    const friend = await friendInCity(owner, cityId, 'dave@example.com')
+    const daveId = (await friend.get('/api/me')).data.user.id
+    const ownerId = (await owner.get('/api/me')).data.user.id
+    /* Not for the owner, not by a player, not from another city. */
+    expect((await owner.post(`/api/cities/${cityId}/members/${ownerId}/login-link`)).status).toBe(403)
+    expect((await friend.post(`/api/cities/${cityId}/members/${daveId}/login-link`)).status).toBe(403)
+    const other = browser()
+    await other.signIn('other-owner@example.com')
+    const c2 = await other.post('/api/cities', { name: 'Paris, Ontario' })
+    expect((await other.post(`/api/cities/${c2.data.id}/members/${daveId}/login-link`)).status).toBe(404)
+    /* Another city's owner who plays here is off limits too. */
+    const inv = await owner.post(`/api/cities/${cityId}/invites`, {})
+    await other.post(`/api/invites/${tokenOf(inv.data.link, 'invite')}/accept`)
+    const otherId = (await other.get('/api/me')).data.user.id
+    expect((await owner.post(`/api/cities/${cityId}/members/${otherId}/login-link`)).data.error).toBe('not_for_owners')
   })
 
   it('a revoked invite is dead', async () => {
@@ -269,9 +289,11 @@ describe('cities and invites', () => {
     const { owner, cityId } = await ownerWithCity()
     for (let i = 0; i < 9; i++) await friendInCity(owner, cityId, `p${i}@example.com`)
     const inv = await owner.post(`/api/cities/${cityId}/invites`, {})
-    const late = browser('7.7.7.7')
-    const v = await late.signIn('late@example.com', tokenOf(inv.data.link, 'invite'))
-    expect(v.data.inviteError).toBe('city_full')
+    const v = await browser('7.7.7.7').signIn('late@example.com', tokenOf(inv.data.link, 'invite'))
+    expect(v.status).toBe(409)
+    expect(v.data.error).toBe('city_full')
+    /* No half-made account: they can take an invite to a roomier city. */
+    expect(db.raw.prepare("SELECT 1 FROM users WHERE email = 'late@example.com'").get()).toBeUndefined()
     const list = await owner.get(`/api/cities/${cityId}/invites`)
     expect(list.data.invites[0].status).toBe('open')
   })
@@ -566,10 +588,10 @@ describe('routing', () => {
   })
   it('404s unknown API paths and 405s wrong methods', async () => {
     expect((await browser().get('/api/nope')).status).toBe(404)
-    expect((await browser().get('/api/auth/request')).status).toBe(405)
+    expect((await browser().get('/api/auth/join')).status).toBe(405)
   })
   it('wants JSON', async () => {
-    const r = await browser().call('POST', '/api/auth/request', undefined, { 'content-type': 'text/plain' })
+    const r = await browser().call('POST', '/api/auth/join', undefined, { 'content-type': 'text/plain' })
     expect(r.status).toBe(415)
   })
 })
