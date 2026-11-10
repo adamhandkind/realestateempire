@@ -442,6 +442,16 @@ body{margin:0;background:var(--ink);color:var(--marble);
 .res-lotcard-x { position: absolute; top: 8px; right: 10px; border: none; background: none; font-size: 22px;
   cursor: pointer; color: #6d6f7c; line-height: 1; }
 .res-lotcard-d { margin-top: 10px; }
+.res-agentcard-head { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; }
+.res-agentcard-head .res-face { margin: 0; }
+.res-agentcard-head h3 { margin: 0 22px 3px 0; }
+.res-agentcard-head .res-meta { padding-right: 0; line-height: 1.35; }
+.res-agentcard-champ { font-size: 10.5px; font-weight: 800; letter-spacing: .06em; color: #7a1f2b; margin: 0 22px 3px 0; }
+.res-agentcard-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 4px 0 8px; }
+.res-agentcard-stats > div { display: flex; flex-direction: column; gap: 1px; padding: 6px 8px; border-radius: 8px; background: #e6e1d4; }
+.res-agentcard-stats b { font-size: 14px; }
+.res-agentcard-note { margin: 4px 0 8px; font-size: 12.5px; color: #8a3b30; }
+.res-agentcard .res-brag { margin: 6px 0 0; }
 .res-owner { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 800; letter-spacing: .1em;
   text-transform: uppercase; padding: 3px 9px; border-radius: 999px; background: #e6e1d4; margin-bottom: 6px; }
 .res-owner b { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }

@@ -14,13 +14,14 @@ import { leadLots, lotUses, type LotUse } from '../../city/occupancy'
 import { SEASON_LABEL, seasonOf } from '../../city/season'
 import { districtOf, districtOrFirst } from '../../data/districts'
 import { RIVALS } from '../../data/rivals'
-import { labelOf } from '../../logic/portfolio'
+import { labelOf, netWorth } from '../../logic/portfolio'
 import type { Action, GameState } from '../../state/types'
 import DistrictSheet from '../DistrictSheet'
 import ListingDeal from '../portfolio/ListingDeal'
 import PropertyCard from '../portfolio/PropertyCard'
 import { CityScene, webglAvailable } from './CityScene'
 import { useCity } from '../online/cityContext'
+import AgentCard, { type AgentInfo } from './AgentCard'
 import LotCard from './LotCard'
 import { ownerLine } from './ownerLine'
 import { BRASS, CLIENT, INDIE_GREY, MARBLE } from './palette'
@@ -66,6 +67,8 @@ export default function CityView({
   const [ok] = useState(webglAvailable)
   const [selected, setSelected] = useState<string | null>(null)
   const [hover, setHover] = useState<string | null>(null)
+  /** The agent whose card is open (a userId, or 'you' in solo play). */
+  const [person, setPerson] = useState<string | null>(null)
   const [buying, setBuying] = useState<string | null>(null)
   const [managing, setManaging] = useState<string | null>(null)
   const [district, setDistrict] = useState<string | null>(null)
@@ -167,8 +170,15 @@ export default function CityView({
   useEffect(() => {
     if (!ok || !host.current || !labels.current) return
     const s = new CityScene(host.current, labels.current, {
-      onSelect: setSelected,
+      onSelect: (lot) => {
+        setSelected(lot)
+        if (lot) setPerson(null)
+      },
       onHover: setHover,
+      onAgent: (id) => {
+        setPerson(id)
+        setSelected(null)
+      },
       onGround: (t) => walkRef.current(t),
     })
     scene.current = s
@@ -257,6 +267,49 @@ export default function CityView({
       </div>
     )
 
+  /* Whoever's card is open, from what this browser knows of them: your own
+     game in full, the shared city's standings for everyone else. */
+  const personInfo = ((): AgentInfo | null => {
+    if (!person) return null
+    const players = shared?.view.players ?? []
+    const row = players.find((p) => p.userId === person)
+    const title = champion && champion.userId === person ? champion.title : undefined
+    if (person === myId) {
+      const mineRow = players.find((p) => p.you)
+      return {
+        id: myId,
+        name: mineRow?.name ?? 'You',
+        color: myColor,
+        characterId: state.characterId,
+        you: true,
+        championTitle: title,
+        place: mineRow?.place,
+        of: shared ? players.length : undefined,
+        netWorth: Math.round(netWorth(state)),
+        cash: Math.round(state.cash),
+        rank: state.rank,
+        buildings: state.properties.filter((p) => !p.isVrbo).length,
+      }
+    }
+    const live = shared?.agents.find((a) => a.userId === person)
+    if (!live && !row) return null
+    return {
+      id: person,
+      name: row?.name ?? live!.name,
+      color: hexOf(row?.color ?? live!.color),
+      characterId: row?.characterId ?? live!.characterId,
+      you: false,
+      championTitle: title,
+      place: row?.place,
+      of: row ? players.length : undefined,
+      netWorth: row?.netWorth,
+      rank: row?.rank,
+      buildings: row?.buildings.length,
+      missed: row?.missed,
+      gameOver: row?.gameOver,
+    }
+  })()
+
   const selLot = selected ? city.lotById.get(selected) : undefined
   const selUse = selected ? uses.get(selected) : undefined
   const hovLot = hover ? city.lotById.get(hover) : undefined
@@ -271,10 +324,13 @@ export default function CityView({
         className="res-city-stage"
         ref={host}
         tabIndex={0}
-        aria-label="The city. Drag to pan, scroll to zoom, Q and E to turn, click a lot."
+        aria-label="The city. Drag to pan, scroll to zoom, Q and E to turn, click a lot or a person."
         onKeyDown={(e) => {
           if (scene.current?.handleKey(e.nativeEvent)) e.preventDefault()
-          if (e.key === 'Escape') setSelected(null)
+          if (e.key === 'Escape') {
+            setSelected(null)
+            setPerson(null)
+          }
         }}
       >
         <div className="res-city-labels" ref={labels} />
@@ -406,11 +462,22 @@ export default function CityView({
                 ' · ' + clients.get(hover)!.clientName + ' is touring it'}
             </>
           ) : (
-            'Click anywhere to walk there · drag to pan · scroll to zoom · Q / E to turn'
+            'Click anywhere to walk there · click a person to see who they are · drag to pan · scroll to zoom · Q / E to turn'
           )}
         </div>
 
-        {selLot && selUse && (
+        {personInfo && (
+          <AgentCard
+            agent={personInfo}
+            onClose={() => setPerson(null)}
+            onFollow={() => {
+              scene.current?.followAgent(personInfo.id)
+              setPerson(null)
+            }}
+          />
+        )}
+
+        {!personInfo && selLot && selUse && (
           <LotCard
             state={state}
             lot={selLot}

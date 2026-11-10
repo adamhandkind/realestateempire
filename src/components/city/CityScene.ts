@@ -33,6 +33,9 @@ export interface SceneCallbacks {
   onHover: (lotId: string | null) => void
   /** Any click on the ground (a lot, a road, a park): where to walk. */
   onGround?: (tile: Tile) => void
+  /** A click on one of the little people walking the map. Wins over the
+   *  lot behind them, and doesn't walk you anywhere. */
+  onAgent?: (id: string) => void
 }
 
 export interface SceneData {
@@ -364,6 +367,11 @@ export class CityScene {
     this.drag = null
     this.renderer.domElement.style.cursor = ''
     if (!d || d.moved) return
+    const agent = this.cb.onAgent ? this.agentAt(e.clientX, e.clientY) : null
+    if (agent) {
+      this.cb.onAgent!(agent)
+      return
+    }
     const lot = this.pick(e.clientX, e.clientY)
     this.cb.onSelect(lot)
     const tile = this.groundTile(e.clientX, e.clientY)
@@ -450,6 +458,11 @@ export class CityScene {
       this.cityMesh.geometry.getAttribute('lotIndex') as THREE.BufferAttribute
     ).getX(hit.face.a)
     return idx >= 0 ? (this.data.city.lots[idx]?.id ?? null) : null
+  }
+
+  private agentAt(clientX: number, clientY: number): string | null {
+    const r = this.host.getBoundingClientRect()
+    return this.agents.pickAt(this.camera, r.width, r.height, clientX - r.left, clientY - r.top)
   }
 
   /** The tile under the pointer, wherever it lands on the ground plane. */
@@ -601,7 +614,13 @@ export class CityScene {
     cam.updateProjectionMatrix()
 
     if (this.pendingHover && !this.drag) {
-      this.setHover(this.pick(this.pendingHover.x, this.pendingHover.y))
+      const { x, y } = this.pendingHover
+      this.setHover(this.pick(x, y))
+      /* People are clickable too: show the hand over them. */
+      if (this.cb.onAgent) {
+        const person = !!this.agentAt(x, y)
+        this.renderer.domElement.style.cursor = person || this.hoverLot ? 'pointer' : ''
+      }
       this.pendingHover = null
     }
     this.animateMarkers(t)

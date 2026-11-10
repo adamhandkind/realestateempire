@@ -106,6 +106,36 @@ export function figure(color: string, champion: boolean, key: string): { group: 
   return { group: g, legs }
 }
 
+/** An agent as drawn on screen: a line from their feet to the top of their
+ *  head, in pixels. */
+export interface ScreenFigure {
+  id: string
+  foot: [number, number]
+  head: [number, number]
+}
+
+/** The figure nearest a click, if it's within `radius` px of one. Little
+ *  people are small targets, so the radius is generous; when two overlap,
+ *  the closer one wins. */
+export function nearestFigure(figs: ScreenFigure[], x: number, y: number, radius: number): string | null {
+  let best: string | null = null
+  let bestD = radius
+  for (const f of figs) {
+    const [ax, ay] = f.foot
+    const [bx, by] = f.head
+    const dx = bx - ax
+    const dy = by - ay
+    const len2 = dx * dx + dy * dy
+    const k = len2 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / len2)) : 0
+    const d = Math.hypot(x - (ax + k * dx), y - (ay + k * dy))
+    if (d <= bestD) {
+      bestD = d
+      best = f.id
+    }
+  }
+  return best
+}
+
 export class AgentLayer {
   readonly group = new THREE.Group()
   private walkers = new Map<string, Walker>()
@@ -219,6 +249,22 @@ export class AgentLayer {
       w.label.style.transform = `translate(-50%, -100%) translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`
       w.label.style.opacity = zoom > 0.9 || w.spec.you || w.spec.champion ? '1' : '0'
     }
+  }
+
+  /** Which agent is under a point on screen (pixels from the stage's top
+   *  left), if any, from their feet up to where their name label sits. */
+  pickAt(camera: THREE.Camera, width: number, height: number, x: number, y: number): string | null {
+    const v = new THREE.Vector3()
+    const px = (p: THREE.Vector3, up: number): [number, number] => {
+      v.set(p.x, p.y + up, p.z).project(camera)
+      return [(v.x * 0.5 + 0.5) * width, (-v.y * 0.5 + 0.5) * height]
+    }
+    const figs: ScreenFigure[] = [...this.walkers.values()].map((w) => ({
+      id: w.spec.id,
+      foot: px(w.at, 0),
+      head: px(w.at, 0.85),
+    }))
+    return nearestFigure(figs, x, y, 16)
   }
 
   private drop(w: Walker) {
