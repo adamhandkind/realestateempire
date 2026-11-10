@@ -22,7 +22,7 @@
       "database_name": "real-estate-empire",
       // Replace with the id `wrangler d1 create real-estate-empire` prints.
       // Local dev (`wrangler dev`) works with this placeholder.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "f5bbc639-db9f-4da3-9027-caba4ddbca32",
       "migrations_dir": "migrations"
     }
   ],
