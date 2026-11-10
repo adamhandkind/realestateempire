@@ -63,7 +63,7 @@ src/
   components/city/      three.js isometric view, lot card, HUD (lazy-loaded)
 ```
 
-The City tab opens on the 3D city; "Territory" is the flat district map.
+The City tab shows the 3D city.
 Plan and decisions: `docs/superpowers/plans/2026-11-09-city-phase-1-see-the-city.md`.
 
 Import direction is one-way: `components → state/logic → data`. Data files hold

@@ -252,8 +252,7 @@ export default function CityView({
   if (!ok)
     return (
       <div className="res-panel dark">
-        This browser can't draw the 3D city (WebGL is off or unsupported). The
-        territory map below still works.
+        This browser can't draw the 3D city (WebGL is off or unsupported).
       </div>
     )
 
