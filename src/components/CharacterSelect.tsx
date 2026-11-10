@@ -3,6 +3,7 @@ import { CHARACTERS, PERK_FLAW } from '../data/characters'
 import { DEFAULT_CHARACTER_ID } from '../data/p5'
 import { AP_PER_WEEK, START_CASH } from '../logic/economy'
 import type { CharacterDef } from '../state/types'
+import AgentFace from './AgentFace'
 
 /** 3×3, with "You" dead centre. Every roster id appears exactly once. */
 const GRID_ORDER = [
@@ -38,15 +39,7 @@ function chipsFor(c: CharacterDef): string[] {
 }
 
 function Portrait({ c, size }: { c: CharacterDef; size: number }) {
-  return (
-    <div
-      className="res-portrait"
-      style={{ borderColor: c.portrait.accent, width: size, height: size }}
-    >
-      <span style={{ fontSize: size * 0.44 }}>{c.portrait.emoji}</span>
-      <b style={{ color: c.portrait.accent }}>{c.portrait.initials}</b>
-    </div>
-  )
+  return <AgentFace characterId={c.id} accent={c.portrait.accent} size={size} />
 }
 
 export default function CharacterSelect({
@@ -102,7 +95,7 @@ export default function CharacterSelect({
             style={{ borderColor: i === index ? c.portrait.accent : undefined }}
             onClick={() => setIndex(i)}
           >
-            <Portrait c={c} size={64} />
+            <Portrait c={c} size={72} />
             <div className="nm">{c.name}</div>
             <div className="res-meta">{c.tagline}</div>
             <div className="res-chiprow">
