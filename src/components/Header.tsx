@@ -3,6 +3,7 @@ import { isEgoDangerous, rankOf } from '../logic/economy'
 import { hasMarketInsight, netWorth } from '../logic/portfolio'
 import { money } from '../logic/rand'
 import type { GameState } from '../state/types'
+import AgentFace from './AgentFace'
 
 function Pips({ ap, max }: { ap: number; max: number }) {
   return (
@@ -40,7 +41,8 @@ export default function Header({
             )}
             {' · '}
             <span title={char.tagline}>
-              {char.portrait.emoji} {char.name}
+              <AgentFace characterId={char.id} accent={char.portrait.accent} size={20} inline />
+              {char.name}
             </span>
           </div>
         </div>
