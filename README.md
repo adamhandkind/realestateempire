@@ -94,7 +94,7 @@ event/brag structure and the stylesheet against `src/`. It must print
 ## Online play (multiplayer Phase 2)
 
 ```
-worker/                 Cloudflare Worker: /api (email-link login, invites,
+worker/                 Cloudflare Worker: /api (invite-link login, invites,
                         cities, agents, cloud saves, leaderboard) + static assets
 migrations/             D1 schema
 src/net/                browser side: api client, CloudStore (optimistic play,

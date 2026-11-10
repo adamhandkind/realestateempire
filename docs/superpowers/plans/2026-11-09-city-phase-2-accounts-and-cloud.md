@@ -80,22 +80,27 @@ browser ──HTTPS──▶ Worker (worker/index.ts)
     `x-res-api` header (plain `npm run dev`, a static host), the app is the
     old single-player game with localStorage saves. Online, the Office tab
     hides Import and the cheat panel.
-12. **Mail:** `MAIL_PROVIDER=resend` (one HTTP call, free tier covers this
-    easily) or `log` (prints links, for dev and tests). Any other service is
-    one more case in `worker/mail.ts`.
+12. **No mail (changed 2026-11-10).** Nothing is emailed. A new player opens
+    an invite link, types an email (just a name tag) and is signed in on the
+    spot. An invite can only make a new account, never open an existing one
+    or an `OWNER_EMAILS` address. A signed-out player gets a one-time
+    sign-in link (24 hours) from their city owner's invite list. The game
+    owner makes their own with `npm run login-link -- you@example.com`.
+    Sessions last 90 days.
 
 ## API
 
 | Method | Path | Who | Does |
 | --- | --- | --- | --- |
-| POST | `/api/auth/request` | anyone | `{email, invite?}` → emails a login link if allowed |
-| POST | `/api/auth/verify` | anyone | `{token}` → session cookie; claims the invite it came with |
+| POST | `/api/auth/join` | anyone | `{email, invite}` → new account in the invite's city + session cookie |
+| POST | `/api/auth/verify` | anyone | `{token}` → spends a sign-in link, session cookie |
 | POST | `/api/auth/logout` | signed in | ends the session |
 | GET | `/api/me` | signed in | user (adult, isOwner) + cities with agent |
 | POST | `/api/me/adult` | signed in | `{confirm:true}` → the 18+ check |
 | POST | `/api/cities` | owner | `{name}` → new city |
 | POST/GET | `/api/cities/:id/invites` | city owner | make (link shown once) / list |
 | DELETE | `/api/cities/:id/invites/:inviteId` | city owner | revoke |
+| POST | `/api/cities/:id/members/:userId/login-link` | city owner | one-time sign-in link for a player (not an owner) |
 | GET | `/api/invites/:token` | anyone | what the join page shows |
 | POST | `/api/invites/:token/accept` | signed in | join another city |
 | POST | `/api/cities/:id/agent` | member, 18+ | `{name, color, characterId, restart?}` → new game |
@@ -106,27 +111,25 @@ browser ──HTTPS──▶ Worker (worker/index.ts)
 ## Running it locally
 
 ```bash
-cp .dev.vars.example .dev.vars   # MAIL_PROVIDER=log, DEV_EXPOSE_LINKS=1
+cp .dev.vars.example .dev.vars   # APP_URL=http://localhost:5173
 npm run build                    # wrangler wants dist/ to exist
 npm run dev:api                  # local D1 migrations + Worker on :8787
 npm run dev                      # Vite on :5173, proxies /api to :8787
 ```
 
-Sign in with an address from `OWNER_EMAILS`. With `DEV_EXPOSE_LINKS=1`, the
-"Check your email" screen shows the login link itself.
+Sign in with `npm run login-link -- <an OWNER_EMAILS address> --local` and
+open the link it prints.
 
 ## Deploying (first time)
 
 1. `npx wrangler login`
-2. `npx wrangler d1 create real-estate-empire`, then paste the printed id
+2. `npx wrangler d1 create real-estate`, then paste the printed id
    into `database_id` in `wrangler.jsonc`.
 3. In `wrangler.jsonc` `vars`, set `APP_URL` (the workers.dev URL or a
-   custom domain, no trailing slash) and `MAIL_FROM`. Check `OWNER_EMAILS`.
-4. Mail: create a Resend account, verify the sending domain, then
-   `npx wrangler secret put RESEND_API_KEY`.
-5. `npm run deploy` (build → remote migrations → deploy).
-6. Open the site, sign in, found the city, and send invites from the
-   League tab.
+   custom domain, no trailing slash). Check `OWNER_EMAILS`.
+4. `npm run deploy` (build → remote migrations → deploy).
+5. `npm run login-link -- <your OWNER_EMAILS address>`, open the link, found
+   the city, and make invite links from the League tab.
 
 ## Verified
 

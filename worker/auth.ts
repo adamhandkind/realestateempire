@@ -1,29 +1,27 @@
-/* Email login links, sessions, the 18+ check, and the "who am I" call.
+/* Sign-in without email, sessions, the 18+ check, and the "who am I" call.
 
-   Flow: the browser POSTs an email (plus the invite it arrived with, if any)
-   to /api/auth/request. If that address may sign in, we email a one-time
-   link to APP_URL/?login=<token>. The page at that link POSTs the token to
-   /api/auth/verify, which sets an HttpOnly session cookie. The link is a
-   page, not an API GET, so mail scanners that pre-fetch links can't burn it.
+   Nothing is ever emailed. Two ways in:
+   - A new player opens an invite link (APP_URL/?invite=<token>), types
+     their email and POSTs both to /api/auth/join, which makes the account
+     and sets an HttpOnly session cookie on the spot.
+   - Anyone else uses a one-time sign-in link (APP_URL/?login=<token>):
+     the city owner makes one for a member who got signed out, and the game
+     owner makes their own with `npm run login-link`. The page POSTs the
+     token to /api/auth/verify. The link is a page, not an API GET, so chat
+     apps that pre-fetch links can't burn it.
 
-   Who may sign in: anyone who already has an account, anyone listed in
-   OWNER_EMAILS, or anyone holding a live invite. Everyone gets the same
-   answer either way, so the endpoint can't be used to test addresses. */
+   Sessions last 90 days and slide forward, so most people sign in once. */
 
 import { hashToken, newId, randomToken } from './crypto'
 import type { Env } from './env'
 import { HttpError, cookie, getCookie, json, readJson, str } from './http'
-import { loginMail, send } from './mail'
 
 export const SESSION_COOKIE = 'res_session'
 const MINUTE = 60_000
 const DAY = 24 * 60 * MINUTE
-const LOGIN_TTL = 15 * MINUTE
 const SESSION_TTL = 90 * DAY
 /** Sessions slide forward at most once a day, to keep writes rare. */
 const SESSION_REFRESH = DAY
-const MAX_LINKS_PER_EMAIL_HOUR = 5
-const MAX_LINKS_PER_IP_HOUR = 20
 
 export interface User {
   id: string
@@ -141,49 +139,66 @@ export async function requireUser(env: Env, req: Request): Promise<User> {
 
 /* --------------------------------------------------------------- routes */
 
-/** POST /api/auth/request  { email, invite? } */
-export async function requestLink(env: Env, req: Request): Promise<Response> {
+/** Makes a one-time sign-in link for an existing or owner address. Used by
+ *  the city owner's "sign-in link" button and by scripts/login-link.mjs
+ *  (which writes the same row straight into D1). */
+export async function issueLoginLink(
+  env: Env,
+  email: string,
+  ttl: number,
+): Promise<{ link: string; expiresAt: number }> {
+  const token = randomToken()
+  const now = Date.now()
+  await env.DB.prepare('INSERT INTO login_tokens (token_hash, email, created_at, expires_at) VALUES (?, ?, ?, ?)')
+    .bind(await hashToken(token), email, now, now + ttl)
+    .run()
+  return { link: `${env.APP_URL}/?login=${encodeURIComponent(token)}`, expiresAt: now + ttl }
+}
+
+async function startSession(env: Env, userId: string, now: number): Promise<string> {
+  const session = randomToken()
+  await env.DB.prepare(
+    'INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_seen_at) VALUES (?, ?, ?, ?, ?)',
+  )
+    .bind(await hashToken(session), userId, now, now + SESSION_TTL, now)
+    .run()
+  return cookie(SESSION_COOKIE, session, { maxAge: SESSION_TTL / 1000, secure: secure(env) })
+}
+
+/** POST /api/auth/join  { email, invite } — a new player takes an invite and
+ *  is signed in on the spot. Nothing is emailed, so the email is only a
+ *  name here: an invite can make a new account but never opens an existing
+ *  one or an owner's. Returning players use a sign-in link instead. */
+export async function joinWithInvite(env: Env, req: Request): Promise<Response> {
   const body = await readJson(req)
   const email = normalizeEmail(body.email)
   if (!email) throw new HttpError(400, 'bad_email', "That doesn't look like an email address.")
   const invite = str(body.invite)
+  if (!invite)
+    throw new HttpError(400, 'invite_required', 'Invite only. Ask your city owner for an invite or a sign-in link.')
   const now = Date.now()
-  const ip = req.headers.get('cf-connecting-ip') ?? ''
-
-  const recent = await env.DB.prepare(
-    `SELECT
-       (SELECT COUNT(*) FROM login_tokens WHERE email = ?1 AND created_at > ?3) AS by_email,
-       (SELECT COUNT(*) FROM login_tokens WHERE ip = ?2 AND ip != '' AND created_at > ?3) AS by_ip`,
-  )
-    .bind(email, ip, now - 60 * MINUTE)
-    .first<{ by_email: number; by_ip: number }>()
-  if ((recent?.by_email ?? 0) >= MAX_LINKS_PER_EMAIL_HOUR || (recent?.by_ip ?? 0) >= MAX_LINKS_PER_IP_HOUR)
-    throw new HttpError(429, 'slow_down', 'Too many login links. Try again in an hour.')
+  const inv = await findInvite(env, invite)
+  const problem = inviteProblem(inv, email, now)
+  if (problem) throw new HttpError(403, problem, inviteMessage(problem))
 
   const known = await env.DB.prepare('SELECT 1 FROM users WHERE email = ?').bind(email).first()
-  const inv = invite ? await findInvite(env, invite) : null
-  const inviteOk = inv !== null && inviteProblem(inv, email, now) === null
-  const allowed = known !== null || ownerEmails(env).has(email) || inviteOk
-
-  let devLink: string | undefined
-  if (allowed) {
-    const token = randomToken()
-    await env.DB.prepare(
-      `INSERT INTO login_tokens (token_hash, email, invite_token_hash, ip, created_at, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+  if (known || ownerEmails(env).has(email))
+    throw new HttpError(
+      409,
+      'has_account',
+      'That email already has an account. Ask your city owner for a sign-in link, then open the invite again.',
     )
-      .bind(await hashToken(token), email, inviteOk ? await hashToken(invite) : null, ip, now, now + LOGIN_TTL)
-      .run()
-    const link = `${env.APP_URL}/?login=${encodeURIComponent(token)}`
-    await send(env, loginMail(email, link))
-    if (env.DEV_EXPOSE_LINKS === '1') devLink = link
-  } else if (invite && inv) {
-    /* The one case worth telling them: they hold a real invite that's dead
-       or locked to someone else. That reveals nothing about other users. */
-    const problem = inviteProblem(inv, email, now)
-    if (problem) throw new HttpError(403, problem, inviteMessage(problem))
+
+  const userId = newId()
+  await env.DB.prepare('INSERT INTO users (id, email, created_at) VALUES (?, ?, ?)').bind(userId, email, now).run()
+  try {
+    await claimInvite(env, inv!, userId, now)
+  } catch (e) {
+    /* No city, no account: they can take a fresh invite later. */
+    await env.DB.prepare('DELETE FROM users WHERE id = ?').bind(userId).run()
+    throw e
   }
-  return json({ ok: true, ...(devLink ? { devLink } : {}) })
+  return json({ ok: true, cityId: inv!.city_id }, { headers: { 'set-cookie': await startSession(env, userId, now) } })
 }
 
 export const inviteMessage = (code: string): string =>
@@ -195,25 +210,24 @@ export const inviteMessage = (code: string): string =>
     invite_wrong_email: 'That invite is for a different email address.',
   })[code] ?? 'That invite is no good.'
 
-/** POST /api/auth/verify  { token } */
+/** POST /api/auth/verify  { token } — spends a sign-in link. */
 export async function verifyLink(env: Env, req: Request): Promise<Response> {
   const body = await readJson(req)
   const token = str(body.token)
   if (!token) throw new HttpError(400, 'bad_token')
   const hash = await hashToken(token)
   const now = Date.now()
-  const row = await env.DB.prepare(
-    'SELECT email, invite_token_hash, expires_at, used_at FROM login_tokens WHERE token_hash = ?',
-  )
+  const row = await env.DB.prepare('SELECT email, expires_at, used_at FROM login_tokens WHERE token_hash = ?')
     .bind(hash)
-    .first<{ email: string; invite_token_hash: string | null; expires_at: number; used_at: number | null }>()
+    .first<{ email: string; expires_at: number; used_at: number | null }>()
   if (!row || row.used_at || row.expires_at < now)
-    throw new HttpError(400, 'link_expired', 'That login link has expired or was already used. Ask for a new one.')
+    throw new HttpError(400, 'link_expired', 'That sign-in link has expired or was already used. Ask for a new one.')
   const burned = await env.DB.prepare('UPDATE login_tokens SET used_at = ? WHERE token_hash = ? AND used_at IS NULL')
     .bind(now, hash)
     .run()
-  if (!burned.meta.changes) throw new HttpError(400, 'link_expired', 'That login link was already used.')
+  if (!burned.meta.changes) throw new HttpError(400, 'link_expired', 'That sign-in link was already used.')
 
+  /* Owner addresses get their account on first sign-in. */
   let user = await env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(row.email).first<{ id: string }>()
   if (!user) {
     user = { id: newId() }
@@ -221,44 +235,10 @@ export async function verifyLink(env: Env, req: Request): Promise<Response> {
       .bind(user.id, row.email, now)
       .run()
   }
-
-  /* An invite that went stale between the email and the click doesn't stop
-     the sign-in; the response says what happened to it. */
-  let inviteError: string | undefined
-  if (row.invite_token_hash) {
-    const inv = await env.DB.prepare(
-      'SELECT id, city_id, created_by, email, expires_at, used_by, revoked_at FROM invites WHERE token_hash = ?',
-    )
-      .bind(row.invite_token_hash)
-      .first<InviteRow>()
-    const problem = inviteProblem(inv, row.email, now)
-    if (problem) inviteError = problem
-    else {
-      try {
-        await claimInvite(env, inv!, user.id, now)
-      } catch (e) {
-        inviteError = e instanceof HttpError ? e.code : 'invite_failed'
-      }
-    }
-  }
-
-  const session = randomToken()
-  await env.DB.prepare(
-    'INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_seen_at) VALUES (?, ?, ?, ?, ?)',
-  )
-    .bind(await hashToken(session), user.id, now, now + SESSION_TTL, now)
-    .run()
-  /* Spent and expired login links are no use to anyone. */
+  const setCookie = await startSession(env, user.id, now)
+  /* Spent and expired links are no use to anyone. */
   await env.DB.prepare('DELETE FROM login_tokens WHERE expires_at < ?').bind(now - DAY).run()
-
-  return json(
-    { ok: true, ...(inviteError ? { inviteError, inviteMessage: inviteMessage(inviteError) } : {}) },
-    {
-      headers: {
-        'set-cookie': cookie(SESSION_COOKIE, session, { maxAge: SESSION_TTL / 1000, secure: secure(env) }),
-      },
-    },
-  )
+  return json({ ok: true }, { headers: { 'set-cookie': setCookie } })
 }
 
 /** POST /api/auth/logout */

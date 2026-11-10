@@ -201,7 +201,7 @@ function TickDesk({ view, store }: { view: CityView; store: CityStore }) {
 function InviteDesk({ cityId }: { cityId: string }) {
   const [email, setEmail] = useState('')
   const [note, setNote] = useState('')
-  const [made, setMade] = useState<{ link: string; emailed: boolean } | null>(null)
+  const [made, setMade] = useState<{ title: string; link: string; text: string } | null>(null)
   const [invites, setInvites] = useState<InviteRow[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -215,6 +215,8 @@ function InviteDesk({ cityId }: { cityId: string }) {
   }, [cityId])
   useEffect(load, [load])
 
+  const fail = (err: unknown) => setError(err instanceof ApiError ? err.message : "Couldn't reach the server.")
+
   const create = async (e: FormEvent) => {
     e.preventDefault()
     setBusy(true)
@@ -222,14 +224,33 @@ function InviteDesk({ cityId }: { cityId: string }) {
     setCopied(false)
     try {
       const r = await api.createInvite(cityId, email, note)
-      setMade({ link: r.link, emailed: r.emailed })
+      setMade({
+        title: 'Invite link. Send it however you like; it works once, for 14 days.',
+        link: r.link,
+        text: "You're invited to my city in Real Estate Empire:",
+      })
       setEmail('')
       setNote('')
       load()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Couldn't reach the server.")
+      fail(err)
     } finally {
       setBusy(false)
+    }
+  }
+
+  const signInLink = async (row: InviteRow) => {
+    setError(null)
+    setCopied(false)
+    try {
+      const r = await api.memberLoginLink(cityId, row.memberId!)
+      setMade({
+        title: `Sign-in link for ${row.usedBy}. It works once, for 24 hours.`,
+        link: r.link,
+        text: 'Your sign-in link for Real Estate Empire:',
+      })
+    } catch (err) {
+      fail(err)
     }
   }
 
@@ -242,17 +263,21 @@ function InviteDesk({ cityId }: { cityId: string }) {
       /* the field is selectable */
     }
   }
+  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function'
+  const share = () => {
+    if (made) navigator.share({ text: made.text, url: made.link }).catch(() => {})
+  }
 
   return (
     <div className="res-panel dark">
       <h3 className="res-h2 res-display">Invite a Friend</h3>
       <p className="res-debug-note">
-        Each link works once, for 14 days. Add their email to send it for you and lock it to that address, or leave it
-        blank and send the link yourself.
+        Nothing gets emailed. Make a link and send it yourself by text or chat. Each invite works once, for 14 days.
+        Signed-out players get back in with a sign-in link from the list below.
       </p>
       <form onSubmit={create}>
         <label className="res-field">
-          Their email (optional)
+          Only for this email (optional)
           <input className="res-input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </label>
         <label className="res-field">
@@ -267,18 +292,17 @@ function InviteDesk({ cityId }: { cityId: string }) {
         </label>
         {error && <div className="res-err">{error}</div>}
         <button className="res-go" disabled={busy}>
-          {email.trim() ? 'Email the invite' : 'Make an invite link'}
+          Make an invite link
         </button>
       </form>
       {made && (
         <>
-          <div className="res-ok">
-            {made.emailed ? 'Sent. Here’s the link too, ' : 'Here’s the link. '}it's only shown once.
-          </div>
+          <div className="res-ok">{made.title} It's only shown once.</div>
           <div className="res-invite-link">
             <input className="res-input" readOnly value={made.link} onFocus={(e) => e.target.select()} />
             <div className="res-mini" style={{ marginTop: 5 }}>
               <button onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
+              {canShare && <button onClick={share}>Share</button>}
             </div>
           </div>
         </>
@@ -300,6 +324,15 @@ function InviteDesk({ cityId }: { cityId: string }) {
                     onClick={() => api.revokeInvite(cityId, i.id).then(load)}
                   >
                     revoke
+                  </button>
+                )}
+                {i.memberId && (
+                  <button
+                    className="res-linkbtn"
+                    style={{ marginLeft: 8, marginTop: 0, color: 'var(--muted)' }}
+                    onClick={() => void signInLink(i)}
+                  >
+                    sign-in link
                   </button>
                 )}
               </span>
