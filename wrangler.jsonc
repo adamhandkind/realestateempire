@@ -19,7 +19,7 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "real-estate-empire",
+      "database_name": "real-estate",
       // Replace with the id `wrangler d1 create real-estate-empire` prints.
       // Local dev (`wrangler dev`) works with this placeholder.
       "database_id": "f5bbc639-db9f-4da3-9027-caba4ddbca32",
@@ -37,10 +37,10 @@
   // Production settings. Secrets (RESEND_API_KEY) go in with
   // `wrangler secret put`, never here.
   "vars": {
-    "APP_URL": "https://real-estate-empire.example.workers.dev",
+    "APP_URL": "https://realestateempire.adam-434.workers.dev",
     "OWNER_EMAILS": "adam@handkindconstruction.ca",
     "MAIL_PROVIDER": "resend",
-    "MAIL_FROM": "Real Estate Empire <login@example.com>"
+    "MAIL_FROM": "Real Estate Empire <mcquaiga@gmail.com>"
   },
 
   // `wrangler dev` reads overrides from .dev.vars (see .dev.vars.example).
