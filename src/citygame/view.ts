@@ -7,7 +7,7 @@
 import { championOf, type Champion } from './city'
 import { quarterOf } from '../logic/cityMode'
 import { netWorth } from '../logic/portfolio'
-import type { PropertyTypeId, RankId } from '../state/types'
+import type { PropertyTypeId, RankId, Slot } from '../state/types'
 import type { CityListing, CityPlayer, CityState, CityStatus, FeedItem, SeasonResult } from './types'
 
 export interface ListingView extends CityListing {
@@ -38,6 +38,10 @@ export interface PlayerView {
   /** City weeks since they last made a move. */
   missed: number
   buildings: BuildingView[]
+  /** What they have on, one swag id per slot: the closet is a public brag. */
+  equipped: Partial<Record<Slot, string>>
+  /** How many swag items they own. */
+  owned: number
 }
 
 export interface CityView {
@@ -94,6 +98,8 @@ export function cityView(city: CityState, players: CityPlayer[], me: string, sch
           nickname: x.nickname,
           condition: Math.round(x.condition),
         })),
+      equipped: { ...p.game.equipped },
+      owned: p.game.ownedSwagIds.length,
     }))
     .sort((a, b) => b.netWorth - a.netWorth || a.name.localeCompare(b.name))
     .map((r, i) => ({ ...r, place: i + 1 }))

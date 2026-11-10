@@ -6,3 +6,14 @@
 .res-agent-label.you { color: var(--brass); }
 .res-agent-label.champ { background: linear-gradient(90deg, #7a1f2b, #9b2c3a); border-left-color: #e9c94a; color: #fff3c4; }
 .res-city-buttons button.off { opacity: .45; }
+
+/* The agent card (click an agent on the map). */
+.res-agentcard-champ { background: linear-gradient(90deg, #7a1f2b, #9b2c3a); color: #fff3c4; margin-top: 2px; }
+.res-agentcard-closet { margin-top: 12px; }
+.res-agentcard-closet ul { list-style: none; margin: 6px 0 0; padding: 0; }
+.res-agentcard-closet li { display: grid; grid-template-columns: 92px 1fr; column-gap: 8px; padding: 5px 0;
+  border-bottom: 1px dotted #cfc9ba; font-size: 13px; }
+.res-agentcard-closet li .slot { color: #6d6f7c; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+  padding-top: 2px; }
+.res-agentcard-closet li i { grid-column: 2; font-size: 11.5px; opacity: .7; }
+.res-agentcard-closet li.empty b { opacity: .4; font-weight: 400; }
