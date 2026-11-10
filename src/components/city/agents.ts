@@ -156,6 +156,7 @@ export class AgentLayer {
       }
       if (!w) {
         const { group, legs } = figure(spec.color, spec.champion, spec.id)
+        group.userData.agentId = spec.id
         const label = document.createElement('div')
         label.className = 'res-agent-label' + (spec.you ? ' you' : '') + (spec.champion ? ' champ' : '')
         label.style.setProperty('--agent', spec.color)
@@ -178,6 +179,15 @@ export class AgentLayer {
     if (!w) return null
     const i = Math.min(w.path.length - 1, Math.round(((now - w.spec.at) / 1000) * SPEED))
     return w.path[Math.max(0, i)]
+  }
+
+  /** The agent a ray hits first (a click on a figure or its colour disc). */
+  pick(raycaster: THREE.Raycaster): string | null {
+    for (const hit of raycaster.intersectObjects(this.group.children, true)) {
+      for (let o: THREE.Object3D | null = hit.object; o; o = o.parent)
+        if (typeof o.userData.agentId === 'string') return o.userData.agentId
+    }
+    return null
   }
 
   /** Where an agent is in the world (for the camera to follow). */

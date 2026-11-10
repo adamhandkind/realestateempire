@@ -33,6 +33,8 @@ export interface SceneCallbacks {
   onHover: (lotId: string | null) => void
   /** Any click on the ground (a lot, a road, a park): where to walk. */
   onGround?: (tile: Tile) => void
+  /** A click on an agent: whose card to open. Wins over the lot behind them. */
+  onAgent?: (id: string) => void
 }
 
 export interface SceneData {
@@ -364,6 +366,11 @@ export class CityScene {
     this.drag = null
     this.renderer.domElement.style.cursor = ''
     if (!d || d.moved) return
+    const agent = this.cb.onAgent ? this.pickAgent(e.clientX, e.clientY) : null
+    if (agent) {
+      this.cb.onAgent!(agent)
+      return
+    }
     const lot = this.pick(e.clientX, e.clientY)
     this.cb.onSelect(lot)
     const tile = this.groundTile(e.clientX, e.clientY)
@@ -450,6 +457,13 @@ export class CityScene {
       this.cityMesh.geometry.getAttribute('lotIndex') as THREE.BufferAttribute
     ).getX(hit.face.a)
     return idx >= 0 ? (this.data.city.lots[idx]?.id ?? null) : null
+  }
+
+  private pickAgent(clientX: number, clientY: number): string | null {
+    const r = this.renderer.domElement.getBoundingClientRect()
+    this.ndc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1)
+    this.raycaster.setFromCamera(this.ndc, this.camera)
+    return this.agents.pick(this.raycaster)
   }
 
   /** The tile under the pointer, wherever it lands on the ground plane. */
@@ -602,6 +616,9 @@ export class CityScene {
 
     if (this.pendingHover && !this.drag) {
       this.setHover(this.pick(this.pendingHover.x, this.pendingHover.y))
+      if (this.cb.onAgent && this.pickAgent(this.pendingHover.x, this.pendingHover.y))
+        this.renderer.domElement.style.cursor = 'pointer'
+      else if (!this.hoverLot) this.renderer.domElement.style.cursor = ''
       this.pendingHover = null
     }
     this.animateMarkers(t)

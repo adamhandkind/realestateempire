@@ -8,6 +8,8 @@ import type { TimeMode } from '../../city/daylight'
 import { walkable, type Tile } from '../../city/paths'
 import { AGENT_COLORS } from '../../data/agentColors'
 import type { AgentSpec } from './agents'
+import AgentCard from './AgentCard'
+import { cityCard, soloCard } from '../../city/agentCard'
 import './life.css'
 import { cityLayout } from '../../city/layout'
 import { leadLots, lotUses, type LotUse } from '../../city/occupancy'
@@ -69,6 +71,8 @@ export default function CityView({
   const [buying, setBuying] = useState<string | null>(null)
   const [managing, setManaging] = useState<string | null>(null)
   const [district, setDistrict] = useState<string | null>(null)
+  /** Whose agent card is open (a lot card and an agent card never share the corner). */
+  const [agentId, setAgentId] = useState<string | null>(null)
   const cycle = useRef({ listing: 0, owned: 0, lead: 0 })
   const [timeMode, setTimeMode] = useState<TimeMode>(() => recall('res_city_time', 'auto' as TimeMode))
   const [weather, setWeather] = useState<boolean>(() => recall('res_city_weather', true))
@@ -167,7 +171,14 @@ export default function CityView({
   useEffect(() => {
     if (!ok || !host.current || !labels.current) return
     const s = new CityScene(host.current, labels.current, {
-      onSelect: setSelected,
+      onSelect: (lot) => {
+        setSelected(lot)
+        if (lot) setAgentId(null)
+      },
+      onAgent: (id) => {
+        setAgentId(id)
+        setSelected(null)
+      },
       onHover: setHover,
       onGround: (t) => walkRef.current(t),
     })
@@ -264,6 +275,14 @@ export default function CityView({
   const listing = state.marketPool.find((l) => l.id === buying)
   const property = state.properties.find((p) => p.id === managing)
   const sheet = district ? districtOf(district) : undefined
+  const agentColor = agentSpecs.find((a) => a.id === agentId)?.color ?? myColor
+  const agentCard = !agentId
+    ? null
+    : shared
+      ? cityCard(shared.view, agentId, agentColor)
+      : agentId === myId
+        ? soloCard(state, myId, agentColor)
+        : null
 
   return (
     <div className="res-city">
@@ -274,7 +293,10 @@ export default function CityView({
         aria-label="The city. Drag to pan, scroll to zoom, Q and E to turn, click a lot."
         onKeyDown={(e) => {
           if (scene.current?.handleKey(e.nativeEvent)) e.preventDefault()
-          if (e.key === 'Escape') setSelected(null)
+          if (e.key === 'Escape') {
+            setSelected(null)
+            setAgentId(null)
+          }
         }}
       >
         <div className="res-city-labels" ref={labels} />
@@ -406,9 +428,11 @@ export default function CityView({
                 ' · ' + clients.get(hover)!.clientName + ' is touring it'}
             </>
           ) : (
-            'Click anywhere to walk there · drag to pan · scroll to zoom · Q / E to turn'
+            'Click anywhere to walk there · click an agent for their card · drag to pan · scroll to zoom · Q / E to turn'
           )}
         </div>
+
+        {agentCard && <AgentCard card={agentCard} onClose={() => setAgentId(null)} />}
 
         {selLot && selUse && (
           <LotCard

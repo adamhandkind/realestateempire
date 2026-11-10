@@ -139,7 +139,9 @@ forwards WebSockets (`ws: true`).
 
 - Chat between players (the spec's open question). The live room could
   carry it easily.
-- Clicking another agent to see their card or open a rivalry.
+- Opening a rivalry from an agent's card. (Clicking an agent now opens
+  their card: rank, standing, doors, head to head, and the closet they have
+  on. Equipped swag isn't drawn on the figures yet.)
 - Seeing each other walk needs both people online. Nothing marks where
   someone was last standing once they leave.
 - A way back to the phone view after "Open the full game" (reload for now).
