@@ -431,7 +431,16 @@ export default function CityView({
           )}
         </div>
 
-        {agentCard && <AgentCard card={agentCard} onClose={() => setAgentId(null)} />}
+        {agentCard && (
+          <AgentCard
+            card={agentCard}
+            onClose={() => setAgentId(null)}
+            onFollow={() => {
+              scene.current?.followAgent(agentCard.id)
+              setAgentId(null)
+            }}
+          />
+        )}
 
         {selLot && selUse && (
           <LotCard

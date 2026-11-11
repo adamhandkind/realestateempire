@@ -37,7 +37,7 @@ describe('the agent card', () => {
     expect(them.owned).toBe(3)
 
     const card = cityCard(view, 'u1', '#f00')!
-    expect(card).toMatchObject({ name: 'Agent 1', you: false, owned: 3, totalSwag: SWAG.length, players: 2 })
+    expect(card).toMatchObject({ name: 'Agent 1', you: false, characterId: 'you', owned: 3, totalSwag: SWAG.length, players: 2 })
     expect(card.worn.map((w) => w.slot)).toEqual(SLOTS.map((s) => s.id))
     expect(card.worn.find((w) => w.slot === 'outfit')).toMatchObject({ name: suit.name, flavor: suit.flavor })
     expect(card.worn.find((w) => w.slot === 'vehicle')?.name).toBeNull()

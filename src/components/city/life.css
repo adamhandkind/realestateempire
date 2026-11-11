@@ -10,6 +10,10 @@
 /* The agent card (click an agent on the map). */
 .res-agentcard-champ { background: linear-gradient(90deg, #7a1f2b, #9b2c3a); color: #fff3c4; margin-top: 2px; }
 .res-agentcard-closet { margin-top: 12px; }
+.res-agentcard-head { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; }
+.res-agentcard-head .res-face { margin: 0; }
+.res-agentcard-head h3 { margin: 2px 22px 0 0; }
+.res-agentcard .res-go { width: 100%; margin-top: 12px; }
 .res-agentcard-closet ul { list-style: none; margin: 6px 0 0; padding: 0; }
 .res-agentcard-closet li { display: grid; grid-template-columns: 92px 1fr; column-gap: 8px; padding: 5px 0;
   border-bottom: 1px dotted #cfc9ba; font-size: 13px; }
