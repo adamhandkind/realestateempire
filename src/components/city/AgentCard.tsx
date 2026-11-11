@@ -3,24 +3,39 @@
 
 import type { AgentCardData } from '../../city/agentCard'
 import { money } from '../../logic/rand'
+import AgentFace from '../AgentFace'
 
 const ordinal = (n: number) => n + (n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th')
 
-export default function AgentCard({ card, onClose }: { card: AgentCardData; onClose: () => void }) {
+export default function AgentCard({
+  card,
+  onClose,
+  onFollow,
+}: {
+  card: AgentCardData
+  onClose: () => void
+  /** Keep the camera on them as they walk. */
+  onFollow?: () => void
+}) {
   const wearing = card.worn.filter((w) => w.name)
   return (
     <aside className="res-lotcard res-agentcard" aria-label={'Agent card: ' + card.name} style={{ borderTopColor: card.color }}>
       <button className="res-lotcard-x" onClick={onClose} aria-label="Close">
         ×
       </button>
-      <div className="res-meta">
-        {card.characterName ? card.characterName + ' · ' : ''}
-        {card.rank}
+      <div className="res-agentcard-head">
+        <AgentFace characterId={card.characterId} accent={card.color} size={76} />
+        <div>
+          <div className="res-meta">
+            {card.characterName ? card.characterName + ' · ' : ''}
+            {card.rank}
+          </div>
+          <h3 className="res-display">
+            {card.title && <span aria-label="Last season's champion">👑 </span>}
+            {card.name}
+          </h3>
+        </div>
       </div>
-      <h3 className="res-display">
-        {card.title && <span aria-label="Last season's champion">👑 </span>}
-        {card.name}
-      </h3>
       {card.title && <div className="res-owner res-agentcard-champ">Champion · “{card.title}”</div>}
 
       <div className="res-line">
@@ -70,6 +85,12 @@ export default function AgentCard({ card, onClose }: { card: AgentCardData; onCl
           </ul>
         )}
       </div>
+
+      {onFollow && (
+        <button className="res-go" onClick={onFollow}>
+          ◎ {card.you ? 'Follow me' : 'Follow ' + card.name.split(' ')[0]}
+        </button>
+      )}
     </aside>
   )
 }

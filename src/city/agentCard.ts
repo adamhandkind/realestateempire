@@ -25,6 +25,8 @@ export interface AgentCardData {
   name: string
   you: boolean
   color: string
+  /** Which playable agent they are, for their face. */
+  characterId: string
   characterName: string
   rank: string
   netWorth: number
@@ -60,6 +62,7 @@ export function soloCard(state: GameState, id: string, color: string): AgentCard
     name: 'You',
     you: true,
     color,
+    characterId: state.characterId,
     characterName: characterOf(state.characterId)?.name ?? '',
     rank: rankName(state.rank),
     netWorth: Math.round(netWorth(state)),
@@ -92,6 +95,7 @@ export function cityCard(view: CityView, userId: string, color: string, champion
     name: p.you ? 'You' : p.name,
     you: p.you,
     color,
+    characterId: p.characterId,
     characterName: characterOf(p.characterId)?.name ?? '',
     rank: rankName(p.rank),
     netWorth: p.netWorth,
