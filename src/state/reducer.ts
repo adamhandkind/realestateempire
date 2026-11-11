@@ -47,6 +47,7 @@ import {
   renoCost,
   renoOf,
   renoWeeks,
+  refiQuote,
   tenantOf,
   typeOf,
 } from '../logic/portfolio'
@@ -1192,6 +1193,30 @@ function baseReducer(state: GameState, action: Action): GameState {
               p.nickname +
               '. The balance moved. Slightly.'
           : 'One deed, fully yours. You read it twice.',
+      )
+      return sync(s)
+    }
+    case 'REFINANCE': {
+      const p = propertyOf(state, action.propertyId)
+      if (!p) return state
+      const q = refiQuote(state, p)
+      if (q.blocked) return withLog(state, 'flavor', q.blocked)
+      let s = patchProperty({ ...state, cash: state.cash + q.cashOut }, p.id, (x) => ({
+        ...x,
+        mortgage: { balance: q.newBalance },
+      }))
+      s = withLog(
+        s,
+        'money',
+        'You refinanced ' +
+          p.nickname +
+          '. The bank wired ' +
+          money(q.cashOut) +
+          ' after a ' +
+          money(q.fee) +
+          ' fee. The balance is now ' +
+          money(q.newBalance) +
+          ', and so is the interest.',
       )
       return sync(s)
     }

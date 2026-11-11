@@ -40,6 +40,7 @@ const ACTIONS: Record<Action['type'], Spec | null> = {
   EMERGENCY_REPAIR: { propertyId: 'string' },
   EVICT: { propertyId: 'string', unitId: 'string' },
   PAY_PRINCIPAL: { propertyId: 'string' },
+  REFINANCE: { propertyId: 'string' },
   TOGGLE_PROPCO: {},
   BUY_VRBO: { downPct: 'number' },
   FARM_DISTRICT: { districtId: 'string' },

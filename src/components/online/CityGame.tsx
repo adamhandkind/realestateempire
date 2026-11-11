@@ -193,6 +193,7 @@ export default function CityGame({
               </ul>
             </div>
           ) : null,
+          report,
           onSummaryClosed: () => {
             if (!reportId) return
             markSeen(seenKey(city.id), reportId)
