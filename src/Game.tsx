@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import BragTicker from './components/BragTicker'
 import CeremonyModal from './components/CeremonyModal'
 import { NominationBanner } from './components/TablePicker'
@@ -13,15 +13,19 @@ import CallModal from './components/CallModal'
 import PortfolioChoiceModal from './components/PortfolioChoiceModal'
 import PortfolioTab from './components/PortfolioTab'
 import PostComposer from './components/PostComposer'
+import TodayTab from './components/TodayTab'
+import { useCity } from './components/online/cityContext'
+import { buildBriefing, urgentCount } from './logic/briefing'
 import WeekSummaryModal from './components/WeekSummaryModal'
 import { activeMarketModifier, isPhase2Teaser, rankOf } from './logic/economy'
 import { money } from './logic/rand'
 import { parseImport, serialize } from './state/serial'
-import type { Action, GameState } from './state/types'
+import type { Action, GameState, WeekSummary } from './state/types'
 
-type TabId = 'office' | 'marketing' | 'leads' | 'portfolio' | 'city' | 'closet' | 'log' | 'league'
+type TabId = 'today' | 'office' | 'marketing' | 'leads' | 'portfolio' | 'city' | 'closet' | 'log' | 'league'
 
 const TABS: [TabId, string][] = [
+  ['today', 'Today'],
   ['city', 'City'],
   ['office', 'Office'],
   ['marketing', 'Marketing'],
@@ -43,6 +47,8 @@ export interface OnlineShell {
   summaryExtra?: ReactNode
   /** Shared city: the morning report has been read. */
   onSummaryClosed?: () => void
+  /** Shared city: the last tick's report, for the Today briefing. */
+  report?: { summary: WeekSummary | null; offers: string[] } | null
 }
 
 /** The game screen — header, tabs, End Week, modals — for any source of
@@ -59,8 +65,8 @@ export default function Game({
   onNewGame: () => void
   online?: OnlineShell
 }) {
-  /* The city is the front door: it's what the game looks like now. */
-  const [tab, setTab] = useState<TabId>('city')
+  /* Today is the front door: what happened, what needs you, what's next. */
+  const [tab, setTab] = useState<TabId>('today')
   const [showSummary, setShowSummary] = useState(false)
   const [confetti, setConfetti] = useState(false)
   const [importText, setImportText] = useState('')
@@ -90,6 +96,18 @@ export default function Game({
   }, [state.promo])
 
   const market = activeMarketModifier(state)
+  const city = useCity()
+  const openBids = city ? city.view.listings.filter((l) => l.myBid).length : 0
+  const report = online?.report
+  const briefing = useMemo(
+    () =>
+      buildBriefing(state, {
+        ...(report ? { summary: report.summary ?? state.summary, offers: report.offers } : {}),
+        openBids,
+      }),
+    [state, report, openBids],
+  )
+  const urgent = urgentCount(briefing)
 
   const doExport = () => {
     const s = serialize(state)
@@ -206,6 +224,7 @@ export default function Game({
             onClick={() => setTab(id)}
           >
             {label}
+            {id === 'today' && urgent > 0 && <span className="res-today-badge">{urgent}</span>}
             {id === 'leads' && state.leads.length
               ? ' (' + state.leads.length + ')'
               : ''}
@@ -213,6 +232,7 @@ export default function Game({
         ))}
       </nav>
 
+      {tab === 'today' && <TodayTab briefing={briefing} dispatch={dispatch} go={setTab} />}
       {tab === 'office' && (
         <OfficeTab
           state={state}

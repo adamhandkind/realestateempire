@@ -151,6 +151,21 @@ agents, and last season's champion walks in the burgundy blazer. Week 52 ends
 with awards night. On a phone the game opens as a one-column check-in.
 Plan and decisions: `docs/superpowers/plans/2026-11-09-city-phase-4-life-and-polish.md`.
 
+## Today (the front door)
+
+```
+src/logic/briefing.ts   pure: what happened, what needs attention, what you
+                        can do next, all read from the state
+src/components/TodayTab the three-column briefing; opens first
+```
+
+The game opens on Today: rent, offers and auction results, renovation
+progress, district and market changes; then vacancies, loan payments, open
+issues, renovation decisions and clients about to walk; then the moves —
+bid/buy, renovate, refinance, list, work leads, or hold cash. Refinancing
+(`REFINANCE`, tuned by `REFI` in `src/data/p3.ts`) is a cash-out loan at 70%
+of today's value, so the market you refinance in matters.
+
 ## Deploying
 
 `npm run deploy` builds, applies D1 migrations remotely and deploys the

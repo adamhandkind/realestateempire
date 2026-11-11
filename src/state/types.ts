@@ -915,6 +915,8 @@ export type Action =
   | { type: 'EMERGENCY_REPAIR'; propertyId: string }
   | { type: 'EVICT'; propertyId: string; unitId: string }
   | { type: 'PAY_PRINCIPAL'; propertyId: string }
+  /** Cash-out refinance against today's value (logic/portfolio refiQuote). */
+  | { type: 'REFINANCE'; propertyId: string }
   | { type: 'TOGGLE_PROPCO' }
   | { type: 'BUY_VRBO'; downPct: number }
   | { type: 'DEBUG_SET_MARKET'; marketState: MarketState }

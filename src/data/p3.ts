@@ -83,3 +83,18 @@ export const P3 = {
     MACHINE_REP: 15,
   },
 } as const
+
+/** Cash-out refinance. The bank lends against today's value, so the market
+ *  you refinance in matters: a hot market lends more, a crash lends less. */
+export const REFI = {
+  /** The new balance is this share of today's displayed value. */
+  LTV: 0.7,
+  /** Lender fee, as a share of the new balance… */
+  FEE_PCT: 0.01,
+  /** …but never less than this. */
+  FEE_MIN: 1500,
+  /** Not worth the paperwork below this much cash out. */
+  MIN_CASH_OUT: 5000,
+  /** New loan amounts round down to this. */
+  ROUND: 1000,
+} as const

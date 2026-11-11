@@ -1,0 +1,37 @@
+/* The Today briefing. Kept out of styles.css, which is checked byte-for-byte
+   against the frozen Phase 1 build. */
+
+.res-today { margin-top: 12px; }
+.res-today-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.res-today-head h2 { margin: 2px 0 0; font-size: 26px; }
+.res-today-stats { display: flex; gap: 8px; flex-wrap: wrap; }
+.res-today-stat { background: var(--ink2); border: 1px solid rgba(245,242,234,.12); border-radius: 10px; padding: 7px 12px; min-width: 96px; }
+.res-today-stat b { font-size: 17px; font-variant-numeric: tabular-nums; }
+
+.res-today-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
+@media (max-width: 900px) { .res-today-cols { grid-template-columns: 1fr; } }
+.res-today-col { margin-bottom: 0; }
+.res-today-col .res-h2 { margin-bottom: 2px; }
+.res-today-sub { margin-bottom: 10px; }
+
+.res-today-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.res-today-happened { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: baseline; font-size: 13px; line-height: 1.45; }
+.res-today-happened b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.res-today-happened.bad .tx { color: #f0c4bf; }
+.res-today-happened.good .tx { color: #cfe9dc; }
+.ic { text-align: center; }
+
+.res-today-item { border: 1px solid rgba(245,242,234,.14); border-left: 3px solid var(--muted); border-radius: 8px; padding: 9px 10px; background: rgba(0,0,0,.14); }
+.res-today-item.urgent { border-left-color: var(--sold); }
+.res-today-item.soon { border-left-color: var(--brass); }
+.res-today-item.move { border-left-color: var(--mint); }
+.res-today-item.off { opacity: .55; }
+.res-today-item-head { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: baseline; font-size: 13.5px; }
+.res-today-detail { margin: 4px 0 0 30px; font-size: 12.5px; line-height: 1.5; opacity: .85; }
+.res-today-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0 30px; }
+.res-today-actions .res-tab { flex: 0 0 auto; padding: 6px 10px; font-size: 11.5px; text-transform: none; letter-spacing: .02em; }
+.res-today-level { font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; border-radius: 999px; padding: 2px 7px; border: 1px solid rgba(245,242,234,.25); white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+.res-today-level.urgent { background: var(--sold); border-color: var(--sold); color: var(--marble); }
+.res-today-level.soon { color: var(--brass); border-color: var(--brass); }
+.res-today-level.fyi { color: var(--muted); }
+.res-tab .res-today-badge { display: inline-block; margin-left: 5px; min-width: 16px; padding: 0 4px; border-radius: 999px; background: var(--sold); color: var(--marble); font-size: 10px; line-height: 16px; }

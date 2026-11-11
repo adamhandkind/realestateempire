@@ -1,5 +1,5 @@
 import { MILESTONES } from '../data/milestones'
-import { P3, PRICE_ROUND } from '../data/p3'
+import { P3, PRICE_ROUND, REFI } from '../data/p3'
 import { PROPERTY_TYPES, RENO_PROJECTS, STREET_NAMES } from '../data/properties'
 import { TENANTS } from '../data/tenants'
 import { FIRST_NAMES, LAST_NAMES } from '../data/archetypes'
@@ -99,6 +99,36 @@ export const hasFreeMortgageSlot = (s: GameState): boolean =>
 
 export const weeklyInterest = (p: Property): number =>
   Math.round((p.mortgage?.balance ?? 0) * P3.MORTGAGE_WEEKLY_RATE)
+
+export interface RefiQuote {
+  /** The balance after refinancing. */
+  newBalance: number
+  fee: number
+  /** What lands in your account. */
+  cashOut: number
+  /** Why it can't happen, or null when it can. */
+  blocked: string | null
+}
+
+/** A cash-out refinance against today's value. Pure: the reducer applies it
+ *  and the briefing quotes it, so both always agree. */
+export function refiQuote(s: GameState, p: Property): RefiQuote {
+  const balance = p.mortgage?.balance ?? 0
+  const newBalance =
+    Math.floor((displayedValue(s, p) * REFI.LTV) / REFI.ROUND) * REFI.ROUND
+  const fee = Math.max(REFI.FEE_MIN, Math.round(newBalance * REFI.FEE_PCT))
+  const cashOut = newBalance - balance - fee
+  const blocked = p.renovation
+    ? 'The appraiser will not value a house with the drywall off.'
+    : p.listedForSale
+      ? 'The bank will not lend on a house you are trying to sell.'
+      : !p.mortgage && !hasFreeMortgageSlot(s)
+        ? 'Every mortgage slot is taken.'
+        : cashOut < REFI.MIN_CASH_OUT
+          ? 'Not enough equity to be worth the paperwork.'
+          : null
+  return { newBalance, fee, cashOut: Math.max(0, cashOut), blocked }
+}
 
 /* -------------------------------------------------------- market pool */
 
