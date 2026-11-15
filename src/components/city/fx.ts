@@ -227,3 +227,46 @@ export class Fireworks {
     for (const s of [...this.shells]) this.drop(s)
   }
 }
+
+/** Soft cloud shadows drifting across the city: they dim direct sunlight
+ *  only, so lit windows and lamps are untouched. */
+export function cloudShadows(
+  mat: THREE.Material,
+  uniforms: { uCloudT: THREE.IUniform<number>; uDay: THREE.IUniform<number> },
+) {
+  patchShader(mat, 'clouds', (shader) => {
+    shader.uniforms.uCloudT = uniforms.uCloudT
+    shader.uniforms.uCloudDay = uniforms.uDay
+    shader.vertexShader = shader.vertexShader
+      .replace('void main() {', 'varying vec2 vCW;\nvoid main() {')
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        vCW = (modelMatrix * vec4(transformed, 1.0)).xz;`,
+      )
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        'void main() {',
+        `uniform float uCloudT;
+        uniform float uCloudDay;
+        varying vec2 vCW;
+        float cHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float cNoise(vec2 p) {
+          vec2 i = floor(p), f = fract(p);
+          vec2 u = f * f * (3.0 - 2.0 * f);
+          return mix(mix(cHash(i), cHash(i + vec2(1, 0)), u.x), mix(cHash(i + vec2(0, 1)), cHash(i + vec2(1, 1)), u.x), u.y);
+        }
+        float cloudShade(vec2 w) {
+          vec2 p = (w + vec2(uCloudT * 0.55, uCloudT * 0.2)) * 0.085;
+          float n = 0.65 * cNoise(p) + 0.35 * cNoise(p * 2.3 + 7.1);
+          /* About a third of the city under cloud at any moment. */
+          return 1.0 - 0.42 * uCloudDay * smoothstep(0.5, 0.68, n);
+        }
+        void main() {`,
+      )
+      .replace(
+        'vec3 outgoingLight = reflectedLight.directDiffuse',
+        'vec3 outgoingLight = reflectedLight.directDiffuse * cloudShade(vCW)',
+      )
+  })
+}

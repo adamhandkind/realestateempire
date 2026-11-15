@@ -25,7 +25,7 @@ import { AgentLayer, type AgentSpec } from './agents'
 import { Traffic } from './traffic'
 import { Weather } from './weather'
 import { BuildPops, popMaterial } from './pops'
-import { duskLights, Fireworks, Stars, waterRipples } from './fx'
+import { cloudShadows, duskLights, Fireworks, Stars, waterRipples } from './fx'
 
 /** True isometric: the camera looks down 35.264° (atan(1/√2)). */
 const ELEVATION = Math.atan(1 / Math.SQRT2)
@@ -92,7 +92,9 @@ export class CityScene {
   /* New buildings rise out of the ground with a little overshoot. */
   private pops: BuildPops
   private lotSigs: string[] | null = null
-  private fxU = { uNight: { value: 0 }, uDay: { value: 1 }, uTime: { value: 0 } }
+  private fxU = { uNight: { value: 0 }, uDay: { value: 1 }, uTime: { value: 0 }, uCloudT: { value: 0 } }
+  /** Clouds hold still for reduce-motion. */
+  private cloudsMove = !calmMotion()
   private stars: Stars
   private fireworks = new Fireworks(!calmMotion())
   private floats: { el: HTMLDivElement; pos: THREE.Vector3; until: number }[] = []
@@ -174,6 +176,7 @@ export class CityScene {
 
     const waterMat = new THREE.MeshLambertMaterial({ color: '#2f86b8' })
     waterRipples(waterMat, this.fxU)
+    cloudShadows(waterMat, this.fxU)
     this.water = new THREE.Mesh(new THREE.PlaneGeometry(COLS, ROWS), waterMat)
     this.water.rotation.x = -Math.PI / 2
     this.water.position.y = WATER_Y
@@ -245,6 +248,7 @@ export class CityScene {
     } else {
       const mat = new THREE.MeshLambertMaterial({ vertexColors: true })
       popMaterial(mat, this.pops.uniforms)
+      cloudShadows(mat, this.fxU)
       this.cityMesh = new THREE.Mesh(geo.main, mat)
       /* The shadow has to rise with the building, or it lands first. */
       const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking })
@@ -737,6 +741,7 @@ export class CityScene {
     this.fxU.uNight.value = night
     this.fxU.uDay.value = day
     this.fxU.uTime.value = t
+    if (this.cloudsMove) this.fxU.uCloudT.value = t
     this.bloom.strength = night * night * 0.85
     /* Holiday lights: always on, brighter after dark, and they twinkle. */
     const tw = 0.85 + 0.15 * Math.sin(t * 2.3)
