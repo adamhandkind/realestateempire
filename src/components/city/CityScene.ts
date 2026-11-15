@@ -4,6 +4,10 @@
    it data; this file only draws and reports what was clicked. */
 
 import * as THREE from 'three'
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { COLS, ROWS, cityLayout as cityLayoutOf, type CityLayout } from '../../city/layout'
 import type { LotUse } from '../../city/occupancy'
 import type { Season } from '../../city/season'
@@ -20,6 +24,7 @@ import type { Tile } from '../../city/paths'
 import { AgentLayer, type AgentSpec } from './agents'
 import { Traffic } from './traffic'
 import { Weather } from './weather'
+import { BuildPops, popMaterial } from './pops'
 
 /** True isometric: the camera looks down 35.264° (atan(1/√2)). */
 const ELEVATION = Math.atan(1 / Math.SQRT2)
@@ -79,6 +84,13 @@ export class CityScene {
   private frame = 0
   private disposed = false
   private resizeObs: ResizeObserver
+  /* Night glow: windows, lamps and holiday lights bleed a little light. Only
+     runs after dusk; by day the scene renders straight to the screen. */
+  private composer: EffectComposer
+  private bloom: UnrealBloomPass
+  /* New buildings rise out of the ground with a little overshoot. */
+  private pops: BuildPops
+  private lotSigs: string[] | null = null
 
   /* camera state: where it looks, which quarter-turn, how close */
   private target = new THREE.Vector3(0, 0, 0)
@@ -110,6 +122,14 @@ export class CityScene {
 
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 400)
 
+    /* A multisampled target keeps the edges as crisp as the direct render. */
+    const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 })
+    this.composer = new EffectComposer(this.renderer, rt)
+    this.composer.addPass(new RenderPass(this.scene, this.camera))
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0, 0.55, 0.62)
+    this.composer.addPass(this.bloom)
+    this.composer.addPass(new OutputPass())
+
     const hemi = (this.hemi = new THREE.HemisphereLight('#fff6e6', '#5a4a3a', 1.6))
     this.scene.add(hemi)
     const sun = (this.sun = new THREE.DirectionalLight('#ffe8c2', 2.2))
@@ -132,11 +152,14 @@ export class CityScene {
     this.glowMesh = new THREE.Mesh(new THREE.BufferGeometry(), this.glowMat)
     this.scene.add(this.glowMesh)
 
+    this.pops = new BuildPops(!calmMotion())
+    this.scene.add(this.pops.group)
+    popMaterial(this.glowMat, this.pops.uniforms)
+
     this.agents = new AgentLayer(cityLayoutOf(), labelLayer)
     this.scene.add(this.agents.group)
     /* Traffic and weather are motion for its own sake; respect the setting. */
-    const calm = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    this.weatherOn = !calm
+    this.weatherOn = !calmMotion()
 
     this.water = new THREE.Mesh(
       new THREE.PlaneGeometry(COLS, ROWS),
@@ -193,6 +216,13 @@ export class CityScene {
     if (this.weatherSeason !== data.season) this.setWeather(data.season)
     this.lightCheckedAt = -Infinity
 
+    /* Anything newly built, bought or changed since the last rebuild pops. */
+    const sigs = data.city.lots.map((l) => useSig(data.uses.get(l.id)))
+    const changed = this.lotSigs
+      ? sigs.flatMap((s, i) => (s !== this.lotSigs![i] && s !== 'empty' ? [i] : []))
+      : []
+    this.lotSigs = sigs
+
     const geo = buildCityGeometry(
       data.city,
       data.uses,
@@ -203,10 +233,13 @@ export class CityScene {
       this.cityMesh.geometry.dispose()
       this.cityMesh.geometry = geo.main
     } else {
-      this.cityMesh = new THREE.Mesh(
-        geo.main,
-        new THREE.MeshLambertMaterial({ vertexColors: true }),
-      )
+      const mat = new THREE.MeshLambertMaterial({ vertexColors: true })
+      popMaterial(mat, this.pops.uniforms)
+      this.cityMesh = new THREE.Mesh(geo.main, mat)
+      /* The shadow has to rise with the building, or it lands first. */
+      const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking })
+      popMaterial(depth, this.pops.uniforms)
+      this.cityMesh.customDepthMaterial = depth
       this.cityMesh.castShadow = true
       this.cityMesh.receiveShadow = true
       this.scene.add(this.cityMesh)
@@ -224,6 +257,12 @@ export class CityScene {
     }
     this.heights = geo.heights
     this.cityMarkers = geo.markers
+    /* A whole-city reshuffle (a new game, a shared city loading) is not a build. */
+    if (changed.length && changed.length <= 6)
+      for (const i of changed) {
+        const lot = data.city.lots[i]
+        this.pops.start(i, lot.col - COLS / 2 + 0.5, lot.row - ROWS / 2 + 0.5)
+      }
     this.setMarkers()
     this.placeBox(this.hoverBox, this.hoverLot)
     this.placeBox(this.selectBox, this.selectedLot)
@@ -566,6 +605,8 @@ export class CityScene {
     const w = this.host.clientWidth || 1
     const h = this.host.clientHeight || 1
     this.renderer.setSize(w, h, false)
+    this.composer.setPixelRatio(this.renderer.getPixelRatio())
+    this.composer.setSize(w, h)
     const view = 22
     const aspect = w / h
     this.camera.left = (-view * aspect) / 2
@@ -622,7 +663,9 @@ export class CityScene {
       this.pendingHover = null
     }
     this.animateMarkers(t)
-    this.renderer.render(this.scene, cam)
+    this.pops.update(dt)
+    if (this.bloom.strength > 0.02) this.composer.render(dt)
+    else this.renderer.render(this.scene, cam)
     this.positionLabels()
     this.agents.positionLabels(cam, this.host.clientWidth, this.host.clientHeight, this.zoom)
   }
@@ -648,7 +691,8 @@ export class CityScene {
     const bg = (this.scene.background as THREE.Color | null) ?? new THREE.Color()
     this.scene.background = bg.set(pal.sky).lerp(c.set('#0b0d16'), night * 0.5)
     ;(this.water.material as THREE.MeshLambertMaterial).color.set(pal.water).lerp(c.set('#1b2c44'), night * 0.6)
-    this.glowMat.emissiveIntensity = night * 0.8
+    this.glowMat.emissiveIntensity = night * 1.1
+    this.bloom.strength = night * night * 0.85
     /* Holiday lights: always on, brighter after dark, and they twinkle. */
     const tw = 0.85 + 0.15 * Math.sin(t * 2.3)
     this.lightsMat.color.setScalar((0.6 + 0.4 * night) * tw)
@@ -676,6 +720,9 @@ export class CityScene {
     cancelAnimationFrame(this.frame)
     this.resizeObs.disconnect()
     for (const l of this.labels) l.el.remove()
+    this.pops.dispose()
+    this.composer.dispose()
+    this.bloom.dispose()
     this.scene.traverse((o) => {
       const m = o as THREE.Mesh
       if (m.geometry) m.geometry.dispose()
@@ -689,6 +736,26 @@ export class CityScene {
 }
 
 const UP = new THREE.Vector3(0, 1, 0)
+
+const calmMotion = () =>
+  typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+/** What stands on a lot, as far as the look of it goes. */
+function useSig(u: LotUse | undefined): string {
+  if (!u) return 'empty'
+  switch (u.kind) {
+    case 'listing':
+      return 'L' + u.listing.typeId
+    case 'owned':
+      return 'O' + u.property.typeId
+    case 'rival':
+    case 'independent':
+    case 'player':
+      return u.kind[0] + u.typeId
+    default:
+      return u.kind
+  }
+}
 const GROUND = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
 const clamp = (v: number, lo: number, hi: number) =>
   Math.max(lo, Math.min(hi, v))
