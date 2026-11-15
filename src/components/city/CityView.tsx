@@ -17,6 +17,7 @@ import { SEASON_LABEL, seasonOf } from '../../city/season'
 import { districtOf, districtOrFirst } from '../../data/districts'
 import { RIVALS } from '../../data/rivals'
 import { labelOf } from '../../logic/portfolio'
+import { money } from '../../logic/rand'
 import type { Action, GameState } from '../../state/types'
 import DistrictSheet from '../DistrictSheet'
 import ListingDeal from '../portfolio/ListingDeal'
@@ -58,9 +59,12 @@ const TIME_TITLE: Record<TimeMode, string> = {
 export default function CityView({
   state,
   dispatch,
+  curtain = false,
 }: {
   state: GameState
   dispatch: (a: Action) => void
+  /** A modal is over the map (the Week Summary): hold the payday show. */
+  curtain?: boolean
 }) {
   const host = useRef<HTMLDivElement>(null)
   const labels = useRef<HTMLDivElement>(null)
@@ -221,6 +225,44 @@ export default function CityView({
       priceMultOf,
     })
   }, [city, look, season])
+
+  /* Where each of your properties stands. */
+  const lotOfProperty = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const [lotId, u] of uses) if (u.kind === 'owned') m.set(u.property.id, lotId)
+    return m
+  }, [uses])
+
+  /* Keys in the door: a name tag floats off anything you just bought. */
+  const knownProps = useRef<Set<string> | null>(null)
+  useEffect(() => {
+    const ids = new Set(properties.map((p) => p.id))
+    const before = knownProps.current
+    knownProps.current = ids
+    if (!before || !scene.current) return
+    for (const p of properties)
+      if (!before.has(p.id)) {
+        const lot = lotOfProperty.get(p.id)
+        if (lot) scene.current.floatText(lot, '🔑 ' + p.nickname, 'news', 350)
+      }
+  }, [properties, lotOfProperty])
+
+  /* Payday: once the Week Summary is out of the way, each building's week
+     drifts up off its roof. */
+  const paidWeek = useRef(state.summary?.week ?? null)
+  useEffect(() => {
+    const sum = state.summary
+    if (!sum || curtain || sum.week === paidWeek.current || !scene.current) return
+    paidWeek.current = sum.week
+    const byName = new Map(properties.map((p) => [p.nickname, p.id]))
+    let n = 0
+    for (const row of sum.portfolio) {
+      const lot = lotOfProperty.get(byName.get(row.nickname) ?? '')
+      if (!lot || Math.round(row.net) === 0 || n >= 14) continue
+      scene.current.floatText(lot, (row.net > 0 ? '+' : '') + money(row.net), row.net > 0 ? 'gain' : 'loss', 250 + n * 160)
+      n++
+    }
+  }, [state.summary, curtain, properties, lotOfProperty])
 
   useEffect(() => {
     scene.current?.setClients(clientLots)

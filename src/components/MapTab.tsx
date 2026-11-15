@@ -12,9 +12,12 @@ const CityView = lazy(() => import('./city/CityView'))
 export default function MapTab({
   state,
   dispatch,
+  curtain,
 }: {
   state: GameState
   dispatch: (a: Action) => void
+  /** A modal is over the map. */
+  curtain?: boolean
 }) {
   const intel = state.chadwickIntel
 
@@ -27,7 +30,7 @@ export default function MapTab({
           </div>
         }
       >
-        <CityView state={state} dispatch={dispatch} />
+        <CityView state={state} dispatch={dispatch} curtain={curtain} />
       </Suspense>
 
       {intel && (

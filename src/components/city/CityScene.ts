@@ -25,6 +25,7 @@ import { AgentLayer, type AgentSpec } from './agents'
 import { Traffic } from './traffic'
 import { Weather } from './weather'
 import { BuildPops, popMaterial } from './pops'
+import { duskLights, Stars, waterRipples } from './fx'
 
 /** True isometric: the camera looks down 35.264° (atan(1/√2)). */
 const ELEVATION = Math.atan(1 / Math.SQRT2)
@@ -91,6 +92,10 @@ export class CityScene {
   /* New buildings rise out of the ground with a little overshoot. */
   private pops: BuildPops
   private lotSigs: string[] | null = null
+  private fxU = { uNight: { value: 0 }, uDay: { value: 1 }, uTime: { value: 0 } }
+  private stars: Stars
+  private floats: { el: HTMLDivElement; pos: THREE.Vector3; until: number }[] = []
+  private labelLayer: HTMLElement
 
   /* camera state: where it looks, which quarter-turn, how close */
   private target = new THREE.Vector3(0, 0, 0)
@@ -112,6 +117,7 @@ export class CityScene {
 
   constructor(host: HTMLElement, labelLayer: HTMLElement, cb: SceneCallbacks) {
     this.host = host
+    this.labelLayer = labelLayer
     this.cb = cb
     this.renderer = new THREE.WebGLRenderer({ antialias: true })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
@@ -121,6 +127,9 @@ export class CityScene {
     host.appendChild(this.renderer.domElement)
 
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 400)
+    this.stars = new Stars(400)
+    this.camera.add(this.stars.points)
+    this.scene.add(this.camera)
 
     /* A multisampled target keeps the edges as crisp as the direct render. */
     const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 })
@@ -148,23 +157,23 @@ export class CityScene {
     this.scene.add(sun, sun.target)
 
     /* Windows and lamp heads: the same flat colours by day, lit at night. */
-    this.glowMat = new THREE.MeshLambertMaterial({ vertexColors: true, emissive: '#ffc46b', emissiveIntensity: 0 })
+    this.glowMat = new THREE.MeshLambertMaterial({ vertexColors: true, emissive: '#ffc46b', emissiveIntensity: 1.1 })
     this.glowMesh = new THREE.Mesh(new THREE.BufferGeometry(), this.glowMat)
     this.scene.add(this.glowMesh)
 
     this.pops = new BuildPops(!calmMotion())
     this.scene.add(this.pops.group)
     popMaterial(this.glowMat, this.pops.uniforms)
+    duskLights(this.glowMat, this.fxU)
 
     this.agents = new AgentLayer(cityLayoutOf(), labelLayer)
     this.scene.add(this.agents.group)
     /* Traffic and weather are motion for its own sake; respect the setting. */
     this.weatherOn = !calmMotion()
 
-    this.water = new THREE.Mesh(
-      new THREE.PlaneGeometry(COLS, ROWS),
-      new THREE.MeshLambertMaterial({ color: '#2f86b8' }),
-    )
+    const waterMat = new THREE.MeshLambertMaterial({ color: '#2f86b8' })
+    waterRipples(waterMat, this.fxU)
+    this.water = new THREE.Mesh(new THREE.PlaneGeometry(COLS, ROWS), waterMat)
     this.water.rotation.x = -Math.PI / 2
     this.water.position.y = WATER_Y
     this.water.receiveShadow = true
@@ -261,7 +270,11 @@ export class CityScene {
     if (changed.length && changed.length <= 6)
       for (const i of changed) {
         const lot = data.city.lots[i]
-        this.pops.start(i, lot.col - COLS / 2 + 0.5, lot.row - ROWS / 2 + 0.5)
+        const x = lot.col - COLS / 2 + 0.5
+        const z = lot.row - ROWS / 2 + 0.5
+        this.pops.start(i, x, z)
+        /* Yours now: gold sparks off the roof. */
+        if (sigs[i].startsWith('O')) this.pops.burst(x, Math.max(0.3, this.heights[i] ?? 0.3) * 0.6, z)
       }
     this.setMarkers()
     this.placeBox(this.hoverBox, this.hoverLot)
@@ -319,6 +332,20 @@ export class CityScene {
     if (!lot) return
     this.goalTarget.set(lot.col - COLS / 2 + 0.5, 0, lot.row - ROWS / 2 + 0.5)
     this.goalZoom = Math.max(this.goalZoom, 2.2)
+  }
+
+  /** Text that drifts up off a lot and fades: rent coming in, a sale. */
+  floatText(lotId: string, text: string, tone: 'gain' | 'loss' | 'news' = 'gain', delayMs = 0) {
+    const lot = this.data?.city.lotById.get(lotId)
+    if (!lot || !this.data) return
+    const idx = this.data.city.lots.indexOf(lot)
+    const el = document.createElement('div')
+    el.className = 'res-city-float ' + tone
+    el.textContent = text
+    el.style.animationDelay = delayMs + 'ms'
+    this.labelLayer.appendChild(el)
+    const pos = new THREE.Vector3(lot.col - COLS / 2 + 0.5, (this.heights[idx] ?? 0.3) + 0.35, lot.row - ROWS / 2 + 0.5)
+    this.floats.push({ el, pos, until: performance.now() + delayMs + 2600 })
   }
 
   /* ------------------------------------------------------- camera input */
@@ -633,6 +660,7 @@ export class CityScene {
     }
     this.applyLight(t)
     this.agents.update(t)
+    this.stars.update(t, 1 - this.light.day, this.zoom, this.renderer.getPixelRatio())
     if (this.follow) {
       const p = this.agents.positionOf(this.follow)
       if (p) this.goalTarget.set(p.x, 0, p.z)
@@ -691,7 +719,9 @@ export class CityScene {
     const bg = (this.scene.background as THREE.Color | null) ?? new THREE.Color()
     this.scene.background = bg.set(pal.sky).lerp(c.set('#0b0d16'), night * 0.5)
     ;(this.water.material as THREE.MeshLambertMaterial).color.set(pal.water).lerp(c.set('#1b2c44'), night * 0.6)
-    this.glowMat.emissiveIntensity = night * 1.1
+    this.fxU.uNight.value = night
+    this.fxU.uDay.value = day
+    this.fxU.uTime.value = t
     this.bloom.strength = night * night * 0.85
     /* Holiday lights: always on, brighter after dark, and they twinkle. */
     const tw = 0.85 + 0.15 * Math.sin(t * 2.3)
@@ -710,6 +740,14 @@ export class CityScene {
       l.el.style.transform = `translate(-50%, -50%) translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`
       l.el.style.opacity = show ? '1' : '0'
     }
+    const now = performance.now()
+    for (const f of this.floats) {
+      v.copy(f.pos).project(this.camera)
+      f.el.style.left = ((v.x * 0.5 + 0.5) * w).toFixed(1) + 'px'
+      f.el.style.top = ((-v.y * 0.5 + 0.5) * h).toFixed(1) + 'px'
+      if (now > f.until) f.el.remove()
+    }
+    this.floats = this.floats.filter((f) => now <= f.until)
   }
 
   dispose() {
@@ -720,6 +758,8 @@ export class CityScene {
     cancelAnimationFrame(this.frame)
     this.resizeObs.disconnect()
     for (const l of this.labels) l.el.remove()
+    for (const f of this.floats) f.el.remove()
+    this.stars.dispose()
     this.pops.dispose()
     this.composer.dispose()
     this.bloom.dispose()

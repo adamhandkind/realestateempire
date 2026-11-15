@@ -23,9 +23,24 @@ export function easeOutBack(t: number): number {
   return 1 + c3 * u * u * u + c1 * u * u
 }
 
+/** Add a shader patch on top of whatever patches a material already has. */
+export function patchShader(
+  mat: THREE.Material,
+  key: string,
+  fn: (shader: THREE.WebGLProgramParametersWithUniforms) => void,
+) {
+  const prev = mat.onBeforeCompile.bind(mat)
+  const prevKey = mat.customProgramCacheKey.bind(mat)
+  mat.onBeforeCompile = (shader, r) => {
+    prev(shader, r)
+    fn(shader)
+  }
+  mat.customProgramCacheKey = () => prevKey() + '|' + key
+}
+
 /** Teach a material to squash the lots named in the uniforms. */
 export function popMaterial(mat: THREE.Material, uniforms: PopUniforms) {
-  mat.onBeforeCompile = (shader) => {
+  patchShader(mat, 'build-pop', (shader) => {
     Object.assign(shader.uniforms, uniforms)
     shader.vertexShader = shader.vertexShader
       .replace(
@@ -38,8 +53,16 @@ export function popMaterial(mat: THREE.Material, uniforms: PopUniforms) {
         vec4 popHit = 1.0 - step(0.5, abs(vec4(lotIndex) - uPopLot));
         transformed.y *= 1.0 + dot(popHit, uPopK - 1.0);`,
       )
-  }
-  mat.customProgramCacheKey = () => 'build-pop'
+  })
+}
+
+const SPARKS = 36
+const SPARK_LIFE = 1.3
+
+interface Burst {
+  t: number
+  pts: THREE.Points
+  vel: Float32Array
 }
 
 interface Pop {
@@ -55,12 +78,40 @@ export class BuildPops {
     uPopK: { value: new THREE.Vector4(1, 1, 1, 1) },
   }
   private live: Pop[] = []
+  private bursts: Burst[] = []
+  private sparkMat = new THREE.PointsMaterial({
+    color: '#ffd76a',
+    size: 7,
+    sizeAttenuation: false,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  })
   private ringGeo = new THREE.RingGeometry(0.42, 0.5, 40).rotateX(-Math.PI / 2)
 
   private enabled: boolean
 
   constructor(enabled: boolean) {
     this.enabled = enabled
+  }
+
+  /** Gold sparks fountaining off a roof: something just became yours. */
+  burst(x: number, y: number, z: number) {
+    if (!this.enabled) return
+    const pos = new Float32Array(SPARKS * 3)
+    const vel = new Float32Array(SPARKS * 3)
+    for (let i = 0; i < SPARKS; i++) {
+      const a = Math.random() * Math.PI * 2
+      const r = 0.6 + Math.random() * 1.4
+      pos.set([x, y, z], i * 3)
+      vel.set([Math.cos(a) * r, 2.6 + Math.random() * 2.4, Math.sin(a) * r], i * 3)
+    }
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    const pts = new THREE.Points(g, this.sparkMat.clone())
+    pts.frustumCulled = false
+    this.group.add(pts)
+    this.bursts.push({ t: 0, pts, vel })
   }
 
   start(lotIndex: number, x: number, z: number) {
@@ -101,6 +152,28 @@ export class BuildPops {
       p.ring.visible = r < 1
       if (rise >= 1 && r >= 1) this.drop(p)
     }
+    for (const b of [...this.bursts]) {
+      b.t += step
+      const attr = b.pts.geometry.getAttribute('position') as THREE.BufferAttribute
+      const a = attr.array as Float32Array
+      for (let i = 0; i < SPARKS; i++) {
+        b.vel[i * 3 + 1] -= 7 * step
+        a[i * 3] += b.vel[i * 3] * step
+        a[i * 3 + 1] = Math.max(0.05, a[i * 3 + 1] + b.vel[i * 3 + 1] * step)
+        a[i * 3 + 2] += b.vel[i * 3 + 2] * step
+      }
+      attr.needsUpdate = true
+      const k = b.t / SPARK_LIFE
+      ;(b.pts.material as THREE.PointsMaterial).opacity = 1 - k * k
+      if (k >= 1) this.dropBurst(b)
+    }
+  }
+
+  private dropBurst(b: Burst) {
+    this.group.remove(b.pts)
+    b.pts.geometry.dispose()
+    ;(b.pts.material as THREE.Material).dispose()
+    this.bursts = this.bursts.filter((x) => x !== b)
   }
 
   private drop(p: Pop) {
@@ -113,6 +186,8 @@ export class BuildPops {
 
   dispose() {
     for (const p of [...this.live]) this.drop(p)
+    for (const b of [...this.bursts]) this.dropBurst(b)
     this.ringGeo.dispose()
+    this.sparkMat.dispose()
   }
 }

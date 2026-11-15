@@ -250,7 +250,7 @@ export default function Game({
       {tab === 'marketing' && <MarketingTab state={state} dispatch={dispatch} />}
       {tab === 'leads' && <LeadsTab state={state} dispatch={dispatch} />}
       {tab === 'portfolio' && <PortfolioTab state={state} dispatch={dispatch} />}
-      {tab === 'city' && <MapTab state={state} dispatch={dispatch} />}
+      {tab === 'city' && <MapTab state={state} dispatch={dispatch} curtain={showSummary || !!state.postComposerPending} />}
       {tab === 'closet' && <ClosetTab state={state} dispatch={dispatch} />}
       {tab === 'log' && <LogTab state={state} />}
       {tab === 'league' && online?.league}
