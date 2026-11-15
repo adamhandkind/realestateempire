@@ -118,3 +118,112 @@ export class Stars {
     this.mat.dispose()
   }
 }
+
+const SHELL_SPARKS = 90
+const PALETTE = ['#ffd76a', '#ff6b6b', '#7ad7ff', '#b58cff', '#7dffb0', '#fff3c4']
+
+interface Shell {
+  /** Seconds until launch; negative once it is in the air. */
+  wait: number
+  t: number
+  fuse: number
+  pts: THREE.Points
+  vel: Float32Array
+  burst: boolean
+  x: number
+  z: number
+}
+
+/** Fireworks: shells climb from street level, then break into colour. */
+export class Fireworks {
+  readonly group = new THREE.Group()
+  private shells: Shell[] = []
+  private enabled: boolean
+
+  constructor(enabled: boolean) {
+    this.enabled = enabled
+  }
+
+  /** A volley of `count` shells around (x, z), staggered so it rolls. */
+  show(x: number, z: number, count: number) {
+    if (!this.enabled) return
+    for (let i = 0; i < count; i++) {
+      const pos = new Float32Array(SHELL_SPARKS * 3)
+      const vel = new Float32Array(SHELL_SPARKS * 3)
+      const sx = x + (Math.random() - 0.5) * 7
+      const sz = z + (Math.random() - 0.5) * 7
+      for (let k = 0; k < SHELL_SPARKS; k++) pos.set([sx, 0.5, sz], k * 3)
+      const g = new THREE.BufferGeometry()
+      g.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+      const col = PALETTE[Math.floor(Math.random() * PALETTE.length)]
+      const pts = new THREE.Points(
+        g,
+        new THREE.PointsMaterial({ color: col, size: 8, sizeAttenuation: false, transparent: true, depthWrite: false }),
+      )
+      pts.frustumCulled = false
+      pts.visible = false
+      this.group.add(pts)
+      this.shells.push({ wait: i * 0.38 + Math.random() * 0.15, t: 0, fuse: 0.75 + Math.random() * 0.3, pts, vel, burst: false, x: sx, z: sz })
+    }
+  }
+
+  update(dt: number) {
+    const step = Math.min(dt, 1 / 20)
+    for (const s of [...this.shells]) {
+      if (s.wait > 0) {
+        s.wait -= step
+        continue
+      }
+      s.pts.visible = true
+      s.t += step
+      const attr = s.pts.geometry.getAttribute('position') as THREE.BufferAttribute
+      const a = attr.array as Float32Array
+      const mat = s.pts.material as THREE.PointsMaterial
+      if (!s.burst) {
+        /* Climbing: every spark rides together as one bright point. */
+        const y = 0.5 + 9 * s.t - 3 * s.t * s.t
+        for (let k = 0; k < SHELL_SPARKS; k++) a.set([s.x, y, s.z], k * 3)
+        mat.size = 5
+        if (s.t >= s.fuse) {
+          s.burst = true
+          s.t = 0
+          mat.size = 8
+          const speed = 3.4 + Math.random() * 1.4
+          for (let k = 0; k < SHELL_SPARKS; k++) {
+            /* Even spread over a sphere, so it reads as a round burst. */
+            const u = Math.random() * 2 - 1
+            const th = Math.random() * Math.PI * 2
+            const r = Math.sqrt(1 - u * u) * speed * (0.85 + Math.random() * 0.15)
+            s.vel.set([Math.cos(th) * r, u * speed, Math.sin(th) * r], k * 3)
+          }
+        }
+      } else {
+        const drag = Math.exp(-1.6 * step)
+        for (let k = 0; k < SHELL_SPARKS; k++) {
+          s.vel[k * 3] *= drag
+          s.vel[k * 3 + 1] = s.vel[k * 3 + 1] * drag - 2.2 * step
+          s.vel[k * 3 + 2] *= drag
+          a[k * 3] += s.vel[k * 3] * step
+          a[k * 3 + 1] += s.vel[k * 3 + 1] * step
+          a[k * 3 + 2] += s.vel[k * 3 + 2] * step
+        }
+        const k = s.t / 1.8
+        /* A little crackle on the way out. */
+        mat.opacity = Math.max(0, 1 - k * k) * (k > 0.55 ? 0.7 + 0.3 * Math.sin(s.t * 40) : 1)
+        if (k >= 1) this.drop(s)
+      }
+      attr.needsUpdate = true
+    }
+  }
+
+  private drop(s: Shell) {
+    this.group.remove(s.pts)
+    s.pts.geometry.dispose()
+    ;(s.pts.material as THREE.Material).dispose()
+    this.shells = this.shells.filter((x) => x !== s)
+  }
+
+  dispose() {
+    for (const s of [...this.shells]) this.drop(s)
+  }
+}

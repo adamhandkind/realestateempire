@@ -25,7 +25,7 @@ import { AgentLayer, type AgentSpec } from './agents'
 import { Traffic } from './traffic'
 import { Weather } from './weather'
 import { BuildPops, popMaterial } from './pops'
-import { duskLights, Stars, waterRipples } from './fx'
+import { duskLights, Fireworks, Stars, waterRipples } from './fx'
 
 /** True isometric: the camera looks down 35.264° (atan(1/√2)). */
 const ELEVATION = Math.atan(1 / Math.SQRT2)
@@ -94,6 +94,7 @@ export class CityScene {
   private lotSigs: string[] | null = null
   private fxU = { uNight: { value: 0 }, uDay: { value: 1 }, uTime: { value: 0 } }
   private stars: Stars
+  private fireworks = new Fireworks(!calmMotion())
   private floats: { el: HTMLDivElement; pos: THREE.Vector3; until: number }[] = []
   private labelLayer: HTMLElement
 
@@ -162,7 +163,7 @@ export class CityScene {
     this.scene.add(this.glowMesh)
 
     this.pops = new BuildPops(!calmMotion())
-    this.scene.add(this.pops.group)
+    this.scene.add(this.pops.group, this.fireworks.group)
     popMaterial(this.glowMat, this.pops.uniforms)
     duskLights(this.glowMat, this.fxU)
 
@@ -339,13 +340,26 @@ export class CityScene {
     const lot = this.data?.city.lotById.get(lotId)
     if (!lot || !this.data) return
     const idx = this.data.city.lots.indexOf(lot)
+    const pos = new THREE.Vector3(lot.col - COLS / 2 + 0.5, (this.heights[idx] ?? 0.3) + 0.35, lot.row - ROWS / 2 + 0.5)
+    this.floatAt(pos, text, tone, delayMs, 2600)
+  }
+
+  private floatAt(pos: THREE.Vector3, text: string, cls: string, delayMs: number, lifeMs: number) {
     const el = document.createElement('div')
-    el.className = 'res-city-float ' + tone
+    el.className = 'res-city-float ' + cls
     el.textContent = text
     el.style.animationDelay = delayMs + 'ms'
     this.labelLayer.appendChild(el)
-    const pos = new THREE.Vector3(lot.col - COLS / 2 + 0.5, (this.heights[idx] ?? 0.3) + 0.35, lot.row - ROWS / 2 + 0.5)
-    this.floats.push({ el, pos, until: performance.now() + delayMs + 2600 })
+    this.floats.push({ el, pos, until: performance.now() + delayMs + lifeMs })
+  }
+
+  /** Fireworks over downtown and a banner: a promotion, a milestone, a Goldie. */
+  celebrate(text: string, shells = 8) {
+    const d = DISTRICTS.find((x) => x.id === 'downtown') ?? DISTRICTS[0]
+    const x = d.labelPos.x / 25 - COLS / 2
+    const z = d.labelPos.y / 25 - ROWS / 2
+    this.fireworks.show(x, z, shells)
+    this.floatAt(new THREE.Vector3(x, 5.5, z), text, 'news big', 0, 4600)
   }
 
   /* ------------------------------------------------------- camera input */
@@ -692,6 +706,7 @@ export class CityScene {
     }
     this.animateMarkers(t)
     this.pops.update(dt)
+    this.fireworks.update(dt)
     if (this.bloom.strength > 0.02) this.composer.render(dt)
     else this.renderer.render(this.scene, cam)
     this.positionLabels()
@@ -760,6 +775,7 @@ export class CityScene {
     for (const l of this.labels) l.el.remove()
     for (const f of this.floats) f.el.remove()
     this.stars.dispose()
+    this.fireworks.dispose()
     this.pops.dispose()
     this.composer.dispose()
     this.bloom.dispose()

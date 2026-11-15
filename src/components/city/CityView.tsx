@@ -18,6 +18,8 @@ import { districtOf, districtOrFirst } from '../../data/districts'
 import { RIVALS } from '../../data/rivals'
 import { labelOf } from '../../logic/portfolio'
 import { money } from '../../logic/rand'
+import { MILESTONES } from '../../data/milestones'
+import { AWARDS } from '../../data/awards'
 import type { Action, GameState } from '../../state/types'
 import DistrictSheet from '../DistrictSheet'
 import ListingDeal from '../portfolio/ListingDeal'
@@ -263,6 +265,37 @@ export default function CityView({
       n++
     }
   }, [state.summary, curtain, properties, lotOfProperty])
+
+  /* Big moments get fireworks over downtown: a promotion, a net-worth
+     milestone, a Goldie. Queued while a modal covers the map, so you see them. */
+  const seen = useRef({
+    promo: state.promo,
+    milestones: state.milestonesUnlocked.length,
+    trophies: state.trophies.length,
+  })
+  const party = useRef<{ text: string; shells: number }[]>([])
+  useEffect(() => {
+    const was = seen.current
+    if (state.promo && state.promo !== was.promo) party.current.push({ text: '🎉 Promoted: ' + state.promo, shells: 10 })
+    for (const id of state.milestonesUnlocked.slice(was.milestones)) {
+      const m = MILESTONES.find((x) => x.id === id)
+      if (m) party.current.push({ text: '🏆 ' + m.label, shells: 8 })
+    }
+    for (const t of state.trophies.slice(was.trophies)) {
+      const a = AWARDS.find((x) => x.id === t.awardId)
+      if (a) party.current.push({ text: '🥇 ' + a.name, shells: 12 })
+    }
+    seen.current = { promo: state.promo, milestones: state.milestonesUnlocked.length, trophies: state.trophies.length }
+    if (curtain || !scene.current || !party.current.length) return
+    /* One show at a time, a few seconds apart. */
+    const queue = party.current
+    party.current = []
+    queue.forEach((c, i) =>
+      partyTimers.current.push(setTimeout(() => scene.current?.celebrate(c.text, c.shells), i * 4200)),
+    )
+  }, [state.promo, state.milestonesUnlocked, state.trophies, curtain])
+  const partyTimers = useRef<ReturnType<typeof setTimeout>[]>([])
+  useEffect(() => () => partyTimers.current.forEach(clearTimeout), [])
 
   useEffect(() => {
     scene.current?.setClients(clientLots)

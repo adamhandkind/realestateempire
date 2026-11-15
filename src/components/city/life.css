@@ -42,3 +42,7 @@
   .res-city-float { animation: res-float-still 2.4s linear both; }
   @keyframes res-float-still { 0%, 85% { opacity: 1; } 100% { opacity: 0; } }
 }
+
+/* The headline over downtown when the fireworks go up. */
+.res-city-float.big { font-size: 17px; padding: 6px 16px; letter-spacing: .04em; z-index: 1;
+  box-shadow: 0 0 24px rgba(255, 196, 80, .45); animation-duration: 4.4s; }
