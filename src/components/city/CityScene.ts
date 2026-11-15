@@ -452,6 +452,7 @@ export class CityScene {
     if (!d || d.moved) return
     const agent = this.cb.onAgent ? this.pickAgent(e.clientX, e.clientY) : null
     if (agent) {
+      this.agents.wave(agent)
       this.cb.onAgent!(agent)
       return
     }
@@ -677,7 +678,7 @@ export class CityScene {
       if (this.data) this.light = daylightFor(this.timeMode, new Date(), this.data.season)
     }
     this.applyLight(t)
-    this.agents.update(t)
+    this.agents.update(t, this.azimuth)
     this.stars.update(t, 1 - this.light.day, this.zoom, this.renderer.getPixelRatio())
     if (this.follow) {
       const p = this.agents.positionOf(this.follow)
