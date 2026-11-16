@@ -49,6 +49,9 @@ export interface Rig {
   shoulders: [THREE.Group, THREE.Group]
   elbows: [THREE.Group, THREE.Group]
   phone: THREE.Object3D
+  eyes: THREE.Object3D[]
+  /** The colour disc underfoot; it glows after dark. */
+  ring: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>
 }
 
 interface Walker {
@@ -70,6 +73,84 @@ interface Walker {
   fidgetAt: number
   fidget: number
   seed: number
+  /** Next blink, scene clock. */
+  blinkAt: number
+  /** Seconds left on an arrival celebration, or 0. */
+  cheer: number
+  /** Whether they were walking last frame; null before the first frame. */
+  wasWalking: boolean | null
+  /** Which foot last hit the ground, for dust puffs. */
+  foot: number
+}
+
+/** Footstep dust: a small pool of soft puffs kicked up at each step. */
+const PUFFS = 96
+class Dust {
+  readonly points: THREE.Points
+  private pos = new Float32Array(PUFFS * 3)
+  private life = new Float32Array(PUFFS)
+  private next = 0
+  private mat: THREE.ShaderMaterial
+
+  constructor() {
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3))
+    g.setAttribute('life', new THREE.BufferAttribute(this.life, 1))
+    this.mat = new THREE.ShaderMaterial({
+      uniforms: { uPx: { value: 1 }, uZoom: { value: 1 }, uTint: { value: new THREE.Color('#e9dcc4') } },
+      transparent: true,
+      depthWrite: false,
+      vertexShader: `
+        attribute float life;
+        uniform float uPx;
+        uniform float uZoom;
+        varying float vA;
+        void main() {
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          /* life runs 1 → 0: puffs grow as they fade. */
+          vA = life * 0.8;
+          gl_PointSize = life > 0.0 ? (6.0 + 14.0 * (1.0 - life)) * uPx * uZoom : 0.0;
+        }`,
+      fragmentShader: `
+        uniform vec3 uTint;
+        varying float vA;
+        void main() {
+          float d = length(gl_PointCoord - 0.5);
+          gl_FragColor = vec4(uTint, vA * smoothstep(0.5, 0.15, d));
+        }`,
+    })
+    this.points = new THREE.Points(g, this.mat)
+    this.points.frustumCulled = false
+  }
+
+  kick(x: number, y: number, z: number) {
+    /* A little cluster, so it reads as a scuff rather than a dot. */
+    for (let n = 0; n < 3; n++) {
+      const i = this.next
+      this.next = (this.next + 1) % PUFFS
+      this.pos.set([x + (Math.random() - 0.5) * 0.08, y + 0.02 + Math.random() * 0.03, z + (Math.random() - 0.5) * 0.08], i * 3)
+      this.life[i] = 1 - n * 0.15
+    }
+  }
+
+  update(dt: number, zoom: number, pixelRatio: number, night: number) {
+    for (let i = 0; i < PUFFS; i++) {
+      if (this.life[i] <= 0) continue
+      this.life[i] = Math.max(0, this.life[i] - dt * 1.2)
+      this.pos[i * 3 + 1] += dt * 0.12
+    }
+    this.mat.uniforms.uPx.value = pixelRatio
+    this.mat.uniforms.uZoom.value = Math.min(2, zoom)
+    /* Dust is pale by day and barely there at night. */
+    this.mat.uniforms.uTint.value.setRGB(0.91, 0.86, 0.77).multiplyScalar(1 - 0.7 * night)
+    this.points.geometry.getAttribute('position').needsUpdate = true
+    this.points.geometry.getAttribute('life').needsUpdate = true
+  }
+
+  dispose() {
+    this.points.geometry.dispose()
+    this.mat.dispose()
+  }
 }
 
 const mat = (color: string, shiny = false) =>
@@ -174,7 +255,16 @@ export function figure(color: string, champion: boolean, key: string): Rig {
   torso.add(head)
   head.add(box(0.03, 0.02, 0.03, skin))
   head.add(box(0.09, 0.095, 0.085, skin, 0, 0.016))
-  for (const side of [-1, 1]) head.add(box(0.004, 0.014, 0.012, mat('#1b1b20'), 0.046, 0.065, side * 0.02))
+  const eyes: THREE.Object3D[] = []
+  for (const side of [-1, 1]) {
+    /* Eyes scale from their middle, so a blink closes them in place. */
+    const eye = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.014, 0.012), mat('#1b1b20'))
+    eye.position.set(0.046, 0.072, side * 0.02)
+    head.add(eye)
+    eyes.push(eye)
+  }
+  /* Brows: a touch of expression. */
+  for (const side of [-1, 1]) head.add(box(0.005, 0.005, 0.018, mat(champion ? KIT.HAIR : hairCol), 0.047, 0.084, side * 0.02))
   if (champion) {
     /* The haircut: big, sculpted and shiny. */
     const hair = mat(KIT.HAIR, true)
@@ -199,22 +289,27 @@ export function figure(color: string, champion: boolean, key: string): Rig {
   ring.position.y = 0.012
   root.add(ring)
   root.scale.setScalar(1.7)
-  return { root, body, torso, head, hips, knees, shoulders, elbows, phone }
+  return { root, body, torso, head, hips, knees, shoulders, elbows, phone, eyes, ring }
 }
 
 /** Shortest signed turn from a to b. */
 const turn = (a: number, b: number) => Math.atan2(Math.sin(b - a), Math.cos(b - a))
 const ease = (x: number) => x * x * (3 - 2 * x)
+const CHEER = 1.3
 
 export class AgentLayer {
   readonly group = new THREE.Group()
   private walkers = new Map<string, Walker>()
   private city: CityLayout
   private labels: HTMLElement
+  private dust = new Dust()
+  private calm: boolean
 
-  constructor(city: CityLayout, labels: HTMLElement) {
+  constructor(city: CityLayout, labels: HTMLElement, calm = false) {
     this.city = city
     this.labels = labels
+    this.calm = calm
+    this.group.add(this.dust.points)
   }
 
   /** Where a tile's agent stands: a little off-centre per person, so two
@@ -279,6 +374,10 @@ export class AgentLayer {
           fidgetAt: -1,
           fidget: 0,
           seed,
+          blinkAt: -1,
+          cheer: 0,
+          wasWalking: null,
+          foot: 0,
         }
         this.walkers.set(spec.id, w)
       } else if (w.spec.at !== spec.at || w.spec.to.join() !== spec.to.join() || w.spec.from.join() !== spec.from.join()) {
@@ -318,8 +417,9 @@ export class AgentLayer {
 
   private lastT = 0
 
-  /** `cameraAz` is the camera's azimuth, so a wave can face the viewer. */
-  update(t: number, cameraAz = 0, now = Date.now()) {
+  /** `cameraAz` is the camera's azimuth, so a wave can face the viewer;
+   *  `night` (0–1) lights up the colour discs. */
+  update(t: number, cameraAz = 0, now = Date.now(), view = { night: 0, zoom: 1, pixelRatio: 1 }) {
     const dt = this.lastT ? Math.min(0.1, t - this.lastT) : 0
     this.lastT = t
     for (const w of this.walkers.values()) {
@@ -331,6 +431,12 @@ export class AgentLayer {
       const b = w.points[Math.min(last, i + 1)]
       w.at.lerpVectors(a, b, f)
       const walking = along < last
+      /* Arriving at a lot (not just a street corner) is worth a fist pump. */
+      if (w.wasWalking && !walking && !this.calm) {
+        const end = tileAt(this.city, ...w.path[last])
+        if (end && end.kind !== 'road' && end.kind !== 'bridge') w.cheer = CHEER
+      }
+      w.wasWalking = walking
 
       /* Ease into and out of the stride; turn smoothly into each new street. */
       w.stride += ((walking ? 1 : 0) - w.stride) * Math.min(1, dt * 7)
@@ -349,7 +455,17 @@ export class AgentLayer {
       }
       this.pose(w, t, dt)
       w.rig.root.position.copy(w.at)
+      this.glow(w, t, view.night)
     }
+    this.dust.update(dt, view.zoom, view.pixelRatio, view.night)
+  }
+
+  /** After dark the colour disc burns bright enough to bloom; yours breathes. */
+  private glow(w: Walker, t: number, night: number) {
+    const ring = w.rig.ring
+    const pulse = w.spec.you ? 0.5 + 0.5 * Math.sin(t * 3) : 0.5
+    ring.material.color.set(w.spec.color).multiplyScalar(1 + night * (1.4 + 1.2 * pulse))
+    ring.scale.setScalar(1 + (w.spec.you ? 0.08 * pulse : 0) + 0.1 * night)
   }
 
   /** Walk cycle, idle life, phone checks and waves, blended by stride. */
@@ -391,8 +507,27 @@ export class AgentLayer {
     const look = Math.sin(t * 0.43 + w.seed * 20) * Math.sin(t * 0.17 + w.seed * 3)
     r.head.rotation.set(0, -sp * 0.12 * s + look * 0.7 * (1 - s), 0)
 
+    /* Blink every few seconds: eyes shut for a tenth of a second. */
+    if (w.blinkAt < 0) w.blinkAt = t + 1 + w.seed * 3
+    if (t > w.blinkAt + 0.11) w.blinkAt = t + 2.2 + ((hash('b' + w.spec.id + Math.floor(t)) % 100) / 100) * 3.5
+    const shut = t > w.blinkAt ? 0.12 : 1
+    for (const e of r.eyes) e.scale.y = shut
+
+    /* A puff of dust each time a foot lands. */
+    const foot = sp >= 0 ? 0 : 1
+    if (foot !== w.foot) {
+      w.foot = foot
+      if (s > 0.6 && !this.calm) {
+        const side = foot ? 0.07 : -0.07
+        const c = Math.cos(w.heading)
+        const sn = Math.sin(w.heading)
+        /* Local +z (their right) in world space, given rotation.y = heading. */
+        this.dust.kick(w.at.x + sn * side, w.at.y, w.at.z + c * side)
+      }
+    }
+
     /* Idle phone check, every so often while standing. */
-    if (s < 0.05 && !w.wave && t > w.fidgetAt) {
+    if (s < 0.05 && !w.wave && !w.cheer && t > w.fidgetAt) {
       w.fidget = 2.6
       w.fidgetAt = t + 7 + w.seed * 9
     }
@@ -418,6 +553,30 @@ export class AgentLayer {
       r.head.rotation.z = 0.12 * k
       r.head.rotation.x = 0.08 * Math.sin(t * 8) * k
       r.phone.visible = false
+      w.fidget = 0
+    }
+
+    /* Arrival: a hop and a double fist pump. The champion spins on the spot. */
+    if (w.cheer > 0) {
+      w.cheer = Math.max(0, w.cheer - dt)
+      const u = 1 - w.cheer / CHEER
+      const k = ease(Math.min(1, Math.min(u, 1 - u) / 0.15))
+      const hop = Math.max(0, Math.sin(u * Math.PI * 2)) * 0.07
+      r.body.position.y += hop
+      for (const i of [0, 1]) {
+        const pump = 0.25 * Math.sin(u * Math.PI * 6)
+        /* Arm overhead, so +x tilts the right arm out and -x the left. */
+        r.shoulders[i].rotation.x = (i ? 1 : -1) * (0.5 + 0.1 * pump) * k
+        r.shoulders[i].rotation.z = (2.95 + pump) * k
+        r.elbows[i].rotation.z = -(0.25 + Math.abs(pump)) * k
+        r.elbows[i].rotation.x = 0
+      }
+      r.knees[0].rotation.z -= hop * 6
+      r.knees[1].rotation.z -= hop * 6
+      r.head.rotation.set(0, 0, 0.25 * k)
+      r.phone.visible = false
+      w.wave = 0
+      if (w.spec.champion) r.root.rotation.y = w.heading + ease(Math.min(1, u * 1.4)) * Math.PI * 2
       w.fidget = 0
     }
   }
@@ -446,5 +605,6 @@ export class AgentLayer {
   dispose() {
     for (const w of this.walkers.values()) this.drop(w)
     this.walkers.clear()
+    this.dust.dispose()
   }
 }

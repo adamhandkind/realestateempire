@@ -169,7 +169,7 @@ export class CityScene {
     popMaterial(this.glowMat, this.pops.uniforms)
     duskLights(this.glowMat, this.fxU)
 
-    this.agents = new AgentLayer(cityLayoutOf(), labelLayer)
+    this.agents = new AgentLayer(cityLayoutOf(), labelLayer, calmMotion())
     this.scene.add(this.agents.group)
     /* Traffic and weather are motion for its own sake; respect the setting. */
     this.weatherOn = !calmMotion()
@@ -678,7 +678,7 @@ export class CityScene {
       if (this.data) this.light = daylightFor(this.timeMode, new Date(), this.data.season)
     }
     this.applyLight(t)
-    this.agents.update(t, this.azimuth)
+    this.agents.update(t, this.azimuth, Date.now(), { night: 1 - this.light.day, zoom: this.zoom, pixelRatio: this.renderer.getPixelRatio() })
     this.stars.update(t, 1 - this.light.day, this.zoom, this.renderer.getPixelRatio())
     if (this.follow) {
       const p = this.agents.positionOf(this.follow)
