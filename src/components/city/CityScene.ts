@@ -25,7 +25,7 @@ import { AgentLayer, type AgentSpec } from './agents'
 import { Traffic } from './traffic'
 import { Weather } from './weather'
 import { BuildPops, popMaterial } from './pops'
-import { duskLights, Stars, waterRipples } from './fx'
+import { cloudShadows, duskLights, Fireworks, Stars, waterRipples } from './fx'
 
 /** True isometric: the camera looks down 35.264° (atan(1/√2)). */
 const ELEVATION = Math.atan(1 / Math.SQRT2)
@@ -92,8 +92,11 @@ export class CityScene {
   /* New buildings rise out of the ground with a little overshoot. */
   private pops: BuildPops
   private lotSigs: string[] | null = null
-  private fxU = { uNight: { value: 0 }, uDay: { value: 1 }, uTime: { value: 0 } }
+  private fxU = { uNight: { value: 0 }, uDay: { value: 1 }, uTime: { value: 0 }, uCloudT: { value: 0 } }
+  /** Clouds hold still for reduce-motion. */
+  private cloudsMove = !calmMotion()
   private stars: Stars
+  private fireworks = new Fireworks(!calmMotion())
   private floats: { el: HTMLDivElement; pos: THREE.Vector3; until: number }[] = []
   private labelLayer: HTMLElement
 
@@ -162,17 +165,18 @@ export class CityScene {
     this.scene.add(this.glowMesh)
 
     this.pops = new BuildPops(!calmMotion())
-    this.scene.add(this.pops.group)
+    this.scene.add(this.pops.group, this.fireworks.group)
     popMaterial(this.glowMat, this.pops.uniforms)
     duskLights(this.glowMat, this.fxU)
 
-    this.agents = new AgentLayer(cityLayoutOf(), labelLayer)
+    this.agents = new AgentLayer(cityLayoutOf(), labelLayer, calmMotion())
     this.scene.add(this.agents.group)
     /* Traffic and weather are motion for its own sake; respect the setting. */
     this.weatherOn = !calmMotion()
 
     const waterMat = new THREE.MeshLambertMaterial({ color: '#2f86b8' })
     waterRipples(waterMat, this.fxU)
+    cloudShadows(waterMat, this.fxU)
     this.water = new THREE.Mesh(new THREE.PlaneGeometry(COLS, ROWS), waterMat)
     this.water.rotation.x = -Math.PI / 2
     this.water.position.y = WATER_Y
@@ -244,6 +248,7 @@ export class CityScene {
     } else {
       const mat = new THREE.MeshLambertMaterial({ vertexColors: true })
       popMaterial(mat, this.pops.uniforms)
+      cloudShadows(mat, this.fxU)
       this.cityMesh = new THREE.Mesh(geo.main, mat)
       /* The shadow has to rise with the building, or it lands first. */
       const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking })
@@ -339,13 +344,26 @@ export class CityScene {
     const lot = this.data?.city.lotById.get(lotId)
     if (!lot || !this.data) return
     const idx = this.data.city.lots.indexOf(lot)
+    const pos = new THREE.Vector3(lot.col - COLS / 2 + 0.5, (this.heights[idx] ?? 0.3) + 0.35, lot.row - ROWS / 2 + 0.5)
+    this.floatAt(pos, text, tone, delayMs, 2600)
+  }
+
+  private floatAt(pos: THREE.Vector3, text: string, cls: string, delayMs: number, lifeMs: number) {
     const el = document.createElement('div')
-    el.className = 'res-city-float ' + tone
+    el.className = 'res-city-float ' + cls
     el.textContent = text
     el.style.animationDelay = delayMs + 'ms'
     this.labelLayer.appendChild(el)
-    const pos = new THREE.Vector3(lot.col - COLS / 2 + 0.5, (this.heights[idx] ?? 0.3) + 0.35, lot.row - ROWS / 2 + 0.5)
-    this.floats.push({ el, pos, until: performance.now() + delayMs + 2600 })
+    this.floats.push({ el, pos, until: performance.now() + delayMs + lifeMs })
+  }
+
+  /** Fireworks over downtown and a banner: a promotion, a milestone, a Goldie. */
+  celebrate(text: string, shells = 8) {
+    const d = DISTRICTS.find((x) => x.id === 'downtown') ?? DISTRICTS[0]
+    const x = d.labelPos.x / 25 - COLS / 2
+    const z = d.labelPos.y / 25 - ROWS / 2
+    this.fireworks.show(x, z, shells)
+    this.floatAt(new THREE.Vector3(x, 5.5, z), text, 'news big', 0, 4600)
   }
 
   /* ------------------------------------------------------- camera input */
@@ -434,6 +452,7 @@ export class CityScene {
     if (!d || d.moved) return
     const agent = this.cb.onAgent ? this.pickAgent(e.clientX, e.clientY) : null
     if (agent) {
+      this.agents.wave(agent)
       this.cb.onAgent!(agent)
       return
     }
@@ -659,7 +678,7 @@ export class CityScene {
       if (this.data) this.light = daylightFor(this.timeMode, new Date(), this.data.season)
     }
     this.applyLight(t)
-    this.agents.update(t)
+    this.agents.update(t, this.azimuth, Date.now(), { night: 1 - this.light.day, zoom: this.zoom, pixelRatio: this.renderer.getPixelRatio() })
     this.stars.update(t, 1 - this.light.day, this.zoom, this.renderer.getPixelRatio())
     if (this.follow) {
       const p = this.agents.positionOf(this.follow)
@@ -692,6 +711,7 @@ export class CityScene {
     }
     this.animateMarkers(t)
     this.pops.update(dt)
+    this.fireworks.update(dt)
     if (this.bloom.strength > 0.02) this.composer.render(dt)
     else this.renderer.render(this.scene, cam)
     this.positionLabels()
@@ -722,6 +742,7 @@ export class CityScene {
     this.fxU.uNight.value = night
     this.fxU.uDay.value = day
     this.fxU.uTime.value = t
+    if (this.cloudsMove) this.fxU.uCloudT.value = t
     this.bloom.strength = night * night * 0.85
     /* Holiday lights: always on, brighter after dark, and they twinkle. */
     const tw = 0.85 + 0.15 * Math.sin(t * 2.3)
@@ -760,6 +781,7 @@ export class CityScene {
     for (const l of this.labels) l.el.remove()
     for (const f of this.floats) f.el.remove()
     this.stars.dispose()
+    this.fireworks.dispose()
     this.pops.dispose()
     this.composer.dispose()
     this.bloom.dispose()
