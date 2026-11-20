@@ -39,8 +39,21 @@ export type Beat =
   | 'zoning'
   | 'hotMarket'
   | 'biddingWar'
+  | 'timeout'
+  | 'rematch'
 
 const LINES: Record<Beat, string[]> = {
+  timeout: [
+    '{name} ran out of time. The bot finished for them. Happens to a lot of people.',
+    '{name} took too long. The bot had to finish them off.',
+    '{name} froze. The bot took over. Nobody’s judging. Everyone’s judging.',
+    '{name} timed out. Lasting too long is a problem only in board games.',
+  ],
+  rematch: [
+    'Round two. Same people, lower standards.',
+    'Again? Somebody’s insatiable.',
+    'Rematch. Everyone pretend the last game didn’t happen.',
+  ],
   join: [
     '{name} pulled up a chair and is already eyeing everyone’s cul-de-sac.',
     '{name} sat down with their legs spread across two seats. Classic.',

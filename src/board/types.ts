@@ -39,6 +39,28 @@ export interface Seat {
   newDeals: DealCard[]
   /** Open Houses played, for Top Producer. */
   openHouses: number
+  /** Running tallies for the end-of-game awards. Missing on tables saved
+   *  before they existed. */
+  stats?: SeatStats
+}
+
+export interface SeatStats {
+  /** Times someone took a card from you. */
+  robbed: number
+  /** Cards you took off other people. */
+  stole: number
+  /** Cards lost to audits. */
+  audited: number
+  /** Trades with the bank. */
+  bank: number
+  /** Trades with other players (either side). */
+  trades: number
+  /** 7s you rolled. */
+  sevens: number
+  /** Resource cards the dice paid you. */
+  collected: number
+  /** Turns the clock ran out on you. */
+  timeouts: number
 }
 
 /** A trade the player whose turn it is has put on the table. */
@@ -148,6 +170,8 @@ export interface SeatView {
   newDeals?: DealCard[]
   /** Your own points, plaques included. */
   totalPoints?: number
+  /** The award tallies (public: everyone saw it happen). */
+  stats: SeatStats
 }
 
 export interface BoardView {

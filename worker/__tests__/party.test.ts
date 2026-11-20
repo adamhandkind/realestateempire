@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest'
 import type { PartyView, ServerMsg } from '../../src/party/protocol'
-import { ROOM_TTL_MS } from '../../src/party/protocol'
+import { AWAY_MS, BOT_STEP_MS, ROOM_TTL_MS, SETUP_MS } from '../../src/party/protocol'
 import { botMove } from '../../src/board/bot'
 import { legalHouses } from '../../src/board/rules'
 import type { BoardState } from '../../src/board/types'
@@ -155,9 +155,9 @@ describe('party room', () => {
     await expect(t.room.create('ABCD', 'h2')).rejects.toMatchObject({ code: 'code_taken' })
     expect(t.mem.alarm()).toBe(t.clock.now + ROOM_TTL_MS)
     t.clock.now += ROOM_TTL_MS - 1
-    expect(await t.room.expire()).toBe(false)
+    expect(await t.room.alarm()).toBeNull()
     t.clock.now += ROOM_TTL_MS
-    expect(await t.room.expire()).toBe(true)
+    expect(await t.room.alarm()).toBe('expired')
     expect(t.mem.data.size).toBe(0)
     expect((await t.room.peek()).ok).toBe(false)
     /* The code can be used again. */
@@ -219,8 +219,15 @@ describe('party room', () => {
       if (view.board.status === 'over') break
       const state = (await t.mem.storage.get<{ state: BoardState }>('room'))!.state
       const up = state.seats[state.turn]
+      if (up.bot) {
+        /* Bots move a beat apart, on the room's alarm. */
+        expect(tv.last().deadline).toBe(t.clock.now + BOT_STEP_MS)
+        t.clock.now += BOT_STEP_MS
+        expect(await t.room.alarm()).toBe('moved')
+        await t.hub.broadcast()
+        continue
+      }
       const phone = phones.get(up.id)!
-      expect(phone, 'the game waits only on people').toBeDefined()
       const m = botMove(state)
       /* A bot would offer trades; a phone in this test just builds and ends. */
       const move = m.t === 'offer' ? { t: 'end' as const } : m
@@ -233,6 +240,52 @@ describe('party room', () => {
     expect(end.winner).not.toBeNull()
     /* Every phone saw the same finish. */
     for (const p of phones.values()) expect(p.last().board.winner).toBe(end.winner)
+    /* The winner screen says how the game went. */
+    expect(end.seats.reduce((n, x) => n + x.stats.collected, 0)).toBeGreaterThan(0)
+
+    /* Play again: same people, same phones, back in the lobby. */
+    await t.op([...phones.values()][1], { op: 'again' })
+    expect([...phones.values()][1].lastOf('error')?.code).toBe('not_host')
+    await t.op(tv, { op: 'again' })
+    const lobby = tv.last().board
+    expect(lobby.status).toBe('lobby')
+    expect(lobby.seats.map((x) => x.name).sort()).toEqual(end.seats.map((x) => x.name).sort())
+    expect(lobby.seats.every((x) => x.stats.collected === 0)).toBe(true)
+    for (const [id, p] of phones) expect(p.last().seatId).toBe(id)
+    await t.op(tv, { op: 'start' })
+    expect(tv.last().board.status).toBe('playing')
+  })
+
+  it('runs a turn clock, and the bot finishes the turn when it runs out', async () => {
+    const t = setup()
+    const { tvToken } = await t.room.create('ABCD', 'host-user')
+    const tv = await t.connect(tvToken)
+    const a = await t.room.join('Ann', '#e8573f')
+    const b = await t.room.join('Bo', '#e0b100')
+    const phones = { [a.seatId]: await t.connect(a.token), [b.seatId]: await t.connect(b.token) }
+    await t.op(tv, { op: 'start' })
+    let v = tv.last()
+    const first = v.board.turn
+    expect(v.deadline).toBe(t.clock.now + SETUP_MS)
+
+    /* Nothing happens before the clock runs out. */
+    t.clock.now += SETUP_MS - 1000
+    expect(await t.room.alarm()).toBeNull()
+
+    t.clock.now += 2000
+    expect(await t.room.alarm()).toBe('moved')
+    await t.hub.broadcast()
+    v = tv.last()
+    /* The bot placed their house and street, and it's the next person's go. */
+    expect(Object.values(v.board.buildings).filter((x) => x.seat === first)).toHaveLength(1)
+    expect(Object.values(v.board.streets).filter((x) => x === first)).toHaveLength(1)
+    expect(v.board.seats[first].stats.timeouts).toBe(1)
+    expect(v.board.turn).not.toBe(first)
+    expect(v.deadline).toBe(t.clock.now + SETUP_MS)
+
+    /* Their phone dies: the clock drops to the short one. */
+    const upId = v.board.seats[v.board.turn].id
+    await t.drop(phones[upId])
+    expect(tv.last().deadline).toBe(t.clock.now + AWAY_MS)
   })
 })
-

@@ -8,9 +8,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { COSTS, DEAL_INFO, ERAS, LIMITS, RESOURCES, RES_INFO, WIN_POINTS, bankRatio } from '../../board/data'
 import { canAfford, canUpgrade, emptyHand, handSize, legalHouses, legalStreets, upgradeCost } from '../../board/rules'
 import type { BoardView, DealCard, Hand, Move, Phase, Res } from '../../board/types'
+import { awardsFor } from '../../party/awards'
 import type { Aim, PartyOp, PartyView } from '../../party/protocol'
 import type { Clickable, Ghost } from '../board/BoardSvg'
 import PhoneBoard from './PhoneBoard'
+import { useSecondsLeft } from './useClock'
 
 type Tool = 'street' | 'house' | 'upgrade'
 type Sheet = 'trade' | 'deals' | null
@@ -68,6 +70,17 @@ export default function PhoneGame({ view, send }: { view: PartyView; send: (op: 
   const [pick, setPick] = useState<Aim | null>(null)
 
   const move = (m: Move) => send({ op: 'move', move: m, rev: b.rev })
+  const secs = useSecondsLeft(view)
+  const clock = secs !== null && b.status === 'playing' && !up.bot ? secs : null
+  /* A nudge when your clock is nearly out. */
+  const warned = useRef(false)
+  useEffect(() => {
+    if (!myTurn || clock === null || clock > 10) warned.current = false
+    else if (!warned.current) {
+      warned.current = true
+      buzz([60, 40, 60, 40, 60])
+    }
+  }, [myTurn, clock])
 
   /* A buzz when your turn starts, and when someone offers you a trade. */
   const wasMine = useRef(myTurn)
@@ -157,13 +170,16 @@ export default function PhoneGame({ view, send }: { view: PartyView; send: (op: 
   }, [aiming])
 
   if (!me) return <Watching view={view} />
-  if (b.status === 'over') return <GameOver view={view} />
+  if (b.status === 'over') return <GameOver view={view} send={send} />
 
   const header = (
     <div className="pt-turnbar" style={{ borderColor: up.color }}>
       <span className="pt-eyebrow">{b.round > 0 ? 'Round ' + b.round : 'Opening'} · {ERAS[b.era].name}</span>
       <b>{myTurn ? 'Your turn' : up.name + ' ' + DOING[b.phase]}</b>
-      {b.dice && <span className={'pt-pdice' + (b.dice[0] + b.dice[1] === 7 ? ' seven' : '')}>🎲 {b.dice[0] + b.dice[1]}</span>}
+      <span className="pt-pside">
+        {b.dice && <span className={'pt-pdice' + (b.dice[0] + b.dice[1] === 7 ? ' seven' : '')}>🎲 {b.dice[0] + b.dice[1]}</span>}
+        {clock !== null && <span className={'pt-pclock' + (clock <= 10 ? ' warn' : '')}>⏱ {clock}s</span>}
+      </span>
       {b.log.length > 0 && <p className="pt-talk">{b.log[b.log.length - 1].text}</p>}
     </div>
   )
@@ -542,15 +558,23 @@ function OfferIn({ view, hand, move }: { view: PartyView; hand: Hand; move: (m: 
   )
 }
 
-function GameOver({ view }: { view: PartyView }) {
+function GameOver({ view, send }: { view: PartyView; send: (op: PartyOp) => boolean }) {
   const b = view.board
   const w = b.winner !== null ? b.seats[b.winner] : null
   const ranked = [...b.seats].sort((x, y) => (y.totalPoints ?? y.points) - (x.totalPoints ?? x.points))
+  const mine = awardsFor(b).filter((a) => a.seat === b.you)
   return (
     <div className="pt-pgame">
       <div className="pt-pcard pt-center-text">
         <p className="pt-eyebrow">Game over</p>
         <p className="pt-youre-in">{w ? (b.winner === b.you ? 'You win! 🏆' : w.name + ' wins') : 'Game over'}</p>
+        {mine.map((a) => (
+          <p key={a.title} className="pt-myaward">
+            {a.icon} <b>{a.title}</b>
+            <br />
+            <small>{a.line}</small>
+          </p>
+        ))}
         <ul className="pt-mini-seats">
           {ranked.map((s) => (
             <li key={s.id}>
@@ -560,6 +584,13 @@ function GameOver({ view }: { view: PartyView }) {
             </li>
           ))}
         </ul>
+        {view.hostSeat === view.seatId ? (
+          <button className="pt-big" onClick={() => send({ op: 'again' })}>
+            Play again
+          </button>
+        ) : (
+          <p className="pt-hint">Look at the TV for the awards. The host can start another round.</p>
+        )}
       </div>
     </div>
   )

@@ -45,6 +45,17 @@ export const PARTY_COLORS: { hex: string; name: string }[] = [
   { hex: '#f08a24', name: 'Orange' },
 ]
 
+/** The turn clock. A turn gets a minute (opening placement 30 seconds),
+ *  and once a turn, building or trading puts a full minute back on it.
+ *  A player whose phone isn't connected gets a short clock instead, so a
+ *  dead phone doesn't hold up the table. When it runs out, the bot finishes
+ *  the turn for them. */
+export const TURN_MS = 60_000
+export const SETUP_MS = 30_000
+export const AWAY_MS = 15_000
+/** Bots play one move at a time, this far apart, so the room can watch. */
+export const BOT_STEP_MS = 1_100
+
 /** A room nobody has touched for this long is cleared away. */
 export const ROOM_TTL_MS = 12 * 60 * 60_000
 
@@ -83,6 +94,11 @@ export interface PartyView {
   online: Record<string, boolean>
   /** The ghost piece of whoever's turn it is, if they're choosing a spot. */
   aim: (Aim & { seat: number }) | null
+  /** When the turn clock runs out (server time), or null if no clock. */
+  deadline: number | null
+  /** The server's clock when this view was sent, to correct for a phone
+   *  whose clock is off. */
+  serverNow: number
   board: BoardView
 }
 
@@ -95,6 +111,8 @@ export type PartyOp =
   | { op: 'move'; move: Move; rev: number }
   /** The player whose turn it is is looking at a spot (null: stopped). */
   | { op: 'aim'; aim: Aim | null }
+  /** After a game: same people, back to the lobby (TV or host). */
+  | { op: 'again' }
 
 export type ClientMsg = { t: 'auth'; token: string } | { t: 'ping' } | { t: 'op'; op: PartyOp }
 
@@ -130,6 +148,7 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
     case 'addBot':
     case 'leave':
     case 'start':
+    case 'again':
       return { t: 'op', op: { op: op.op } }
     case 'removeBot':
     case 'kick':

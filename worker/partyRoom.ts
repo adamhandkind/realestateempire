@@ -11,12 +11,16 @@
    change sends every socket its own view. Both are kept apart from the
    Cloudflare runtime so the tests can drive them in Node. */
 
-import { runBots } from '../src/board/bot'
-import { addBot, applyMove, leave, newTable, parseMove, sit, start, viewFor, type Result } from '../src/board/rules'
+import { botStep, botsTakeOffer, timeOut } from '../src/board/bot'
+import { addBot, applyMove, botSeat, leave, newTable, parseMove, rematch, sit, start, viewFor, type Result } from '../src/board/rules'
 import type { BoardState } from '../src/board/types'
 import {
+  AWAY_MS,
+  BOT_STEP_MS,
   PARTY_COLORS,
   ROOM_TTL_MS,
+  SETUP_MS,
+  TURN_MS,
   cleanName,
   parseClientMsg,
   type Aim,
@@ -48,6 +52,9 @@ interface Stored {
   joinOrder: string[]
   state: BoardState
   rev: number
+  /** The turn clock: which turn it's timing (turn:round:setup step), when it
+   *  runs out, and whether it's been topped up this turn. */
+  clock?: { key: string; deadline: number; extended: boolean; bot?: boolean } | null
 }
 
 /** Who a socket turned out to be. */
@@ -60,6 +67,9 @@ export interface OpResult {
   /** Nothing anyone can see changed: no need to send views. */
   quiet?: boolean
 }
+
+/** Moves that count as getting on with your turn. */
+const BUSY = new Set(['house', 'street', 'upgrade', 'buyDeal', 'playDeal', 'bank', 'offer'])
 
 export class PartyRoom {
   private storage: PartyStorage
@@ -88,11 +98,39 @@ export class PartyRoom {
     return s
   }
 
+  /** Seats with a phone connected right now. The hub fills this in. */
+  online: () => Set<string> = () => new Set()
+
   private async save(s: Stored): Promise<void> {
     s.lastActive = this.now()
     this.cache = s
     await this.storage.put('room', s)
-    await this.storage.setAlarm(s.lastActive + ROOM_TTL_MS)
+    await this.storage.setAlarm(this.nextAlarm(s))
+  }
+
+  private nextAlarm(s: Stored): number {
+    const ttl = s.lastActive + ROOM_TTL_MS
+    return s.clock ? Math.min(ttl, s.clock.deadline) : ttl
+  }
+
+  /** Starts the clock when a new turn (or placement) begins; leaves it
+   *  alone while the same turn goes on. */
+  private tick(s: Stored) {
+    const st = s.state
+    if (st.status !== 'playing') {
+      s.clock = null
+      return
+    }
+    /* A bot's next move, a beat from now. */
+    if (botSeat(st, st.turn)) {
+      s.clock = { key: 'bot', deadline: this.now() + BOT_STEP_MS, extended: false, bot: true }
+      return
+    }
+    const key = `${st.turn}:${st.round}:${st.setup.step}`
+    if (s.clock?.key === key) return
+    const here = this.online().has(st.seats[st.turn].id)
+    const ms = !here ? AWAY_MS : st.round === 0 ? SETUP_MS : TURN_MS
+    s.clock = { key, deadline: this.now() + ms, extended: false }
   }
 
   /** The TV opens the room. Refused if the code is already in use. */
@@ -214,6 +252,16 @@ export class PartyRoom {
         if (!move) throw new RoomError(400, 'bad_move', 'That move doesn’t make sense.')
         const seat = s.state.seats.findIndex((x) => x.id === who.seatId)
         r = applyMove(s.state, seat, move)
+        /* Doing something real buys a full minute back, once a turn. */
+        if (r.ok && s.clock && !s.clock.extended && seat === s.state.turn && BUSY.has(move.t)) {
+          s.clock.deadline = Math.max(s.clock.deadline, this.now() + TURN_MS)
+          s.clock.extended = true
+        }
+        break
+      }
+      case 'again': {
+        lobbyOnly()
+        r = rematch(s.state, crypto.getRandomValues(new Uint32Array(1))[0])
         break
       }
     }
@@ -222,8 +270,11 @@ export class PartyRoom {
       delete s.seats[g.seatId]
       s.joinOrder = s.joinOrder.filter((id) => id !== g.seatId)
     }
-    s.state = runBots(r.state)
+    /* Bots answer a person's offer straight away; their own turns are
+       played a move at a time by the alarm. */
+    s.state = botsTakeOffer(r.state)
     s.rev++
+    this.tick(s)
     await this.save(s)
     return { gone }
   }
@@ -240,20 +291,47 @@ export class PartyRoom {
       /* A ghost from before the board last moved is stale. */
       aim: this.aim && this.aim.rev === s.rev ? { kind: this.aim.kind, i: this.aim.i, piece: this.aim.piece, seat: this.aim.seat } : null,
       online: Object.fromEntries(s.state.seats.filter((x) => !x.bot).map((x) => [x.id, online.has(x.id)])),
+      deadline: s.clock?.deadline ?? null,
+      serverNow: this.now(),
       board: viewFor(s.state, seatId ?? '', s.rev),
     }
   }
 
-  /** The alarm: clears the room if it has gone quiet. True if it's gone. */
-  async expire(): Promise<boolean> {
-    const s = (await this.storage.get<Stored>('room')) ?? null
-    if (s && s.lastActive + ROOM_TTL_MS > this.now()) {
-      await this.storage.setAlarm(s.lastActive + ROOM_TTL_MS)
-      return false
-    }
-    this.cache = null
-    await this.storage.deleteAll()
+  /** A phone dropped. If it's their turn, they get the short clock. */
+  async phoneGone(seatId: string): Promise<boolean> {
+    const s = await this.load()
+    if (!s?.clock || s.state.status !== 'playing' || s.state.seats[s.state.turn]?.id !== seatId) return false
+    const by = this.now() + AWAY_MS
+    if (s.clock.deadline <= by) return false
+    s.clock.deadline = by
+    await this.save(s)
     return true
+  }
+
+  /** The alarm. Clears a room that has gone quiet ('expired'), or makes a
+   *  move ('moved'): a bot's next move, or the bot finishing a person's turn
+   *  when their clock ran out. Otherwise it sets the next alarm. */
+  async alarm(): Promise<'expired' | 'moved' | null> {
+    this.cache = undefined
+    const s = await this.load()
+    if (!s) {
+      this.cache = null
+      await this.storage.deleteAll()
+      return 'expired'
+    }
+    if (s.clock && s.clock.deadline <= this.now() && s.state.status === 'playing') {
+      this.aim = null
+      /* A bot's move, or the bot finishing a person's turn for them. A bot
+         that's stuck ends its turn, or (if even that fails) is skipped. */
+      s.state = s.clock.bot ? (botStep(s.state) ?? timeOut(s.state)) : timeOut(s.state)
+      s.rev++
+      s.clock = null
+      this.tick(s)
+      await this.save(s)
+      return 'moved'
+    }
+    await this.storage.setAlarm(this.nextAlarm(s))
+    return null
   }
 }
 
@@ -279,6 +357,7 @@ export class PartyHub {
   constructor(room: PartyRoom, sockets: () => PartySocket[]) {
     this.room = room
     this.sockets = sockets
+    room.online = () => this.online()
   }
 
   private who(ws: PartySocket): Who | null {
@@ -368,7 +447,11 @@ export class PartyHub {
 
   /** A socket closed: the others' "online" dots may change. */
   async close(ws: PartySocket) {
-    if (this.who(ws)?.role === 'seat') await this.broadcast(ws)
+    const w = this.who(ws)
+    if (w?.role !== 'seat') return
+    /* The closing socket may still be listed; don't count it. */
+    if (!this.online(ws).has(w.seatId)) await this.room.phoneGone(w.seatId)
+    await this.broadcast(ws)
   }
 
   /** The room expired: tell everyone and hang up. */

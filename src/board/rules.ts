@@ -25,7 +25,7 @@ import {
   bankRatio,
 } from './data'
 import { TOPO, hexNeighbours } from './geometry'
-import type { BoardState, BoardView, DealCard, Hand, Move, Res, Seat, SeatView, Terrain, Tile } from './types'
+import type { BoardState, BoardView, DealCard, Hand, Move, Res, Seat, SeatStats, SeatView, Terrain, Tile } from './types'
 import { say, type Beat } from './voice'
 
 /* ------------------------------------------------------------------ dice */
@@ -106,7 +106,16 @@ const blankSeat = (id: string, name: string, color: string, bot: boolean): Seat 
   deals: [],
   newDeals: [],
   openHouses: 0,
+  stats: emptyStats(),
 })
+
+export const emptyStats = (): SeatStats => ({ robbed: 0, stole: 0, audited: 0, bank: 0, trades: 0, sevens: 0, collected: 0, timeouts: 0 })
+
+/** Adds to a seat's award tally. */
+function tally(seat: Seat, key: keyof SeatStats, n = 1) {
+  seat.stats ??= emptyStats()
+  seat.stats[key] += n
+}
 
 export type Result = { ok: true; state: BoardState } | { ok: false; error: string }
 const no = (error: string): Result => ({ ok: false, error })
@@ -156,6 +165,26 @@ export function setAutopilot(state: BoardState, id: string, on: boolean): Result
   s.seats[i].autopilot = on
   tell(s, on ? 'awayOn' : 'awayOff', { name: s.seats[i].name }, i)
   return { ok: true, state: s }
+}
+
+/** After a game: a fresh table with the same people in the same seats,
+ *  back in the lobby so bots can be added or removed. */
+export function rematch(state: BoardState, seed: number): Result {
+  if (state.status !== 'over') return no('Finish this game first.')
+  const s = newTable(seed, state.host)
+  s.seats = state.seats.map((x) => blankSeat(x.id, x.name, x.color, x.bot))
+  tell(s, 'rematch', {})
+  return { ok: true, state: s }
+}
+
+/** The clock ran out on the player whose turn it is: say so. The bot then
+ *  finishes their turn (bot.ts timeOut). */
+export function markTimeout(state: BoardState): BoardState {
+  const s = clone(state)
+  const me = s.seats[s.turn]
+  tally(me, 'timeouts')
+  tell(s, 'timeout', { name: me.name }, s.turn)
+  return s
 }
 
 /** Deal the board and start the opening placement. */
@@ -364,6 +393,7 @@ function produce(s: BoardState, total: number) {
   got.forEach((h, i) => {
     if (handSize(h) === 0) return
     add(s.seats[i].hand, h)
+    tally(s.seats[i], 'collected', handSize(h))
     note(s, s.seats[i].name + ' collects ' + handText(h) + '.', i)
   })
 }
@@ -382,6 +412,7 @@ function audit(s: BoardState) {
       seat.hand[r]--
       lost[r]++
     }
+    tally(seat, 'audited', lose)
     tell(s, 'audit', { name: seat.name, cards: handText(lost) }, i)
   })
 }
@@ -402,6 +433,8 @@ function stealFrom(s: BoardState, victim: number) {
   const r = cards[int(s, cards.length)]
   h[r]--
   s.seats[s.turn].hand[r]++
+  tally(s.seats[s.turn], 'stole')
+  tally(s.seats[victim], 'robbed')
   tell(s, 'steal', { name: s.seats[s.turn].name, who: s.seats[victim].name }, s.turn)
 }
 
@@ -538,6 +571,7 @@ function play(s: BoardState, seat: number, me: Seat, m: Move): string | null {
       const total = d[0] + d[1]
       tell(s, total === 2 ? 'snakeEyes' : total === 12 ? 'boxcars' : 'roll', { name: me.name, n: total }, seat)
       if (total === 7) {
+        tally(me, 'sevens')
         tell(s, 'crash', {})
         audit(s)
         s.phase = 'crash'
@@ -586,6 +620,7 @@ function play(s: BoardState, seat: number, me: Seat, m: Move): string | null {
       if (me.hand[m.give] < k) return 'The bank wants ' + k + ' of a kind.'
       me.hand[m.give] -= k
       me.hand[m.get]++
+      tally(me, 'bank')
       tell(s, 'bank', { name: me.name, k, give: RES_INFO[m.give].icon, get: RES_INFO[m.get].icon }, seat)
       return null
     }
@@ -670,6 +705,8 @@ function accept(state: BoardState, seat: number): Result {
   pay(to.hand, o.want)
   add(from.hand, o.want)
   s.offer = null
+  tally(from, 'trades')
+  tally(to, 'trades')
   tell(s, 'took', { who: to.name, name: s.seats[s.turn].name, give: handText(o.give), want: handText(o.want) }, seat)
   return { ok: true, state: s }
 }
@@ -760,6 +797,7 @@ export function viewFor(s: BoardState, userId: string, rev: number): BoardView {
       openHouses: x.openHouses,
       points: publicPoints(s, i),
       streetLength: s.status === 'lobby' ? 0 : streetLength(s, i),
+      stats: { ...emptyStats(), ...x.stats },
     }
     /* At the end, every hand is shown: who had the plaques. */
     if (i === you || s.status === 'over')

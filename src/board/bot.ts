@@ -14,6 +14,7 @@ import {
   houseSpotFree,
   legalHouses,
   legalStreets,
+  markTimeout,
   publicPoints,
   upgradeCost,
 } from './rules'
@@ -228,31 +229,64 @@ export function botAccepts(s: BoardState, seat: number): boolean {
   return RESOURCES.every((r) => o.want[r] === 0 || hand[r] > o.want[r])
 }
 
-/** Plays every bot move due: bot turns, and bots taking an open offer.
- *  Stops at a human's decision, the end of the game, or a safety cap. */
+/** If a person has an offer on the table, the first bot that likes it
+ *  takes it. Returns the state unchanged if none does. */
+export function botsTakeOffer(state: BoardState): BoardState {
+  if (state.status !== 'playing' || !state.offer || botSeat(state, state.turn)) return state
+  const taker = state.seats.findIndex((_, j) => j !== state.turn && botSeat(state, j) && botAccepts(state, j))
+  if (taker < 0) return state
+  const r = applyMove(state, taker, { t: 'accept' })
+  return r.ok ? r.state : state
+}
+
+/** One move by the bot whose turn it is, or null if it's a person's turn
+ *  (or the bot is stuck). */
+export function botStep(state: BoardState): BoardState | null {
+  if (state.status !== 'playing' || !botSeat(state, state.turn)) return null
+  const r = applyMove(state, state.turn, botMove(state))
+  if (r.ok) return r.state
+  /* A move the bot thought was fine but wasn't: end the turn instead of
+     looping (or, mid-placement, give up on the bot's plan). */
+  const fallback = applyMove(state, state.turn, { t: 'end' })
+  return fallback.ok ? fallback.state : null
+}
+
+/** Plays every bot move until it's a person's turn (or the game ends). */
 export function runBots(s: BoardState, cap = 400): BoardState {
   let state = s
   for (let i = 0; i < cap && state.status === 'playing'; i++) {
-    if (state.offer && !botSeat(state, state.turn)) {
-      const taker = state.seats.findIndex((_, j) => j !== state.turn && botSeat(state, j) && botAccepts(state, j))
-      if (taker >= 0) {
-        const r = applyMove(state, taker, { t: 'accept' })
-        if (r.ok) {
-          state = r.state
-          continue
-        }
-      }
+    const took = botsTakeOffer(state)
+    if (took !== state) {
+      state = took
+      continue
     }
-    if (!botSeat(state, state.turn)) break
-    const r = applyMove(state, state.turn, botMove(state))
-    /* A move the bot thought was fine but wasn't: end the turn instead of
-       looping (or, mid-placement, give up on the bot's plan). */
-    if (r.ok) state = r.state
-    else {
-      const fallback = applyMove(state, state.turn, { t: 'end' })
-      if (!fallback.ok) break
-      state = fallback.state
-    }
+    const next = botStep(state)
+    if (!next) break
+    state = next
   }
   return state
 }
+
+/** The clock ran out on a person's turn: the bot finishes that turn for
+ *  them. It only does what the turn needs (place, roll, move the crash,
+ *  end), and never spends their cards on anything else. */
+export function timeOut(state: BoardState): BoardState {
+  if (state.status !== 'playing') return state
+  const seat = state.turn
+  let s = markTimeout(state)
+  for (let i = 0; i < 20 && s.status === 'playing' && s.turn === seat; i++) {
+    const m: Move =
+      s.phase === 'roll'
+        ? { t: 'roll' }
+        : s.phase === 'main'
+          ? { t: 'end' }
+          : s.phase === 'freeStreets'
+            ? { t: 'endFreeStreets' }
+            : botMove(s)
+    const r = applyMove(s, seat, m)
+    if (!r.ok) break
+    s = r.state
+  }
+  return s
+}
+

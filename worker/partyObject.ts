@@ -67,6 +67,8 @@ export class PartyObject extends DurableObject<Env> {
   }
 
   async alarm(): Promise<void> {
-    if (await this.room.expire()) this.hub.closeAll()
+    const r = await this.room.alarm()
+    if (r === 'expired') this.hub.closeAll()
+    else if (r === 'moved') await this.hub.broadcast()
   }
 }

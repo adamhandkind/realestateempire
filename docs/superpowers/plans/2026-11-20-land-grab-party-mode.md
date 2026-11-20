@@ -253,11 +253,11 @@ next one.
    room (cheap protection for the bill). Or should anyone be able to host?
 2. ~~**18+:**~~ *Answered: adults only, filthy. See "The voice".* Should the TV lobby show a "this game is for adults" line that
    the host confirms, or should Land Grab be written to be fine for anyone?
-3. **What will the big screen be?** A laptop on HDMI, a smart TV's own
+3. ~~**What will the big screen be?**~~ *Answered: a laptop, or a game console's browser. Animations stay light (CSS transforms and fades), sound is synthesised (no files), and nothing on the TV needs a mouse hover.* What will the big screen be? A laptop on HDMI, a smart TV's own
    browser, or a Chromecast tab? Smart-TV browsers are slow, which changes
    how much animation we can afford.
 4. **Name:** keep "Land Grab"?
-5. **Counter-offers:** the plan adds them (any player can propose a trade to
+5. ~~**Counter-offers:**~~ *Answered: no counter-offers. Only the player whose turn it is makes offers (as built).* Counter-offers: the plan adds them (any player can propose a trade to
    the player whose turn it is). Keep that, or stick to the active player
    making all offers?
 
@@ -311,4 +311,32 @@ but more so. Done ahead of Phase 3:
   ticks "I'm 18 or older" to join; the server refuses a join without it.
 - Rules stay plain (deal card text, error messages): the jokes are in the
   table talk, so nobody misreads a rule.
+
+### Phase 3: party flow — in progress
+
+- **Turn clock** (`partyRoom.ts`): a minute a turn, 30 seconds a
+  placement; building or trading puts a full minute back once a turn. A
+  player whose phone isn't connected gets 15 seconds; a phone that drops
+  on its own turn drops to 15 seconds. When it runs out, the bot finishes
+  the turn (`bot.ts timeOut`): it places, rolls, moves the crash and ends,
+  and never spends their cards. The clock lives in storage and runs off the
+  Durable Object's one alarm, shared with the 12-hour expiry.
+- **Bots move a beat apart** (1.1 s a move, on the same alarm) instead of
+  all at once between people's moves, so the TV can show their dice, builds
+  and jokes. They still answer a person's trade offer straight away.
+- **TV:** the newest table-talk line as a big caption under the board, big
+  tumbling dice, a countdown ring (red under 10 s), full-screen cards for a
+  Market Crash and each new era, synthesised sound with a mute button (and
+  a "click for sound" button when the browser blocks it), and a winner
+  screen with final scores and awards.
+- **Awards** (`src/party/awards.ts`): Most Violated, Sticky Fingers, The
+  Taxman's Favourite, Sugar Baby, Swinger, Crash Test Dummy, Couldn't
+  Finish, Most Fertile, Biggest Package, Obsessed With Length, and Blue
+  Balls for last place. Up to five, spread around the table. The rules now
+  keep a tally per seat for them.
+- **Phone:** the clock in the turn bar (blinking red under 10 s, a buzz at
+  10 s), your own awards at the end, and Play again for the host.
+- **Play again:** a new `again` op (TV or host) puts the same people back in
+  the lobby with fresh tallies; their phones stay connected.
+- **Dropped from the plan:** counter-offers (decided above).
 

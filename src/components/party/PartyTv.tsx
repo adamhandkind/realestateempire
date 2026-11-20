@@ -7,11 +7,14 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ERAS, MAX_SEATS, WIN_POINTS } from '../../board/data'
+import { awardsFor } from '../../party/awards'
 import { ApiError, api } from '../../net/api'
 import { PartyClient, partyApi, tvMemory, type Link } from '../../party/client'
-import type { PartyOp, PartyView } from '../../party/protocol'
+import { SETUP_MS, TURN_MS, type PartyOp, type PartyView } from '../../party/protocol'
+import { sound } from '../../party/sound'
 import BoardSvg from '../board/BoardSvg'
 import Qr from './Qr'
+import { useSecondsLeft } from './useClock'
 import './party.css'
 
 type Screen =
@@ -38,6 +41,7 @@ export default function PartyTv() {
 
   const host = async () => {
     try {
+      sound.unlock()
       /* Ticking the box is the host saying they're 18+, as in the main game. */
       await api.confirmAdult()
       const r = await partyApi.host()
@@ -128,7 +132,7 @@ function TvRoom({ code, token, onClosed }: { code: string; token: string; onClos
       ) : view.board.status === 'lobby' ? (
         <TvLobby view={view} send={send} onClose={onClosed} />
       ) : (
-        <TvGame view={view} />
+        <TvGame view={view} send={send} />
       )}
     </div>
   )
@@ -186,7 +190,14 @@ function TvLobby({ view, send, onClose }: { view: PartyView; send: (o: PartyOp) 
           <button className="pt-mid" disabled={seats.length >= MAX_SEATS} onClick={() => send({ op: 'addBot' })}>
             + Add a bot
           </button>
-          <button className="pt-big" disabled={seats.length < 2} onClick={() => send({ op: 'start' })}>
+          <button
+            className="pt-big"
+            disabled={seats.length < 2}
+            onClick={() => {
+              sound.unlock()
+              send({ op: 'start' })
+            }}
+          >
             Start the game
           </button>
         </div>
@@ -215,10 +226,86 @@ const TV_DOING: Record<PartyView['board']['phase'], string> = {
   freeStreets: 'Laying free streets…',
 }
 
-function TvGame({ view }: { view: PartyView }) {
+/** Table talk too routine for the big caption. */
+const PLAIN = / collects |^.{1,40} rolled \d+\.$/
+
+const FACES = ['', '⚀', '⚁', '⚂', '⚃', '⚄', '⚅']
+
+type Moment = { kind: 'era' | 'crash'; key: number; era?: number }
+
+/** Watches the board change and makes the room notice: sounds, the
+ *  Market Crash and new-era cards. */
+function useMoments(view: PartyView, secs: number | null) {
+  const b = view.board
+  const prev = useRef<PartyView | null>(null)
+  const [moment, setMoment] = useState<Moment | null>(null)
+  useEffect(() => {
+    const p = prev.current?.board
+    prev.current = view
+    if (!p || p.status === 'lobby') return
+    const rolled = b.dice && (!p.dice || p.turn !== b.turn || p.round !== b.round)
+    if (b.status === 'over' && p.status !== 'over') sound.play('win')
+    else if (b.era > p.era) {
+      sound.play('era')
+      setMoment({ kind: 'era', key: b.rev, era: b.era })
+    } else if (rolled && b.dice![0] + b.dice![1] === 7) {
+      sound.play('crash')
+      setMoment({ kind: 'crash', key: b.rev })
+    } else if (rolled) sound.play('dice')
+    else if (Object.keys(b.buildings).length > Object.keys(p.buildings).length || Object.keys(b.streets).length > Object.keys(p.streets).length)
+      sound.play('build')
+    else if (p.turn !== b.turn && !b.seats[b.turn].bot) sound.play('turn')
+  }, [view, b])
+  /* The last five seconds of a person's clock tick. */
+  useEffect(() => {
+    if (secs !== null && secs > 0 && secs <= 5 && !b.seats[b.turn]?.bot) sound.play('tick')
+  }, [secs, b.seats, b.turn])
+  useEffect(() => {
+    if (!moment) return
+    const t = setTimeout(() => setMoment(null), moment.kind === 'era' ? 4200 : 2600)
+    return () => clearTimeout(t)
+  }, [moment])
+  return moment
+}
+
+function SoundButton() {
+  const [, redraw] = useState(0)
+  const flip = () => {
+    sound.unlock()
+    if (!sound.blocked || sound.muted) sound.setMuted(!sound.muted)
+    redraw((n) => n + 1)
+  }
+  const label = sound.muted ? '🔇 Sound off' : sound.blocked ? '🔈 Click for sound' : '🔊 Sound on'
+  return (
+    <button className="pt-mini pt-sound" onClick={flip}>
+      {label}
+    </button>
+  )
+}
+
+function Clock({ secs, total, color }: { secs: number; total: number; color: string }) {
+  const r = 26
+  const c = 2 * Math.PI * r
+  const frac = Math.min(1, secs / total)
+  return (
+    <svg className={'pt-clock' + (secs <= 10 ? ' warn' : '')} viewBox="0 0 64 64" aria-label={secs + ' seconds left'}>
+      <circle cx="32" cy="32" r={r} className="pt-clock-bg" />
+      <circle cx="32" cy="32" r={r} className="pt-clock-fg" style={{ stroke: secs <= 10 ? undefined : color }}
+        strokeDasharray={c} strokeDashoffset={c * (1 - frac)} transform="rotate(-90 32 32)" />
+      <text x="32" y="39" textAnchor="middle">{secs}</text>
+    </svg>
+  )
+}
+
+function TvGame({ view, send }: { view: PartyView; send: (o: PartyOp) => void }) {
   const b = view.board
   const up = b.seats[b.turn]
-  const winner = b.winner !== null ? b.seats[b.winner] : null
+  const secs = useSecondsLeft(view)
+  const moment = useMoments(view, secs)
+  const showClock = secs !== null && !up.bot && b.status === 'playing'
+  /* The caption is for the jokes: skip plain payouts and dice totals. */
+  const latest = [...b.log].reverse().find((l) => !PLAIN.test(l.text)) ?? b.log[b.log.length - 1]
+  if (b.status === 'over') return <TvWinner view={view} send={send} />
   return (
     <div className="pt-game">
       <header className="pt-game-top">
@@ -230,38 +317,41 @@ function TvGame({ view }: { view: PartyView }) {
             </li>
           ))}
         </ol>
+        <SoundButton />
         <span className="pt-codechip">Room {view.code}</span>
       </header>
       <div className="pt-game-main">
         <div className="pt-board-wrap">
           <BoardSvg view={b} click={{}} ghost={view.aim ? { ...view.aim, color: b.seats[view.aim.seat]?.color ?? '#fff' } : null} />
+          {latest && (
+            <p key={latest.n} className="pt-caption" style={latest.seat !== undefined ? { borderColor: b.seats[latest.seat]?.color } : undefined}>
+              {latest.text}
+            </p>
+          )}
         </div>
         <aside className="pt-game-side">
-          <div className="pt-turn" style={{ borderColor: winner?.color ?? up.color }}>
-            {winner ? (
-              <>
-                <span className="pt-eyebrow">Winner</span>
-                <b>🏆 {winner.name}</b>
-                <span>{winner.totalPoints ?? winner.points} Empire Points</span>
-              </>
-            ) : (
-              <>
+          <div className="pt-turn" style={{ borderColor: up.color }}>
+            <div className="pt-turn-row">
+              <div className="pt-turn-who">
                 <span className="pt-eyebrow">{b.round > 0 ? 'Round ' + b.round : 'Opening placement'}</span>
                 <b>
                   <i style={{ background: up.color }} /> {up.name}
                 </b>
-                <span>{up.bot || up.autopilot ? 'The bot is thinking…' : TV_DOING[b.phase]}</span>
-                {b.dice && (
-                  <span className={'pt-dice' + (b.dice[0] + b.dice[1] === 7 ? ' seven' : '')}>
-                    🎲 {b.dice[0] + b.dice[1]}
-                  </span>
-                )}
-              </>
+                <span>{up.bot || up.autopilot ? 'The bot is thinking…' : !view.online[up.id] ? '📵 Phone away. The bot steps in soon.' : TV_DOING[b.phase]}</span>
+              </div>
+              {showClock && <Clock secs={secs} total={b.round === 0 ? SETUP_MS / 1000 : TURN_MS / 1000} color={up.color} />}
+            </div>
+            {b.dice && (
+              <div key={b.turn + ':' + b.round + ':' + b.dice.join()} className={'pt-bigdice' + (b.dice[0] + b.dice[1] === 7 ? ' seven' : '')}>
+                <span>{FACES[b.dice[0]]}</span>
+                <span>{FACES[b.dice[1]]}</span>
+                <b>{b.dice[0] + b.dice[1]}</b>
+              </div>
             )}
           </div>
           <ul className="pt-scores">
             {b.seats.map((s, i) => (
-              <li key={s.id} className={i === b.turn && !winner ? 'up' : ''}>
+              <li key={s.id} className={i === b.turn ? 'up' : ''}>
                 <i style={{ background: s.color }} />
                 <b>{s.name}</b>
                 <small>
@@ -270,19 +360,76 @@ function TvGame({ view }: { view: PartyView }) {
                   {b.topProducer === i ? ' · 🎈' : ''}
                   {!s.bot && !view.online[s.id] ? ' · 📵' : ''}
                 </small>
-                <span>{winner ? (s.totalPoints ?? s.points) : s.points}</span>
+                <span>{s.points}</span>
               </li>
             ))}
           </ul>
           <p className="pt-hint">First to {WIN_POINTS} wins · {ERAS[b.era].blurb}</p>
           <ul className="pt-log">
-            {b.log.slice(-6).reverse().map((l) => (
+            {b.log.slice(-5, -1).reverse().map((l) => (
               <li key={l.n} style={l.seat !== undefined ? { borderLeftColor: b.seats[l.seat]?.color } : undefined}>
                 {l.text}
               </li>
             ))}
           </ul>
         </aside>
+      </div>
+      {moment?.kind === 'era' && (
+        <div key={moment.key} className="pt-moment era">
+          <p className="pt-eyebrow">📢 A new era</p>
+          <h2>{ERAS[moment.era!].name}</h2>
+          <p>{ERAS[moment.era!].blurb}</p>
+        </div>
+      )}
+      {moment?.kind === 'crash' && (
+        <div key={moment.key} className="pt-moment crash">
+          <h2>📉 Market Crash</h2>
+          <p>Seven. Anyone holding more than 7 cards just got audited.</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TvWinner({ view, send }: { view: PartyView; send: (o: PartyOp) => void }) {
+  const b = view.board
+  const w = b.winner !== null ? b.seats[b.winner] : null
+  const awards = awardsFor(b)
+  const ranked = b.seats.map((s, i) => ({ s, i })).sort((x, y) => (y.s.totalPoints ?? y.s.points) - (x.s.totalPoints ?? x.s.points))
+  return (
+    <div className="pt-winner" style={{ ['--win' as string]: w?.color ?? 'var(--brass)' }}>
+      <div className="pt-winner-head">
+        <p className="pt-eyebrow">Game over · {b.round} rounds</p>
+        <h1>🏆 {w?.name ?? 'Nobody'} wins</h1>
+        <p className="pt-sub">{b.log[b.log.length - 1]?.text.replace(/^🏆 /, '')}</p>
+      </div>
+      <div className="pt-winner-body">
+        <ol className="pt-final">
+          {ranked.map(({ s, i }) => (
+            <li key={s.id} className={i === b.winner ? 'win' : ''}>
+              <i style={{ background: s.color }} />
+              <b>{s.name}</b>
+              <span>{s.totalPoints ?? s.points}</span>
+            </li>
+          ))}
+        </ol>
+        <ul className="pt-awards">
+          {awards.map((a) => (
+            <li key={a.title} style={{ borderColor: b.seats[a.seat].color }}>
+              <span className="pt-award-icon">{a.icon}</span>
+              <div>
+                <b>{a.title}</b>
+                <small>{a.line}</small>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <div className="pt-actions pt-winner-actions">
+        <button className="pt-big" onClick={() => send({ op: 'again' })}>
+          Play again
+        </button>
+        <span className="pt-hint">Same people, back to the lobby. The host can start it from their phone too.</span>
       </div>
     </div>
   )
