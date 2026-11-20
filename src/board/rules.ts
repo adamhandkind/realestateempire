@@ -8,7 +8,6 @@ import {
   BOTS,
   BUILDING_INFO,
   COSTS,
-  DEAL_INFO,
   DECK,
   ERAS,
   HAND_LIMIT,
@@ -27,6 +26,7 @@ import {
 } from './data'
 import { TOPO, hexNeighbours } from './geometry'
 import type { BoardState, BoardView, DealCard, Hand, Move, Res, Seat, SeatView, Terrain, Tile } from './types'
+import { say, type Beat } from './voice'
 
 /* ------------------------------------------------------------------ dice */
 
@@ -119,7 +119,7 @@ export function sit(state: BoardState, id: string, name: string, color: string):
   const s = clone(state)
   const taken = new Set(s.seats.map((x) => x.color))
   s.seats.push(blankSeat(id, name, taken.has(color) ? '#9aa0b0' : color, false))
-  note(s, name + ' pulled up a chair.', s.seats.length - 1)
+  tell(s, 'join', { name }, s.seats.length - 1)
   return { ok: true, state: s }
 }
 
@@ -131,7 +131,7 @@ export function addBot(state: BoardState): Result {
   const b = BOTS.find((x) => !used.has(x.name)) ?? BOTS[0]
   const n = s.seats.filter((x) => x.bot).length + 1
   s.seats.push(blankSeat('bot:' + n + ':' + s.nextLog, b.name, b.color, true))
-  note(s, b.name + ' sat down and immediately asked who your broker is.', s.seats.length - 1)
+  tell(s, 'join', { name: b.name }, s.seats.length - 1)
   return { ok: true, state: s }
 }
 
@@ -143,7 +143,7 @@ export function leave(state: BoardState, id: string): Result {
   const s = clone(state)
   const [gone] = s.seats.splice(i, 1)
   forgetSeats(s)
-  note(s, gone.name + ' left the table.')
+  tell(s, 'leave', { name: gone.name })
   return { ok: true, state: s }
 }
 
@@ -154,7 +154,7 @@ export function setAutopilot(state: BoardState, id: string, on: boolean): Result
   if (state.seats[i].bot) return no('That one is already a bot.')
   const s = clone(state)
   s.seats[i].autopilot = on
-  note(s, on ? s.seats[i].name + ' stepped out. The bot is playing their seat.' : s.seats[i].name + ' is back at the table.', i)
+  tell(s, on ? 'awayOn' : 'awayOff', { name: s.seats[i].name }, i)
   return { ok: true, state: s }
 }
 
@@ -173,8 +173,8 @@ export function start(state: BoardState): Result {
   s.setup = { step: 0, lastHouse: null }
   s.turn = 0
   s.round = 0
-  note(s, 'The board is dealt. ' + ERAS[0].name + ': ' + ERAS[0].blurb)
-  note(s, s.seats[0].name + ' places first.', 0)
+  tell(s, 'dealt', { era: ERAS[0].name, blurb: ERAS[0].blurb })
+  tell(s, 'first', { name: s.seats[0].name }, 0)
   return { ok: true, state: s }
 }
 
@@ -198,6 +198,13 @@ const clone = (s: BoardState): BoardState => structuredClone(s)
 function note(s: BoardState, text: string, seat?: number) {
   s.log.push(seat === undefined ? { n: s.nextLog++, text } : { n: s.nextLog++, text, seat })
   if (s.log.length > LOG_MAX) s.log.splice(0, s.log.length - LOG_MAX)
+}
+
+/** A line of table talk about a moment (see voice.ts). A bot's own moments
+ *  get its own lines. */
+function tell(s: BoardState, beat: Beat, vars: Record<string, string | number>, seat?: number) {
+  const who = seat !== undefined ? s.seats[seat] : undefined
+  note(s, say(beat, vars, (s.rng ^ Math.imul(s.nextLog + 1, 7919)) >>> 0, who?.bot ? who.name : undefined), seat)
 }
 
 /** Log lines point at seats by position. When seats move (someone leaves,
@@ -313,8 +320,8 @@ function updateMainStreet(s: BoardState) {
   const next = max >= MAIN_STREET_MIN && leaders.length === 1 ? leaders[0] : null
   if (next === was) return
   s.mainStreet = next
-  if (next !== null) note(s, s.seats[next].name + ' owns Main Street (' + max + ' streets in a row): +2 points.', next)
-  else if (was !== null) note(s, 'Main Street is up for grabs again.')
+  if (next !== null) tell(s, 'mainStreet', { name: s.seats[next].name, n: max }, next)
+  else if (was !== null) tell(s, 'mainStreetLost', {})
 }
 
 function updateTopProducer(s: BoardState, seat: number) {
@@ -322,7 +329,7 @@ function updateTopProducer(s: BoardState, seat: number) {
   if (mine < TOP_PRODUCER_MIN || s.topProducer === seat) return
   if (s.topProducer !== null && s.seats[s.topProducer].openHouses >= mine) return
   s.topProducer = seat
-  note(s, s.seats[seat].name + ' is Top Producer (' + mine + ' Open Houses): +2 points.', seat)
+  tell(s, 'topProducer', { name: s.seats[seat].name, n: mine }, seat)
 }
 
 /** The leader pulls everyone into the next era. */
@@ -330,7 +337,7 @@ function updateEra(s: BoardState) {
   const lead = Math.max(...s.seats.map((_, i) => publicPoints(s, i)))
   while (s.era < ERAS.length - 1 && lead >= ERAS[s.era + 1].at) {
     s.era++
-    note(s, '📢 ' + ERAS[s.era].name + '! ' + ERAS[s.era].blurb)
+    tell(s, 'era', { era: ERAS[s.era].name, blurb: ERAS[s.era].blurb })
   }
 }
 
@@ -339,7 +346,7 @@ function checkWin(s: BoardState) {
   if (totalPoints(s, seat) >= WIN_POINTS) {
     s.status = 'over'
     s.winner = seat
-    note(s, '🏆 ' + s.seats[seat].name + ' hits ' + totalPoints(s, seat) + ' Empire Points and wins Land Grab!', seat)
+    tell(s, 'win', { name: s.seats[seat].name, n: totalPoints(s, seat) }, seat)
   }
 }
 
@@ -375,7 +382,7 @@ function audit(s: BoardState) {
       seat.hand[r]--
       lost[r]++
     }
-    note(s, 'Property tax audit! ' + seat.name + ' loses ' + handText(lost) + '.', i)
+    tell(s, 'audit', { name: seat.name, cards: handText(lost) }, i)
   })
 }
 
@@ -395,7 +402,7 @@ function stealFrom(s: BoardState, victim: number) {
   const r = cards[int(s, cards.length)]
   h[r]--
   s.seats[s.turn].hand[r]++
-  note(s, s.seats[s.turn].name + ' poached a card from ' + s.seats[victim].name + '.', s.turn)
+  tell(s, 'steal', { name: s.seats[s.turn].name, who: s.seats[victim].name }, s.turn)
 }
 
 /** After the crash (and any steal): back to rolling, or on with the turn. */
@@ -455,8 +462,8 @@ function play(s: BoardState, seat: number, me: Seat, m: Move): string | null {
             if (t !== 'river') got[t]++
           }
           add(me.hand, got)
-          note(s, me.name + ' built a house and starts with ' + handText(got) + '.', seat)
-        } else note(s, me.name + ' built their first house.', seat)
+          tell(s, 'secondHouse', { name: me.name, cards: handText(got) }, seat)
+        } else tell(s, 'firstHouse', { name: me.name }, seat)
         return null
       }
       if (s.phase !== 'main') return 'You can’t build right now.'
@@ -465,7 +472,7 @@ function play(s: BoardState, seat: number, me: Seat, m: Move): string | null {
       if (!canAfford(me.hand, COSTS.house)) return 'You can’t afford a house.'
       pay(me.hand, COSTS.house)
       s.buildings[m.vertex] = { seat, kind: 'house' }
-      note(s, me.name + ' built a house.', seat)
+      tell(s, 'house', { name: me.name }, seat)
       updateMainStreet(s)
       return null
     }
@@ -480,7 +487,7 @@ function play(s: BoardState, seat: number, me: Seat, m: Move): string | null {
           s.turn = 0
           s.round = 1
           s.phase = 'roll'
-          note(s, 'Opening placement done. ' + s.seats[0].name + ' rolls first.', 0)
+          tell(s, 'setupDone', { name: s.seats[0].name }, 0)
         } else {
           s.turn = setupSeat(n, s.setup.step)
           s.phase = 'setupHouse'
@@ -521,7 +528,7 @@ function play(s: BoardState, seat: number, me: Seat, m: Move): string | null {
       if (!canAfford(me.hand, cost)) return 'You can’t afford that.'
       pay(me.hand, cost)
       s.buildings[m.vertex] = { seat, kind: to }
-      note(s, me.name + ' turned a ' + BUILDING_INFO[b.kind].name.toLowerCase() + ' into a ' + BUILDING_INFO[to].name.toLowerCase() + '.', seat)
+      tell(s, to === 'tower' ? 'tower' : 'duplex', { name: me.name }, seat)
       return null
     }
     case 'roll': {
@@ -529,9 +536,9 @@ function play(s: BoardState, seat: number, me: Seat, m: Move): string | null {
       const d: [number, number] = [int(s, 6) + 1, int(s, 6) + 1]
       s.dice = d
       const total = d[0] + d[1]
-      note(s, me.name + ' rolled ' + total + '.', seat)
+      tell(s, total === 2 ? 'snakeEyes' : total === 12 ? 'boxcars' : 'roll', { name: me.name, n: total }, seat)
       if (total === 7) {
-        note(s, '📉 Market Crash!')
+        tell(s, 'crash', {})
         audit(s)
         s.phase = 'crash'
       } else {
@@ -545,7 +552,7 @@ function play(s: BoardState, seat: number, me: Seat, m: Move): string | null {
       if (!Number.isInteger(m.tile) || m.tile < 0 || m.tile >= s.tiles.length) return 'That’s not a tile.'
       if (m.tile === s.crash) return 'It has to move somewhere new.'
       s.crash = m.tile
-      note(s, me.name + ' crashed the market on ' + tileName(s, m.tile) + '.', seat)
+      tell(s, 'crashMove', { name: me.name, tile: tileName(s, m.tile) }, seat)
       const v = victimsAt(s, m.tile)
       if (v.length === 1) {
         stealFrom(s, v[0])
@@ -568,7 +575,7 @@ function play(s: BoardState, seat: number, me: Seat, m: Move): string | null {
       if (!canAfford(me.hand, COSTS.deal)) return 'You can’t afford a deal card.'
       pay(me.hand, COSTS.deal)
       me.newDeals.push(s.deck.pop()!)
-      note(s, me.name + ' bought a deal card.', seat)
+      tell(s, 'buyDeal', { name: me.name }, seat)
       return null
     case 'playDeal':
       return playDeal(s, seat, me, m)
@@ -579,7 +586,7 @@ function play(s: BoardState, seat: number, me: Seat, m: Move): string | null {
       if (me.hand[m.give] < k) return 'The bank wants ' + k + ' of a kind.'
       me.hand[m.give] -= k
       me.hand[m.get]++
-      note(s, me.name + ' traded ' + k + ' ' + RES_INFO[m.give].icon + ' to the bank for 1 ' + RES_INFO[m.get].icon + '.', seat)
+      tell(s, 'bank', { name: me.name, k, give: RES_INFO[m.give].icon, get: RES_INFO[m.get].icon }, seat)
       return null
     }
     case 'offer': {
@@ -589,7 +596,7 @@ function play(s: BoardState, seat: number, me: Seat, m: Move): string | null {
       if (RESOURCES.some((r) => m.give[r] > 0 && m.want[r] > 0)) return 'You can’t give and want the same thing.'
       if (!canAfford(me.hand, m.give)) return 'You don’t have those cards.'
       s.offer = { give: { ...m.give }, want: { ...m.want } }
-      note(s, me.name + ' offers ' + handText(m.give) + ' for ' + handText(m.want) + '.', seat)
+      tell(s, 'offer', { name: me.name, give: handText(m.give), want: handText(m.want) }, seat)
       return null
     }
     case 'cancelOffer':
@@ -610,12 +617,11 @@ function playDeal(s: BoardState, seat: number, me: Seat, m: Extract<Move, { t: '
   const i = me.deals.indexOf(m.card)
   if (i < 0) return me.newDeals.includes(m.card) ? 'You just bought that one. Play it next turn.' : 'You don’t have that card.'
   if (m.card !== 'openHouse' && s.phase === 'roll') return 'Roll first. Only an Open House can go before the dice.'
-  const info = DEAL_INFO[m.card]
   switch (m.card) {
     case 'openHouse':
       me.openHouses++
       s.phase = 'crash'
-      note(s, me.name + ' played ' + info.icon + ' ' + info.name + '.', seat)
+      tell(s, 'openHouse', { name: me.name }, seat)
       updateTopProducer(s, seat)
       break
     case 'zoning':
@@ -623,13 +629,13 @@ function playDeal(s: BoardState, seat: number, me: Seat, m: Extract<Move, { t: '
       s.freeStreets = Math.min(2, LIMITS.street - streetCount(s, seat))
       if (s.freeStreets <= 0) return 'You’re out of streets.'
       s.phase = 'freeStreets'
-      note(s, me.name + ' played ' + info.icon + ' ' + info.name + '.', seat)
+      tell(s, 'zoning', { name: me.name }, seat)
       break
     case 'hotMarket': {
       if (!isRes(m.res) || !isRes(m.res2)) return 'Pick two resources.'
       me.hand[m.res]++
       me.hand[m.res2]++
-      note(s, me.name + ' played ' + info.icon + ' ' + info.name + ' and took ' + RES_INFO[m.res].icon + RES_INFO[m.res2].icon + '.', seat)
+      tell(s, 'hotMarket', { name: me.name, res: RES_INFO[m.res].icon + RES_INFO[m.res2].icon }, seat)
       break
     }
     case 'biddingWar': {
@@ -641,7 +647,7 @@ function playDeal(s: BoardState, seat: number, me: Seat, m: Extract<Move, { t: '
         o.hand[m.res!] = 0
       })
       me.hand[m.res] += got
-      note(s, me.name + ' started a ' + info.icon + ' ' + info.name + ' for ' + RES_INFO[m.res].name + ' and collected ' + got + '.', seat)
+      tell(s, 'biddingWar', { name: me.name, resName: RES_INFO[m.res].name, n: got }, seat)
       break
     }
   }
@@ -664,7 +670,7 @@ function accept(state: BoardState, seat: number): Result {
   pay(to.hand, o.want)
   add(from.hand, o.want)
   s.offer = null
-  note(s, to.name + ' took the deal: ' + handText(o.give) + ' for ' + handText(o.want) + '.', seat)
+  tell(s, 'took', { who: to.name, name: s.seats[s.turn].name, give: handText(o.give), want: handText(o.want) }, seat)
   return { ok: true, state: s }
 }
 

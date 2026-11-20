@@ -210,3 +210,11 @@
 .pt-offer-line { font-size: 18px; line-height: 1.4; }
 @keyframes pt-slide { from { transform: translateY(20px); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .pt-offer { animation: none; } .pt-huge:active { transform: none; } }
+
+.pt-check { display: flex; gap: 12px; align-items: flex-start; text-align: left; margin: 18px auto 0; max-width: 520px; cursor: pointer;
+  font-size: clamp(14px, 1.2vw, 20px); line-height: 1.4; color: #d9d4c5; }
+.pt-check input { width: 26px; height: 26px; flex: none; accent-color: var(--brass); margin: 0; }
+.pt-check b { color: var(--marble); }
+.pt-host .pt-big { margin-top: 22px; }
+.pt-talk { grid-column: 1 / -1; margin: 6px 0 0; font-size: 13px; color: #d9d4c5; line-height: 1.35; border-top: 1px solid rgba(245,242,234,.1); padding-top: 6px; }
+.pt-tray-note { grid-column: 1 / -1; margin: 0; text-align: center; }

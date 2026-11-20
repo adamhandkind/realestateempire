@@ -31,6 +31,23 @@ const DOING: Record<Phase, string> = {
   freeStreets: 'is laying free streets',
 }
 
+/** While you wait. One per turn, so it changes as the game goes round. */
+const WAITING = [
+  'Watch the TV. Your phone buzzes when it’s your go. The only thing buzzing for you tonight.',
+  'Not your turn. Put the phone down and make eye contact with a human.',
+  'Waiting. Use this time to look smug about your hand.',
+  'Not your turn. Go refill someone’s drink and pretend it’s strategy.',
+  'Hold tight. Edging is a skill.',
+  'Your turn’s coming. Try to last that long.',
+]
+
+/** When the tray is all greyed out. */
+const BROKE = [
+  'You can’t afford anything. Story of your love life.',
+  'Nothing in the tray you can pay for. Trade, beg, or flirt with the bank.',
+  'Broke. Maybe try a trade. Or an OnlyFans.',
+]
+
 function buzz(ms: number | number[]) {
   try {
     navigator.vibrate?.(ms)
@@ -147,6 +164,7 @@ export default function PhoneGame({ view, send }: { view: PartyView; send: (op: 
       <span className="pt-eyebrow">{b.round > 0 ? 'Round ' + b.round : 'Opening'} · {ERAS[b.era].name}</span>
       <b>{myTurn ? 'Your turn' : up.name + ' ' + DOING[b.phase]}</b>
       {b.dice && <span className={'pt-pdice' + (b.dice[0] + b.dice[1] === 7 ? ' seven' : '')}>🎲 {b.dice[0] + b.dice[1]}</span>}
+      {b.log.length > 0 && <p className="pt-talk">{b.log[b.log.length - 1].text}</p>}
     </div>
   )
 
@@ -249,7 +267,7 @@ export default function PhoneGame({ view, send }: { view: PartyView; send: (op: 
       {myTurn && b.phase === 'main' && sheet === 'trade' && <TradeSheet view={b} hand={hand} move={move} close={() => setSheet(null)} />}
       {myTurn && b.phase === 'main' && sheet === 'deals' && <DealSheet view={b} move={move} close={() => setSheet(null)} />}
 
-      {!myTurn && <p className="pt-hint pt-center-text">Watch the TV. Your phone buzzes when it’s your go.</p>}
+      {!myTurn && <p className="pt-hint pt-center-text">{WAITING[(b.round + b.turn) % WAITING.length]}</p>}
       <DealList view={b} />
     </div>
   )
@@ -310,8 +328,10 @@ function BuildTray({
     },
     { id: 'deal' as const, label: 'Deal card', cost: COSTS.deal, ok: canAfford(hand, COSTS.deal) && view.deckCount > 0, note: `${view.deckCount} left` },
   ]
+  const broke = rows.every((r) => !r.ok)
   return (
     <div className="pt-tray">
+      {broke && <p className="pt-hint pt-tray-note">{BROKE[view.round % BROKE.length]}</p>}
       {rows.map((r) => (
         <button key={r.id} disabled={!r.ok} onClick={() => (r.id === 'deal' ? move({ t: 'buyDeal' }) : pickTool(r.id))}>
           <b>{r.label}</b>

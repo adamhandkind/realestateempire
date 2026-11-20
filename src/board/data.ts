@@ -71,10 +71,10 @@ export interface EraDef {
 
 /** The game's stages. The leader drags everyone into the next one. */
 export const ERAS: EraDef[] = [
-  { name: 'Agent Era', at: 0, blurb: 'Streets, houses and deal cards. Everyone starts with a lanyard.' },
-  { name: 'Landlord Era', at: 4, blurb: 'Duplexes unlocked: turn a house into a duplex. It pays double.' },
-  { name: 'Developer Era', at: 7, blurb: 'Towers unlocked: turn a duplex into a tower. It pays triple.' },
-  { name: 'Mogul Era', at: 10, blurb: 'The bank gets friendly: trade 3 of a kind for 1, not 4.' },
+  { name: 'Agent Era', at: 0, blurb: 'Streets, houses and deal cards. Everyone starts with a lanyard and no experience. Be gentle.' },
+  { name: 'Landlord Era', at: 4, blurb: 'Duplexes unlocked: turn a house into a duplex. It pays double. Thin walls, so keep it down.' },
+  { name: 'Developer Era', at: 7, blurb: 'Towers unlocked: turn a duplex into a tower. It pays triple. Yes, everyone is comparing sizes now.' },
+  { name: 'Mogul Era', at: 10, blurb: 'The bank gets friendly: trade 3 of a kind for 1, not 4. It’s had a few and it’s feeling loose.' },
 ]
 
 export const bankRatio = (era: number) => (era >= 3 ? 3 : 4)

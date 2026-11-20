@@ -4,7 +4,7 @@
 
      POST /api/party                 host (signed in) → { code, tvToken }
      GET  /api/party/:code           → Peek: is it there, who's sitting, is it full
-     POST /api/party/:code/join      { name, color } → { seatId, token }
+     POST /api/party/:code/join      { name, color, adult: true } → { seatId, token }
      GET  /api/party/:code/live      WebSocket: first message { t: 'auth', token } */
 
 import { requireUser } from './auth'
@@ -40,6 +40,7 @@ function randomCode(): string {
 /** POST /api/party */
 export async function createParty(env: Env, req: Request): Promise<Response> {
   const user = await requireUser(env, req)
+  if (!user.adult) throw new HttpError(403, 'adult_required', 'Confirm you’re 18 or over first.')
   await limit(env, req, 'create')
   for (let i = 0; i < 12; i++) {
     const c = randomCode()
@@ -61,6 +62,8 @@ export async function joinParty(env: Env, req: Request, raw: string): Promise<Re
   await limit(env, req, 'join')
   const c = code(raw)
   const body = await readJson(req)
+  /* Land Grab's table talk is filthy: every guest says they're an adult. */
+  if (body.adult !== true) throw new HttpError(403, 'adults_only', 'Land Grab is for adults only. Tick the 18+ box.')
   return json(unwrap(await partyRoom(env, c).join(body.name, body.color)), { status: 201 })
 }
 

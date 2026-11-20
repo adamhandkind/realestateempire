@@ -143,6 +143,7 @@ function Join({ code, onBack, onJoined }: { code: string; onBack: (message?: str
   const [peek, setPeek] = useState<Peek | null>(null)
   const [name, setName] = useState(rememberedName)
   const [color, setColor] = useState<string | null>(null)
+  const [adult, setAdult] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -239,8 +240,14 @@ function Join({ code, onBack, onJoined }: { code: string; onBack: (message?: str
                 />
               ))}
             </div>
+            <label className="pt-check">
+              <input type="checkbox" checked={adult} onChange={(e) => setAdult(e.target.checked)} />
+              <span>
+                <b>I’m 18 or older.</b> This game is filthy and I’m fine with that.
+              </span>
+            </label>
             {err && <p className="pt-warn">{err}</p>}
-            <button className="pt-big" disabled={busy || !name.trim() || !color}>
+            <button className="pt-big" disabled={busy || !name.trim() || !color || !adult}>
               {busy ? 'Joining…' : 'Join the game'}
             </button>
           </>

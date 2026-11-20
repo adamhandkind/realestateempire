@@ -690,6 +690,9 @@ describe('Land Grab party rooms', () => {
     expect((await browser().post('/api/party', {})).status).toBe(401)
     const host = browser()
     await host.signIn(OWNER)
+    /* The host has to have said they're an adult, as for the main game. */
+    expect((await host.post('/api/party', {})).data.error).toBe('adult_required')
+    await host.post('/api/me/adult', { confirm: true })
     const made = await host.post('/api/party', {})
     expect(made.status).toBe(201)
     expect(made.data.code).toMatch(/^[A-HJ-NP-Z]{4}$/)
@@ -698,13 +701,15 @@ describe('Land Grab party rooms', () => {
     const guest = browser('7.7.7.7')
     const peek = await guest.get('/api/party/' + made.data.code.toLowerCase())
     expect(peek.data).toMatchObject({ ok: true, status: 'lobby', seats: [], full: false })
-    const joined = await guest.post(`/api/party/${made.data.code}/join`, { name: '  Big   Steve ', color: '#e8573f' })
+    /* No 18+ tick, no seat. */
+    expect((await guest.post(`/api/party/${made.data.code}/join`, { name: 'Kid', color: '#e8573f' })).data.error).toBe('adults_only')
+    const joined = await guest.post(`/api/party/${made.data.code}/join`, { name: '  Big   Steve ', color: '#e8573f', adult: true })
     expect(joined.status).toBe(201)
     expect(joined.data.seatId).toMatch(/^g:/)
     expect((await guest.get('/api/party/' + made.data.code)).data.seats).toEqual([{ name: 'Big Steve', color: '#e8573f' }])
-    expect((await guest.post(`/api/party/${made.data.code}/join`, { name: 'Other', color: '#e8573f' })).data.error).toBe('color_taken')
-    expect((await guest.post(`/api/party/${made.data.code}/join`, { name: 'big steve', color: '#e0b100' })).data.error).toBe('name_taken')
-    expect((await guest.post(`/api/party/${made.data.code}/join`, { name: 'X', color: '#123456' })).data.error).toBe('bad_color')
+    expect((await guest.post(`/api/party/${made.data.code}/join`, { name: 'Other', color: '#e8573f', adult: true })).data.error).toBe('color_taken')
+    expect((await guest.post(`/api/party/${made.data.code}/join`, { name: 'big steve', color: '#e0b100', adult: true })).data.error).toBe('name_taken')
+    expect((await guest.post(`/api/party/${made.data.code}/join`, { name: 'X', color: '#123456', adult: true })).data.error).toBe('bad_color')
   })
 
   it('says plainly when a code is wrong', async () => {

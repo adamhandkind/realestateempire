@@ -53,7 +53,8 @@ describe('the deal', () => {
 
   it('drops seat colours from the lobby log once seats are shuffled', () => {
     const s = table(2, 2, 5)
-    const before = s.log.filter((l) => l.text.includes('chair') || l.text.includes('broker'))
+    /* The four join lines: everything logged before the deal. */
+    const before = s.log.slice(0, s.log.findIndex((l) => l.text.startsWith('The board is dealt')))
     expect(before.length).toBe(4)
     expect(before.every((l) => l.seat === undefined)).toBe(true)
   })

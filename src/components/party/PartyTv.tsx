@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ERAS, MAX_SEATS, WIN_POINTS } from '../../board/data'
-import { ApiError } from '../../net/api'
+import { ApiError, api } from '../../net/api'
 import { PartyClient, partyApi, tvMemory, type Link } from '../../party/client'
 import type { PartyOp, PartyView } from '../../party/protocol'
 import BoardSvg from '../board/BoardSvg'
@@ -21,6 +21,7 @@ type Screen =
 
 export default function PartyTv() {
   const [screen, setScreen] = useState<Screen>({ kind: 'loading' })
+  const [adults, setAdults] = useState(false)
 
   /* A remembered room that's still open picks up where it was. */
   useEffect(() => {
@@ -37,6 +38,8 @@ export default function PartyTv() {
 
   const host = async () => {
     try {
+      /* Ticking the box is the host saying they're 18+, as in the main game. */
+      await api.confirmAdult()
       const r = await partyApi.host()
       const saved = { code: r.code, token: r.tvToken }
       tvMemory.set(saved)
@@ -60,16 +63,25 @@ export default function PartyTv() {
         <div className="pt-host">
           <p className="pt-eyebrow">Real Estate Empire presents</p>
           <h1 className="pt-title">Land Grab</h1>
-          <p className="pt-sub">The party board game. One big screen, everyone plays on their phone. 2–4 players, about 45 minutes.</p>
+          <p className="pt-sub">The filthy party board game. One big screen, everyone plays on their phone. 2–4 players, about 45 minutes, adults only.</p>
           {screen.signIn ? (
             <p className="pt-warn">
               Sign in on this screen first: open your sign-in link here, then come back to <b>/tv</b>.{' '}
               <a href="/">Go to sign in</a>
             </p>
           ) : (
-            <button className="pt-big" onClick={() => void host()}>
-              Start a room
-            </button>
+            <>
+              <label className="pt-check">
+                <input type="checkbox" checked={adults} onChange={(e) => setAdults(e.target.checked)} />
+                <span>
+                  <b>Everyone playing is 18 or older.</b> The table talk is filthy, the bots are worse, and nobody here is getting
+                  an apology.
+                </span>
+              </label>
+              <button className="pt-big" disabled={!adults} onClick={() => void host()}>
+                Start a room
+              </button>
+            </>
           )}
           {screen.message && <p className="pt-warn">{screen.message}</p>}
         </div>
@@ -136,7 +148,7 @@ function TvLobby({ view, send, onClose }: { view: PartyView; send: (o: PartyOp) 
         <p className="pt-url">
           {window.location.host}/join
         </p>
-        <p className="pt-codelabel">Room code</p>
+        <p className="pt-codelabel">Room code · 18+</p>
         <p className="pt-code" aria-label={'Room code ' + view.code.split('').join(' ')}>
           {view.code}
         </p>

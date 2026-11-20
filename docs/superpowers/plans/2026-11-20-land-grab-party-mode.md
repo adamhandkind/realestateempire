@@ -251,7 +251,7 @@ next one.
 
 1. **Who can host?** The plan says a signed-in account is needed to create a
    room (cheap protection for the bill). Or should anyone be able to host?
-2. **18+:** should the TV lobby show a "this game is for adults" line that
+2. ~~**18+:**~~ *Answered: adults only, filthy. See "The voice".* Should the TV lobby show a "this game is for adults" line that
    the host confirms, or should Land Grab be written to be fine for anyone?
 3. **What will the big screen be?** A laptop on HDMI, a smart TV's own
    browser, or a Chromecast tab? Smart-TV browsers are slow, which changes
@@ -290,4 +290,25 @@ next one.
   move goes up a phone's socket.
 - **Still stalls** if a person's phone is gone on their turn: turn timers
   and the bot taking over are Phase 3.
+
+### The voice: filthy, adults only (decided Nov 20)
+
+Adam: the table talk should be *very* edgy and raunchy, like the main game
+but more so. Done ahead of Phase 3:
+
+- **`src/board/voice.ts`:** every moment in the game (joining, building,
+  the dice, a Market Crash, audits, stealing, trades, deal cards, Main
+  Street, eras, the win) has several adult lines, picked without touching
+  the dice so games play out exactly as before. Each line still says what
+  happened. The four bots have their own characters: Chadwick (unbuttoned
+  shirt, hot tub), Krystal (sage, "manifesting", thirst traps), Duke (sits
+  on chairs backwards, takes his shirt off), Brenda (box of wine, freshly
+  divorced, the pool boy). Era blurbs rewritten to match.
+- **Phones:** the latest table-talk line under the turn bar, rotating
+  lines while you wait, and a dig when you can't afford anything.
+- **18+ (open question 2, answered):** hosting needs the account's adult
+  flag (the TV's start screen has the box and sets it), and every guest
+  ticks "I'm 18 or older" to join; the server refuses a join without it.
+- Rules stay plain (deal card text, error messages): the jokes are in the
+  table talk, so nobody misreads a rule.
 

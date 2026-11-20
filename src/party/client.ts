@@ -28,7 +28,7 @@ export const partyApi = {
     return { ok: false, error: 'no_server', message: 'Party mode needs the game server running.' }
   },
   join: (code: string, name: string, color: string) =>
-    call<{ seatId: string; token: string }>('POST', `/api/party/${encodeURIComponent(code)}/join`, { name, color }),
+    call<{ seatId: string; token: string }>('POST', `/api/party/${encodeURIComponent(code)}/join`, { name, color, adult: true }),
 }
 
 /* ------------------------------------------------------------- memory */
