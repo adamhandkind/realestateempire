@@ -3,6 +3,9 @@
 import { describe, expect, it } from 'vitest'
 import type { PartyView, ServerMsg } from '../../src/party/protocol'
 import { ROOM_TTL_MS } from '../../src/party/protocol'
+import { botMove } from '../../src/board/bot'
+import { legalHouses } from '../../src/board/rules'
+import type { BoardState } from '../../src/board/types'
 import { PartyHub, PartyRoom, type PartySocket } from '../partyRoom'
 import { memoryStorage } from './fakeCity'
 
@@ -160,4 +163,76 @@ describe('party room', () => {
     /* The code can be used again. */
     await expect(t.room.create('ABCD', 'h3')).resolves.toBeTruthy()
   })
+
+  it('shows the TV a ghost of the piece the player whose turn it is is looking at', async () => {
+    const t = setup()
+    const { tvToken } = await t.room.create('ABCD', 'host-user')
+    const tv = await t.connect(tvToken)
+    const a = await t.room.join('Ann', '#e8573f')
+    const b = await t.room.join('Bo', '#e0b100')
+    const phones = { [a.seatId]: await t.connect(a.token), [b.seatId]: await t.connect(b.token) }
+    await t.op(tv, { op: 'start' })
+    const board = tv.last().board
+    const upId = board.seats[board.turn].id
+    const up = phones[upId]
+    const other = phones[upId === a.seatId ? b.seatId : a.seatId]
+    const spot = legalHouses(board, board.turn, true)[0]
+
+    /* Someone whose turn it isn't can't put a ghost up; nothing is sent. */
+    const before = tv.inbox.length
+    await t.op(other, { op: 'aim', aim: { kind: 'vertex', i: spot, piece: 'house' } })
+    expect(tv.inbox.length).toBe(before)
+
+    await t.op(up, { op: 'aim', aim: { kind: 'vertex', i: spot, piece: 'house' } })
+    expect(tv.last().aim).toEqual({ kind: 'vertex', i: spot, piece: 'house', seat: board.turn })
+    /* Aiming changes nothing stored, so a move made against this rev still counts. */
+    expect(tv.last().board.rev).toBe(board.rev)
+    /* The same aim again sends nothing. */
+    const n = tv.inbox.length
+    await t.op(up, { op: 'aim', aim: { kind: 'vertex', i: spot, piece: 'house' } })
+    expect(tv.inbox.length).toBe(n)
+
+    /* Nonsense is refused before it reaches the room. */
+    await t.op(up, { op: 'aim', aim: { kind: 'vertex', i: 99, piece: 'house' } })
+    expect(up.lastOf('error')?.code).toBe('bad_message')
+
+    /* Placing the piece clears the ghost. */
+    await t.op(up, { op: 'move', move: { t: 'house', vertex: spot }, rev: board.rev })
+    expect(tv.last().board.buildings[spot]).toBeDefined()
+    expect(tv.last().aim).toBeNull()
+  })
+
+  it('plays a whole game with every move made from a phone', async () => {
+    const t = setup()
+    const { tvToken } = await t.room.create('ABCD', 'host-user')
+    const tv = await t.connect(tvToken)
+    const joined = [await t.room.join('Ann', '#e8573f'), await t.room.join('Bo', '#e0b100'), await t.room.join('Cy', '#7bc142')]
+    const phones = new Map<string, FakeSocket>()
+    for (const j of joined) phones.set(j.seatId, await t.connect(j.token))
+    await t.op(tv, { op: 'addBot' })
+    await t.op(tv, { op: 'start' })
+
+    /* Each phone plays what a bot would, through the socket like a real phone. */
+    let moves = 0
+    for (; moves < 4000; moves++) {
+      const view = tv.last()
+      if (view.board.status === 'over') break
+      const state = (await t.mem.storage.get<{ state: BoardState }>('room'))!.state
+      const up = state.seats[state.turn]
+      const phone = phones.get(up.id)!
+      expect(phone, 'the game waits only on people').toBeDefined()
+      const m = botMove(state)
+      /* A bot would offer trades; a phone in this test just builds and ends. */
+      const move = m.t === 'offer' ? { t: 'end' as const } : m
+      await t.op(phone, { op: 'move', move, rev: phone.last().board.rev })
+      const err = phone.lastOf('error')
+      if (err) throw new Error(`move ${moves} (${JSON.stringify(move)}) refused: ${err.message}`)
+    }
+    const end = tv.last().board
+    expect(end.status).toBe('over')
+    expect(end.winner).not.toBeNull()
+    /* Every phone saw the same finish. */
+    for (const p of phones.values()) expect(p.last().board.winner).toBe(end.winner)
+  })
 })
+

@@ -127,3 +127,6 @@
 
 .lg-log { list-style: none; padding: 0; margin: 0; max-height: 260px; overflow-y: auto; display: grid; gap: 3px; }
 .lg-log li { font-size: 12px; line-height: 1.4; color: #d9d4c5; border-left: 3px solid rgba(245,242,234,.15); padding: 2px 0 2px 7px; }
+.lg-ghost { opacity: .75; pointer-events: none; animation: lg-ghost 1s ease-in-out infinite alternate; }
+@keyframes lg-ghost { from { opacity: .45; } to { opacity: .9; } }
+@media (prefers-reduced-motion: reduce) { .lg-ghost { animation: none; } }

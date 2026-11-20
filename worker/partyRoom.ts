@@ -19,6 +19,7 @@ import {
   ROOM_TTL_MS,
   cleanName,
   parseClientMsg,
+  type Aim,
   type PartyOp,
   type PartyView,
   type Peek,
@@ -56,12 +57,17 @@ export type Who = { role: 'tv' } | { role: 'seat'; seatId: string } | { role: 'w
 export interface OpResult {
   /** Seats that no longer exist: their sockets get a goodbye. */
   gone: { seatId: string; reason: 'kicked' | 'left' }[]
+  /** Nothing anyone can see changed: no need to send views. */
+  quiet?: boolean
 }
 
 export class PartyRoom {
   private storage: PartyStorage
   private now: () => number
   private cache: Stored | null | undefined = undefined
+  /** The ghost piece. Kept in memory only: if the object sleeps it's lost,
+   *  which just means the TV stops showing it. */
+  private aim: (Aim & { seat: number; rev: number }) | null = null
 
   constructor(storage: PartyStorage, now: () => number = Date.now) {
     this.storage = storage
@@ -158,6 +164,15 @@ export class PartyRoom {
   async op(who: Who, o: PartyOp): Promise<OpResult> {
     const s = await this.must()
     const gone: OpResult['gone'] = []
+    if (o.op === 'aim') {
+      /* Only the player whose turn it is, and it changes nothing stored. */
+      const seat = who.role === 'seat' ? s.state.seats.findIndex((x) => x.id === who.seatId) : -1
+      if (s.state.status !== 'playing' || seat < 0 || seat !== s.state.turn) return { gone, quiet: true }
+      const before = JSON.stringify(this.aim)
+      this.aim = o.aim ? { ...o.aim, seat, rev: s.rev } : null
+      return { gone, quiet: before === JSON.stringify(this.aim) }
+    }
+    this.aim = null
     const runsLobby = who.role === 'tv' || (who.role === 'seat' && this.hostSeat(s) === who.seatId)
     const lobbyOnly = () => {
       if (!runsLobby) throw new RoomError(403, 'not_host', 'Only the TV or the host can do that.')
@@ -222,6 +237,8 @@ export class PartyRoom {
       role: who.role,
       seatId,
       hostSeat: this.hostSeat(s),
+      /* A ghost from before the board last moved is stale. */
+      aim: this.aim && this.aim.rev === s.rev ? { kind: this.aim.kind, i: this.aim.i, piece: this.aim.piece, seat: this.aim.seat } : null,
       online: Object.fromEntries(s.state.seats.filter((x) => !x.bot).map((x) => [x.id, online.has(x.id)])),
       board: viewFor(s.state, seatId ?? '', s.rev),
     }
@@ -327,6 +344,7 @@ export class PartyHub {
     if (!who) return this.send(ws, { t: 'error', code: 'no_auth', message: 'Say who you are first.' })
     try {
       const r = await this.room.op(who, m.op)
+      if (r.quiet) return
       for (const g of r.gone)
         for (const other of this.sockets()) {
           const w = this.who(other)

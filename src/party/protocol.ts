@@ -50,6 +50,27 @@ export const ROOM_TTL_MS = 12 * 60 * 60_000
 
 export type Role = 'tv' | 'seat' | 'watch'
 
+/** Where the player whose turn it is has their finger: the TV draws a ghost
+ *  of the piece there so the room can heckle before they confirm. */
+export interface Aim {
+  kind: 'vertex' | 'edge' | 'tile'
+  i: number
+  /** What would go there. */
+  piece: 'house' | 'duplex' | 'tower' | 'street' | 'crash'
+}
+
+const AIM_PIECES: Aim['piece'][] = ['house', 'duplex', 'tower', 'street', 'crash']
+const AIM_LIMIT: Record<Aim['kind'], number> = { vertex: 54, edge: 72, tile: 19 }
+
+export function parseAim(raw: unknown): Aim | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const a = raw as Record<string, unknown>
+  if (a.kind !== 'vertex' && a.kind !== 'edge' && a.kind !== 'tile') return null
+  if (typeof a.i !== 'number' || !Number.isInteger(a.i) || a.i < 0 || a.i >= AIM_LIMIT[a.kind]) return null
+  if (!AIM_PIECES.includes(a.piece as Aim['piece'])) return null
+  return { kind: a.kind, i: a.i, piece: a.piece as Aim['piece'] }
+}
+
 export interface PartyView {
   code: string
   role: Role
@@ -60,6 +81,8 @@ export interface PartyView {
   hostSeat: string | null
   /** Seat id → a phone is connected right now. */
   online: Record<string, boolean>
+  /** The ghost piece of whoever's turn it is, if they're choosing a spot. */
+  aim: (Aim & { seat: number }) | null
   board: BoardView
 }
 
@@ -70,6 +93,8 @@ export type PartyOp =
   | { op: 'leave' }
   | { op: 'start' }
   | { op: 'move'; move: Move; rev: number }
+  /** The player whose turn it is is looking at a spot (null: stopped). */
+  | { op: 'aim'; aim: Aim | null }
 
 export type ClientMsg = { t: 'auth'; token: string } | { t: 'ping' } | { t: 'op'; op: PartyOp }
 
@@ -109,6 +134,12 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
     case 'removeBot':
     case 'kick':
       return typeof op.seatId === 'string' ? { t: 'op', op: { op: op.op, seatId: op.seatId } } : null
+    case 'aim':
+      if (op.aim === null) return { t: 'op', op: { op: 'aim', aim: null } }
+      {
+        const aim = parseAim(op.aim)
+        return aim ? { t: 'op', op: { op: 'aim', aim } } : null
+      }
     case 'move':
       /* The move itself is checked by the rules' parseMove on the server. */
       return typeof op.rev === 'number' ? { t: 'op', op: { op: 'move', move: op.move as Move, rev: op.rev } } : null

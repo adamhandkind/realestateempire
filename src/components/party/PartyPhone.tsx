@@ -2,14 +2,13 @@
    colour, and you're in. The phone keeps its seat token, so locking the
    screen, a reload, or a dropped Wi-Fi puts you straight back in your seat.
 
-   Phase 1: joining and the lobby. During a game the phone shows your hand
-   and whose turn it is; the full controller comes in Phase 2. */
+   During a game the phone is the controller (PhoneGame). */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { RESOURCES, RES_INFO } from '../../board/data'
 import { ApiError } from '../../net/api'
 import { PartyClient, partyApi, rememberName, rememberedName, seatMemory, type Link } from '../../party/client'
 import { NAME_MAX, PARTY_COLORS, normalizeCode, type PartyOp, type PartyView, type Peek } from '../../party/protocol'
+import PhoneGame from './PhoneGame'
 import './party.css'
 
 type Screen =
@@ -289,7 +288,9 @@ function Seat({ code, token, onGone }: { code: string; token: string; onGone: (m
   }, [err])
 
   const send = (op: PartyOp) => {
-    if (!client.current?.send(op)) setErr('Reconnecting… try again in a moment.')
+    const ok = client.current?.send(op) ?? false
+    if (!ok && op.op !== 'aim') setErr('Reconnecting… try again in a moment.')
+    return ok
   }
 
   if (!view)
@@ -342,22 +343,7 @@ function Seat({ code, token, onGone }: { code: string; token: string; onGone: (m
           </button>
         </div>
       ) : (
-        <div className="pt-card">
-          <p className="pt-youre-in">{b.status === 'over' ? 'Game over' : b.seats[b.turn]?.id === view.seatId ? 'Your turn!' : b.seats[b.turn]?.name + '’s turn'}</p>
-          <p className="pt-hint">Your controls are coming in the next update. For now, watch the TV.</p>
-          {me?.hand && (
-            <div className="pt-hand">
-              {RESOURCES.map((r) => (
-                <div key={r} className={me.hand![r] ? '' : 'zero'}>
-                  <span>{RES_INFO[r].icon}</span>
-                  <b>{me.hand![r]}</b>
-                  <small>{RES_INFO[r].name}</small>
-                </div>
-              ))}
-            </div>
-          )}
-          <p className="pt-hint">{me?.totalPoints ?? me?.points ?? 0} Empire Points</p>
-        </div>
+        <PhoneGame view={view} send={send} />
       )}
     </div>
   )

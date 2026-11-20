@@ -1,6 +1,6 @@
 # Land Grab: Party Mode
 
-Nov 20, 2026 · Status: **Phase 1 done** (rooms and joining). Phase 2 next.
+Nov 20, 2026 · Status: **Phase 2 done** (phone controller). Phase 3 next.
 
 **Goal:** Land Grab becomes a same-room party game. One big screen (a TV or
 a laptop on the wall) shows the board. Everyone plays from their own phone:
@@ -260,3 +260,34 @@ next one.
 5. **Counter-offers:** the plan adds them (any player can propose a trade to
    the player whose turn it is). Keep that, or stick to the active player
    making all offers?
+
+### Phase 2: phone controller — done
+
+- **Phone:** `src/components/party/PhoneGame.tsx` (your hand and points;
+  on your turn Roll → build tray → Trade / Deal cards → End turn; the
+  Market Crash victims; a trade offer slides up with Accept; game over with
+  final scores; a buzz when your turn starts or an offer arrives) and
+  `PhoneBoard.tsx` (the board, opened zoomed in on the spots you can pick,
+  pinch to zoom, drag to look around, + / − / whole board buttons; a drag
+  never counts as a tap). Tap a spot, see the piece drawn there, then
+  Confirm. Each build returns you to the tray.
+- **TV ghost piece:** a new `aim` op. Only the player whose turn it is can
+  send one; it's kept in the room's memory (not storage, no `rev` bump) and
+  cleared by the next move. The TV draws it see-through and says what the
+  player is doing ("Picking a spot for a house…").
+- **Board drawing:** `BoardSvg` takes a `ghost`, bigger `touch` hit areas,
+  and a `frame` (the zoom). Shared positions moved to
+  `src/components/board/frame.ts`.
+- **Trading:** offers to the whole table and Accept work between phones
+  (the rules already had them). Counter-offers stay in Phase 3.
+- **Gate passed** against `wrangler dev`: a whole game (26 rounds, two
+  phones and two bots) played by tapping emulated phones (iPhone 13,
+  Pixel 7) with real touch taps on the board, no page errors. It turned up
+  one bug, fixed: after building a street the phone stayed in street mode
+  even when you couldn't afford another.
+- **Tests:** the ghost piece (only the active player, no rev bump, repeats
+  ignored, nonsense refused, cleared by a move) and a whole game whose every
+  move goes up a phone's socket.
+- **Still stalls** if a person's phone is gone on their turn: turn timers
+  and the bot taking over are Phase 3.
+

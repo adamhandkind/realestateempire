@@ -193,6 +193,16 @@ function TvLobby({ view, send, onClose }: { view: PartyView; send: (o: PartyOp) 
   )
 }
 
+const TV_DOING: Record<PartyView['board']['phase'], string> = {
+  setupHouse: 'Picking a spot for a house…',
+  setupStreet: 'Laying a street…',
+  roll: 'About to roll…',
+  crash: 'Market Crash! Moving the 📉…',
+  steal: 'Picking who to poach from…',
+  main: 'Trading and building…',
+  freeStreets: 'Laying free streets…',
+}
+
 function TvGame({ view }: { view: PartyView }) {
   const b = view.board
   const up = b.seats[b.turn]
@@ -212,7 +222,7 @@ function TvGame({ view }: { view: PartyView }) {
       </header>
       <div className="pt-game-main">
         <div className="pt-board-wrap">
-          <BoardSvg view={b} click={{}} />
+          <BoardSvg view={b} click={{}} ghost={view.aim ? { ...view.aim, color: b.seats[view.aim.seat]?.color ?? '#fff' } : null} />
         </div>
         <aside className="pt-game-side">
           <div className="pt-turn" style={{ borderColor: winner?.color ?? up.color }}>
@@ -228,7 +238,7 @@ function TvGame({ view }: { view: PartyView }) {
                 <b>
                   <i style={{ background: up.color }} /> {up.name}
                 </b>
-                <span>{up.bot || up.autopilot ? 'The bot is thinking…' : 'Make your move on your phone'}</span>
+                <span>{up.bot || up.autopilot ? 'The bot is thinking…' : TV_DOING[b.phase]}</span>
                 {b.dice && (
                   <span className={'pt-dice' + (b.dice[0] + b.dice[1] === 7 ? ' seven' : '')}>
                     🎲 {b.dice[0] + b.dice[1]}

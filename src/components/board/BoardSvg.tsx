@@ -5,23 +5,9 @@
 import { PIPS, TERRAIN_INFO } from '../../board/data'
 import { TOPO } from '../../board/geometry'
 import type { BoardView, BuildingKind } from '../../board/types'
+import { S, SEA, VIEW, spotXY, vx, vy, type Ghost } from './frame'
 
-const S = 58
-
-const vx = (i: number) => TOPO.vertices[i].x * S
-const vy = (i: number) => TOPO.vertices[i].y * S
-
-const ys = TOPO.vertices.map((v) => v.y * S)
-/* The water around the island: a flat-topped hexagon a little larger than
-   the board, which also sets the picture's frame. */
-const R = S * 5.0
-const SEA_PTS = Array.from({ length: 6 }, (_, i) => [Math.cos((i * Math.PI) / 3) * R, Math.sin((i * Math.PI) / 3) * R])
-const SEA = SEA_PTS.map(([x, y]) => `${x},${y}`).join(' ')
-const PAD = 4
-const BOX = [-R - PAD, Math.min(...ys, ...SEA_PTS.map((p) => p[1])) - PAD, 2 * (R + PAD), 0]
-BOX[3] = Math.max(...ys, ...SEA_PTS.map((p) => p[1])) + PAD - BOX[1]
-const VIEW = BOX.join(' ')
-
+export type { Ghost } from './frame'
 export interface Clickable {
   vertices?: number[]
   edges?: number[]
@@ -55,14 +41,59 @@ function Building({ kind, x, y, color }: { kind: BuildingKind; x: number; y: num
   )
 }
 
-export default function BoardSvg({ view, click }: { view: BoardView; click: Clickable }) {
+function GhostPiece({ g }: { g: Ghost }) {
+  if (g.kind === 'edge') {
+    const e = TOPO.edges[g.i]
+    return (
+      <g className="lg-ghost">
+        <line x1={vx(e.a)} y1={vy(e.a)} x2={vx(e.b)} y2={vy(e.b)} stroke="#fff" strokeWidth={12} strokeLinecap="round" />
+        <line x1={vx(e.a)} y1={vy(e.a)} x2={vx(e.b)} y2={vy(e.b)} stroke={g.color} strokeWidth={7} strokeLinecap="round" />
+      </g>
+    )
+  }
+  const [x, y] = spotXY(g.kind, g.i)
+  if (g.kind === 'tile')
+    return (
+      <g className="lg-ghost">
+        <circle cx={x} cy={y} r={30} fill="none" stroke={g.color} strokeWidth={5} />
+        <circle cx={x + 22} cy={y - 2} r={13} fill="#14161f" stroke="#c8372d" strokeWidth={2} />
+        <text x={x + 22} y={y + 4} textAnchor="middle" fontSize={15}>
+          📉
+        </text>
+      </g>
+    )
+  return (
+    <g className="lg-ghost">
+      <circle cx={x} cy={y} r={21} fill="none" stroke="#fff" strokeWidth={3} />
+      <Building kind={g.piece === 'street' || g.piece === 'crash' ? 'house' : g.piece} x={x} y={y} color={g.color} />
+    </g>
+  )
+}
+
+export default function BoardSvg({
+  view,
+  click,
+  ghost,
+  touch,
+  frame,
+}: {
+  view: BoardView
+  click: Clickable
+  ghost?: Ghost | null
+  /** Bigger invisible hit areas, for thumbs. */
+  touch?: boolean
+  /** Show only this part of the board ([x, y, w, h]): the phone's zoom. */
+  frame?: [number, number, number, number]
+}) {
+  const hitV = touch ? 26 : 14
+  const hitE = touch ? 34 : 16
   const vSet = new Set(click.vertices ?? [])
   const eSet = new Set(click.edges ?? [])
   const tSet = new Set(click.tiles ?? [])
   const color = (seat: number) => view.seats[seat]?.color ?? '#999'
 
   return (
-    <svg className="lg-board" viewBox={VIEW} role="img" aria-label="Land Grab board">
+    <svg className="lg-board" viewBox={frame ? frame.join(' ') : VIEW} role="img" aria-label="Land Grab board">
       <defs>
         <radialGradient id="lg-sea" cx="50%" cy="50%" r="60%">
           <stop offset="0%" stopColor="#2b4a68" />
@@ -147,7 +178,7 @@ export default function BoardSvg({ view, click }: { view: BoardView; click: Clic
           )
         return (
           <g key={'e' + i} className="lg-spot" onClick={() => click.onEdge?.(i)}>
-            <line x1={ax} y1={ay} x2={bx} y2={by} stroke="transparent" strokeWidth={16} />
+            <line x1={ax} y1={ay} x2={bx} y2={by} stroke="transparent" strokeWidth={hitE} />
             <line x1={ax} y1={ay} x2={bx} y2={by} className="lg-spot-line" strokeWidth={6} strokeLinecap="round" />
           </g>
         )
@@ -162,13 +193,14 @@ export default function BoardSvg({ view, click }: { view: BoardView; click: Clic
             {b && <Building kind={b.kind} x={vx(i)} y={vy(i)} color={color(b.seat)} />}
             {pickable && (
               <>
-                <circle cx={vx(i)} cy={vy(i)} r={14} fill="transparent" />
+                <circle cx={vx(i)} cy={vy(i)} r={hitV} fill="transparent" />
                 <circle cx={vx(i)} cy={vy(i)} r={b ? 13 : 7} className="lg-spot-dot" />
               </>
             )}
           </g>
         )
       })}
+      {ghost && <GhostPiece g={ghost} />}
     </svg>
   )
 }
