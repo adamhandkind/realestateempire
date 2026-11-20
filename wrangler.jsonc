@@ -33,12 +33,21 @@
   "durable_objects": {
     "bindings": [
       { "name": "CITY", "class_name": "CityObject" },
-      { "name": "BOARD", "class_name": "BoardObject" }
+      { "name": "BOARD", "class_name": "BoardObject" },
+      { "name": "PARTY", "class_name": "PartyObject" }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["CityObject"] },
-    { "tag": "v2", "new_sqlite_classes": ["BoardObject"] }
+    { "tag": "v2", "new_sqlite_classes": ["BoardObject"] },
+    { "tag": "v3", "new_sqlite_classes": ["PartyObject"] }
+  ],
+
+  // Land Grab party rooms can be joined without an account, so the open
+  // routes are limited per IP. A whole party shares one Wi-Fi address, so
+  // this is generous: it only stops someone hammering codes.
+  "ratelimits": [
+    { "name": "PARTY_LIMIT", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } }
   ],
 
   // Production settings. Nothing is emailed: players join with invite links

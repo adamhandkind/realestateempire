@@ -1,6 +1,6 @@
 # Land Grab: Party Mode
 
-Nov 20, 2026 · Status: **plan, for review — no code yet**
+Nov 20, 2026 · Status: **Phase 1 done** (rooms and joining). Phase 2 next.
 
 **Goal:** Land Grab becomes a same-room party game. One big screen (a TV or
 a laptop on the wall) shows the board. Everyone plays from their own phone:
@@ -208,6 +208,44 @@ next one.
   posts in the main game.
 - **Casting** to a Chromecast or Apple TV. Opening `/tv` in a laptop browser
   on the TV is the supported way for now.
+
+## Progress
+
+### Phase 1: rooms and joining — done
+
+- **Server:** `worker/partyRoom.ts` (the room and its sockets, testable in
+  Node), `worker/partyObject.ts` (the Durable Object), `worker/party.ts`
+  (routes). Shared protocol in `src/party/protocol.ts`.
+- **Browser:** `src/party/client.ts` (HTTP calls, a socket that reconnects
+  by itself and straight away when a phone wakes, and the device's saved
+  seat), `src/components/party/` (`PartyTv`, `PartyPhone`, `Qr`).
+  `App.tsx` sends `/tv` and `/join/…` to these screens.
+- **Gate passed** against `wrangler dev`: a 1080p TV and four emulated phones
+  (iPhone 13, Pixel 7, iPhone SE, Galaxy S9+) joined in under two seconds
+  of scripted taps. A fifth phone was told the table is full. A phone whose
+  page closed showed "phone away" on the TV and came back to its own seat
+  on reopening. A TV refresh kept the room. A kick from the TV reached the
+  phone. The host's phone started the game.
+- **Tests:** `worker/__tests__/party.test.ts` (room and sockets) and the
+  party section of `api.test.ts` (routes).
+- **During a game the phone only shows your hand** and whose turn it is, so a
+  game stalls at the first human turn until Phase 2.
+
+**Changed from the plan:**
+
+1. **A new Durable Object class, `PartyObject`** (wrangler migration `v3`),
+   instead of re-keying `BoardObject`. The old Land Grab tab still uses
+   `BoardObject` until Phase 4, and keeping them apart is simpler. Phase 4
+   deletes `BoardObject` with a `deleted_classes` migration.
+2. **Rate limiting uses Cloudflare's rate-limit binding** (`PARTY_LIMIT`, 60
+   calls a minute per IP per route). The plan said the invite routes
+   already had a limiter; they don't.
+3. **Tokens go up the socket as the first message**, not in the URL, so they
+   never show up in request logs.
+4. **The open questions were answered with the plan's defaults:** hosting
+   needs a signed-in account (any account, not only the game owner), guests
+   need none, the name stays Land Grab. The 18+ line and counter-offers are
+   still open.
 
 ## Open questions for Adam
 

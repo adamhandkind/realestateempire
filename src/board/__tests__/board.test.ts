@@ -51,6 +51,13 @@ describe('the deal', () => {
     }
   })
 
+  it('drops seat colours from the lobby log once seats are shuffled', () => {
+    const s = table(2, 2, 5)
+    const before = s.log.filter((l) => l.text.includes('chair') || l.text.includes('broker'))
+    expect(before.length).toBe(4)
+    expect(before.every((l) => l.seat === undefined)).toBe(true)
+  })
+
   it('refuses to start alone, and seats at most four', () => {
     let s = newTable(1, 'a')
     s = ok(sit(s, 'a', 'A', '#fff'))

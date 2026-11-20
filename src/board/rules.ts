@@ -142,6 +142,7 @@ export function leave(state: BoardState, id: string): Result {
   if (i < 0) return { ok: true, state }
   const s = clone(state)
   const [gone] = s.seats.splice(i, 1)
+  forgetSeats(s)
   note(s, gone.name + ' left the table.')
   return { ok: true, state: s }
 }
@@ -163,6 +164,7 @@ export function start(state: BoardState): Result {
   if (state.seats.length < MIN_SEATS) return no('Land Grab needs at least two players. Add a bot.')
   const s = clone(state)
   s.seats = shuffle(s, s.seats)
+  forgetSeats(s)
   s.tiles = dealTiles(s)
   s.crash = s.tiles.findIndex((t) => t.terrain === 'river')
   s.deck = shuffle(s, DECK)
@@ -196,6 +198,13 @@ const clone = (s: BoardState): BoardState => structuredClone(s)
 function note(s: BoardState, text: string, seat?: number) {
   s.log.push(seat === undefined ? { n: s.nextLog++, text } : { n: s.nextLog++, text, seat })
   if (s.log.length > LOG_MAX) s.log.splice(0, s.log.length - LOG_MAX)
+}
+
+/** Log lines point at seats by position. When seats move (someone leaves,
+ *  or the start shuffles them), older lines lose their colour rather than
+ *  wear somebody else's. */
+function forgetSeats(s: BoardState) {
+  s.log = s.log.map((l) => ({ n: l.n, text: l.text }))
 }
 
 const count = (s: BoardState, seat: number, kind: 'house' | 'duplex' | 'tower') =>

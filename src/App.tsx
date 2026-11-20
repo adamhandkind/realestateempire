@@ -6,6 +6,17 @@ import { useCallback, useEffect, useState } from 'react'
 import LocalGame from './LocalGame'
 import OnlineApp from './components/online/OnlineApp'
 import { ApiError, probe, type Me } from './net/api'
+import PartyPhone from './components/party/PartyPhone'
+import PartyTv from './components/party/PartyTv'
+
+/* Land Grab party mode has its own two screens, chosen by address: /tv for
+   the big screen, /join (or /join/ABCD from the QR code) for each phone. */
+const PARTY_PAGE = (() => {
+  const p = window.location.pathname
+  if (p === '/tv' || p.startsWith('/tv/')) return 'tv'
+  if (p === '/join' || p.startsWith('/join/')) return 'phone'
+  return null
+})()
 
 type Boot =
   | { kind: 'probing' }
@@ -16,6 +27,12 @@ type Boot =
     }
 
 export default function App() {
+  if (PARTY_PAGE === 'tv') return <PartyTv />
+  if (PARTY_PAGE === 'phone') return <PartyPhone />
+  return <MainApp />
+}
+
+function MainApp() {
   const [boot, setBoot] = useState<Boot>({ kind: 'probing' })
 
   useEffect(() => {

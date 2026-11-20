@@ -9,7 +9,7 @@ import type { Env } from '../env'
 import worker from '../index'
 import { issueLoginLink } from '../auth'
 import { makeD1 } from './d1'
-import { fakeBoardNamespace, fakeCityNamespace } from './fakeCity'
+import { fakeBoardNamespace, fakeCityNamespace, fakePartyNamespace } from './fakeCity'
 
 const APP = 'https://empire.test'
 const OWNER = 'adam@example.com'
@@ -29,6 +29,7 @@ beforeEach(() => {
     ALLOW_MANUAL_TICK: '1',
     CITY: null as unknown as Env['CITY'],
     BOARD: fakeBoardNamespace() as unknown as Env['BOARD'],
+    PARTY: fakePartyNamespace() as unknown as Env['PARTY'],
   }
   city = fakeCityNamespace(() => env)
   env.CITY = city.namespace as unknown as Env['CITY']
@@ -681,5 +682,34 @@ describe('Land Grab table', () => {
     const stranger = browser('9.9.9.9')
     await stranger.signIn('other-owner@example.com')
     expect((await stranger.get(`/api/cities/${cityId}/board`)).status).toBe(404)
+  })
+})
+
+describe('Land Grab party rooms', () => {
+  it('needs a signed-in host, then anyone can peek and join with the code', async () => {
+    expect((await browser().post('/api/party', {})).status).toBe(401)
+    const host = browser()
+    await host.signIn(OWNER)
+    const made = await host.post('/api/party', {})
+    expect(made.status).toBe(201)
+    expect(made.data.code).toMatch(/^[A-HJ-NP-Z]{4}$/)
+    expect(made.data.tvToken.length).toBeGreaterThan(20)
+
+    const guest = browser('7.7.7.7')
+    const peek = await guest.get('/api/party/' + made.data.code.toLowerCase())
+    expect(peek.data).toMatchObject({ ok: true, status: 'lobby', seats: [], full: false })
+    const joined = await guest.post(`/api/party/${made.data.code}/join`, { name: '  Big   Steve ', color: '#e8573f' })
+    expect(joined.status).toBe(201)
+    expect(joined.data.seatId).toMatch(/^g:/)
+    expect((await guest.get('/api/party/' + made.data.code)).data.seats).toEqual([{ name: 'Big Steve', color: '#e8573f' }])
+    expect((await guest.post(`/api/party/${made.data.code}/join`, { name: 'Other', color: '#e8573f' })).data.error).toBe('color_taken')
+    expect((await guest.post(`/api/party/${made.data.code}/join`, { name: 'big steve', color: '#e0b100' })).data.error).toBe('name_taken')
+    expect((await guest.post(`/api/party/${made.data.code}/join`, { name: 'X', color: '#123456' })).data.error).toBe('bad_color')
+  })
+
+  it('says plainly when a code is wrong', async () => {
+    const g = browser('7.7.7.7')
+    expect((await g.get('/api/party/ZZZZ')).data).toMatchObject({ ok: false, error: 'no_room' })
+    expect((await g.get('/api/party/ZZ1Z')).status).toBe(404)
   })
 })

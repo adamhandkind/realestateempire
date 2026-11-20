@@ -4,6 +4,7 @@
    alarms that are due. */
 
 import { BoardRoom } from '../boardRoom'
+import { PartyRoom } from '../partyRoom'
 import { Room, RoomError, type RoomEnv, type RoomStorage } from '../room'
 
 export function memoryStorage() {
@@ -27,6 +28,9 @@ export function memoryStorage() {
     },
     async deleteAlarm() {
       alarm = null
+    },
+    async deleteAll() {
+      data.clear()
     },
   }
   return { storage, data, alarm: () => alarm }
@@ -97,6 +101,33 @@ export function fakeBoardNamespace() {
           get: (_t, method: string) => async (...args: unknown[]) => {
             let room = rooms.get(id)
             if (!room) rooms.set(id, (room = new BoardRoom(memoryStorage().storage)))
+            const fn = (room as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>)[method]
+            try {
+              return { ok: true, value: structuredClone(await fn.apply(room, structuredClone(args))) }
+            } catch (e) {
+              if (e instanceof RoomError) return { ok: false, status: e.status, code: e.code, message: e.message }
+              throw e
+            }
+          },
+        },
+      ),
+  }
+}
+
+/** Stands in for the PARTY namespace: one PartyRoom per room name. Only the
+ *  RPC methods; the sockets are tested on PartyHub directly. */
+export function fakePartyNamespace(now: () => number = Date.now) {
+  const rooms = new Map<string, PartyRoom>()
+  return {
+    rooms,
+    idFromName: (name: string) => name,
+    get: (id: string) =>
+      new Proxy(
+        {},
+        {
+          get: (_t, method: string) => async (...args: unknown[]) => {
+            let room = rooms.get(id)
+            if (!room) rooms.set(id, (room = new PartyRoom(memoryStorage().storage, now)))
             const fn = (room as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>)[method]
             try {
               return { ok: true, value: structuredClone(await fn.apply(room, structuredClone(args))) }
