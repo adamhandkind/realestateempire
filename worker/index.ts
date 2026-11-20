@@ -15,10 +15,12 @@ import {
 } from './cities'
 import type { Env } from './env'
 import { act, bid, checkIn, createAgent, live, getCity, getGame, leaderboard, manualTick, seasons, setSchedule, startSeason, withdraw } from './game'
+import { boardLive, boardOp, getBoard } from './board'
 import { HttpError, errorResponse, json } from './http'
 
 export type { Env }
 export { CityObject } from './cityObject'
+export { BoardObject } from './boardObject'
 
 type Handler = (env: Env, req: Request, params: string[]) => Promise<Response>
 
@@ -51,6 +53,9 @@ const routes: [method: string, pattern: RegExp, handler: Handler][] = [
   ['GET', new RegExp(`^/api/cities/${ID}/leaderboard$`), (env, req, [c]) => leaderboard(env, req, c)],
   ['POST', new RegExp(`^/api/cities/${ID}/checkin$`), (env, req, [c]) => checkIn(env, req, c)],
   ['GET', new RegExp(`^/api/cities/${ID}/live$`), (env, req, [c]) => live(env, req, c)],
+  ['GET', new RegExp(`^/api/cities/${ID}/board$`), (env, req, [c]) => getBoard(env, req, c)],
+  ['POST', new RegExp(`^/api/cities/${ID}/board$`), (env, req, [c]) => boardOp(env, req, c)],
+  ['GET', new RegExp(`^/api/cities/${ID}/board/live$`), (env, req, [c]) => boardLive(env, req, c)],
 ]
 
 /** Cookies are SameSite=Lax, which already stops cross-site POSTs carrying

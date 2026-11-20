@@ -71,6 +71,36 @@ constant arrays and import nothing but types. Logic files are pure — no React,
 no direct storage access, randomness only through `rand()`. Components hold no
 game rules; anything that decides a game outcome lives in `logic/`.
 
+### Land Grab (the board game)
+
+A hex-board strategy game played in the **Land Grab** tab. Two to four
+players, or bots, build streets, houses, duplexes and towers on a map of
+the city. Dice pay out five resources (Leads, Lumber, Brick, Permits, Cash),
+and you trade them with the table or the bank. A 7 is a Market Crash. First
+to 12 Empire Points wins.
+
+Play has stages at two levels:
+
+- **Each turn:** opening placement (snake order), then Roll → Trade → Build
+  → End turn.
+- **Across the game:** four eras. The table moves on when the leader reaches
+  4, 7 and 10 points: Agent (streets, houses, deal cards) → Landlord
+  (duplexes) → Developer (towers) → Mogul (bank trades 3:1).
+
+Online, every city has one shared table, run by its own Durable Object
+(`BOARD` → `worker/boardObject.ts` → `worker/boardRoom.ts`). Every move is
+played on the server. Browsers get their own view with the other players'
+hands hidden, plus a WebSocket nudge whenever the table changes. Bots fill
+empty seats. Anyone can hand their own seat to the bot ("step out"), and the
+city owner can do it for anyone. Offline, the same tab is a practice table
+against three bots, saved in localStorage.
+
+```
+src/board/       pure rules: types, data, hex geometry, rules engine, bot
+src/net/board.ts the table behind one interface: online or practice
+src/components/board/  the board (SVG) and the tab
+```
+
 ## Saves
 
 `localStorage` key `res_save_v1`, `version: 1`. Autosaves on every state change.

@@ -29,10 +29,17 @@
 
   // One Durable Object per city: the live game, its feed and the nightly
   // tick (an alarm). SQLite-backed, so a city's storage is generous.
+  // BOARD is the city's Land Grab table (the board game).
   "durable_objects": {
-    "bindings": [{ "name": "CITY", "class_name": "CityObject" }]
+    "bindings": [
+      { "name": "CITY", "class_name": "CityObject" },
+      { "name": "BOARD", "class_name": "BoardObject" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["CityObject"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["CityObject"] },
+    { "tag": "v2", "new_sqlite_classes": ["BoardObject"] }
+  ],
 
   // Production settings. Nothing is emailed: players join with invite links
   // and the owner signs in with `npm run login-link`.

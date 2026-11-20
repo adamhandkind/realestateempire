@@ -8,6 +8,7 @@ import Game from '../../Game'
 import { cityTransport, type CitySummary, type SaveText } from '../../net/api'
 import { CityStore, type SyncStatus } from '../../net/cityStore'
 import { LiveClient } from '../../net/live'
+import { onlineBoard } from '../../net/board'
 import { CityContext, type CityUi } from './cityContext'
 import type { SeasonResult } from '../../citygame/types'
 import AwardsNight from './AwardsNight'
@@ -89,6 +90,7 @@ export default function CityGame({
   const view = useSyncExternalStore(store.subscribe, store.getCity)
   const report = useSyncExternalStore(store.subscribe, store.getReport)
   const [seenReport, setSeenReport] = useState(() => seen(seenKey(city.id)))
+  const board = useMemo(() => onlineBoard(city.id, city.role === 'owner'), [city.id, city.role])
 
   useEffect(() => {
     const vis = () => {
@@ -194,6 +196,7 @@ export default function CityGame({
             </div>
           ) : null,
           report,
+          board,
           onSummaryClosed: () => {
             if (!reportId) return
             markSeen(seenKey(city.id), reportId)
