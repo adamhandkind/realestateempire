@@ -9,7 +9,7 @@ import type { Env } from '../env'
 import worker from '../index'
 import { issueLoginLink } from '../auth'
 import { makeD1 } from './d1'
-import { fakeCityNamespace } from './fakeCity'
+import { fakeCityNamespace, fakePartyNamespace } from './fakeCity'
 
 const APP = 'https://empire.test'
 const OWNER = 'adam@example.com'
@@ -28,6 +28,7 @@ beforeEach(() => {
     OWNER_EMAILS: OWNER + ', other-owner@example.com',
     ALLOW_MANUAL_TICK: '1',
     CITY: null as unknown as Env['CITY'],
+    PARTY: fakePartyNamespace() as unknown as Env['PARTY'],
   }
   city = fakeCityNamespace(() => env)
   env.CITY = city.namespace as unknown as Env['CITY']
@@ -617,5 +618,39 @@ describe('action gate', () => {
   it('spots NaN anywhere', () => {
     expect(hasNaN({ a: [1, { b: NaN }] })).toBe(true)
     expect(hasNaN({ a: [1, { b: Infinity }] })).toBe(false)
+  })
+})
+
+describe('Land Grab party rooms', () => {
+  it('needs a signed-in host, then anyone can peek and join with the code', async () => {
+    expect((await browser().post('/api/party', {})).status).toBe(401)
+    const host = browser()
+    await host.signIn(OWNER)
+    /* The host has to have said they're an adult, as for the main game. */
+    expect((await host.post('/api/party', {})).data.error).toBe('adult_required')
+    await host.post('/api/me/adult', { confirm: true })
+    const made = await host.post('/api/party', {})
+    expect(made.status).toBe(201)
+    expect(made.data.code).toMatch(/^[A-HJ-NP-Z]{4}$/)
+    expect(made.data.tvToken.length).toBeGreaterThan(20)
+
+    const guest = browser('7.7.7.7')
+    const peek = await guest.get('/api/party/' + made.data.code.toLowerCase())
+    expect(peek.data).toMatchObject({ ok: true, status: 'lobby', seats: [], full: false })
+    /* No 18+ tick, no seat. */
+    expect((await guest.post(`/api/party/${made.data.code}/join`, { name: 'Kid', color: '#e8573f' })).data.error).toBe('adults_only')
+    const joined = await guest.post(`/api/party/${made.data.code}/join`, { name: '  Big   Steve ', color: '#e8573f', adult: true })
+    expect(joined.status).toBe(201)
+    expect(joined.data.seatId).toMatch(/^g:/)
+    expect((await guest.get('/api/party/' + made.data.code)).data.seats).toEqual([{ name: 'Big Steve', color: '#e8573f' }])
+    expect((await guest.post(`/api/party/${made.data.code}/join`, { name: 'Other', color: '#e8573f', adult: true })).data.error).toBe('color_taken')
+    expect((await guest.post(`/api/party/${made.data.code}/join`, { name: 'big steve', color: '#e0b100', adult: true })).data.error).toBe('name_taken')
+    expect((await guest.post(`/api/party/${made.data.code}/join`, { name: 'X', color: '#123456', adult: true })).data.error).toBe('bad_color')
+  })
+
+  it('says plainly when a code is wrong', async () => {
+    const g = browser('7.7.7.7')
+    expect((await g.get('/api/party/ZZZZ')).data).toMatchObject({ ok: false, error: 'no_room' })
+    expect((await g.get('/api/party/ZZ1Z')).status).toBe(404)
   })
 })

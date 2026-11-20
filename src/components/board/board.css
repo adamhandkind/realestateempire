@@ -1,0 +1,17 @@
+/* The Land Grab board drawing (BoardSvg): tiles, glowing spots, the ghost piece. */
+
+.lg-board { width: 100%; height: auto; display: block; user-select: none; }
+.lg-emoji { pointer-events: none; }
+.lg-tile.pick { cursor: pointer; }
+.lg-tile-glow { fill: rgba(255,255,255,.12); stroke: #fff; stroke-width: 3; animation: lg-pulse 1.1s ease-in-out infinite; pointer-events: none; }
+.lg-tile.pick:hover .lg-tile-glow { fill: rgba(200,55,45,.35); }
+.lg-spot { cursor: pointer; }
+.lg-spot-dot { fill: rgba(255,255,255,.85); stroke: #14161f; stroke-width: 1.5; animation: lg-pulse 1.1s ease-in-out infinite; }
+.lg-spot-line { stroke: rgba(255,255,255,.75); animation: lg-pulse 1.1s ease-in-out infinite; }
+.lg-spot:hover .lg-spot-dot { fill: var(--brass); }
+.lg-spot:hover .lg-spot-line { stroke: var(--brass); }
+@keyframes lg-pulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .lg-spot-dot, .lg-spot-line, .lg-tile-glow { animation: none; opacity: .9; } }
+.lg-ghost { opacity: .75; pointer-events: none; animation: lg-ghost 1s ease-in-out infinite alternate; }
+@keyframes lg-ghost { from { opacity: .45; } to { opacity: .9; } }
+@media (prefers-reduced-motion: reduce) { .lg-ghost { animation: none; } }

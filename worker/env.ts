@@ -2,11 +2,18 @@
    (vars) or `wrangler secret put` (secrets). */
 
 import type { CityObject } from './cityObject'
+import type { PartyObject } from './partyObject'
 
 export interface Env {
   DB: D1Database
   /** One Durable Object per city: the live game and the nightly tick. */
   CITY: DurableObjectNamespace<CityObject>
+  /** One Durable Object per city: its Land Grab table. */
+  /** One Durable Object per Land Grab party room (named 'party:<code>'). */
+  PARTY: DurableObjectNamespace<PartyObject>
+  /** Per-IP limit on the party routes anyone can call. Optional: absent in
+   *  the tests. */
+  PARTY_LIMIT?: RateLimit
   /** The built SPA (dist/), served by Workers static assets. */
   ASSETS: Fetcher
   /** Public origin, no trailing slash: sign-in and invite links point here. */

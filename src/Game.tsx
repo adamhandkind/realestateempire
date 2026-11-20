@@ -20,13 +20,15 @@ import WeekSummaryModal from './components/WeekSummaryModal'
 import { activeMarketModifier, isPhase2Teaser, rankOf } from './logic/economy'
 import { money } from './logic/rand'
 import { parseImport, serialize } from './state/serial'
+import PartyPromo from './components/party/PartyPromo'
 import type { Action, GameState, WeekSummary } from './state/types'
 
-type TabId = 'today' | 'office' | 'marketing' | 'leads' | 'portfolio' | 'city' | 'closet' | 'log' | 'league'
+type TabId = 'today' | 'office' | 'marketing' | 'leads' | 'portfolio' | 'city' | 'board' | 'closet' | 'log' | 'league'
 
 const TABS: [TabId, string][] = [
   ['today', 'Today'],
   ['city', 'City'],
+  ['board', 'Land Grab'],
   ['office', 'Office'],
   ['marketing', 'Marketing'],
   ['leads', 'Leads'],
@@ -251,6 +253,7 @@ export default function Game({
       {tab === 'leads' && <LeadsTab state={state} dispatch={dispatch} />}
       {tab === 'portfolio' && <PortfolioTab state={state} dispatch={dispatch} />}
       {tab === 'city' && <MapTab state={state} dispatch={dispatch} curtain={showSummary || !!state.postComposerPending || !!state.ceremony} />}
+      {tab === 'board' && <PartyPromo />}
       {tab === 'closet' && <ClosetTab state={state} dispatch={dispatch} />}
       {tab === 'log' && <LogTab state={state} />}
       {tab === 'league' && online?.league}

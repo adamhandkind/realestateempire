@@ -15,14 +15,17 @@ import {
 } from './cities'
 import type { Env } from './env'
 import { act, bid, checkIn, createAgent, live, getCity, getGame, leaderboard, manualTick, seasons, setSchedule, startSeason, withdraw } from './game'
+import { createParty, joinParty, partyLive, peekParty } from './party'
 import { HttpError, errorResponse, json } from './http'
 
 export type { Env }
 export { CityObject } from './cityObject'
+export { PartyObject } from './partyObject'
 
 type Handler = (env: Env, req: Request, params: string[]) => Promise<Response>
 
 const ID = '([A-Za-z0-9_-]{1,64})'
+const CODE = '([A-Za-z]{4})'
 const routes: [method: string, pattern: RegExp, handler: Handler][] = [
   ['POST', /^\/api\/auth\/join$/, (env, req) => joinWithInvite(env, req)],
   ['POST', /^\/api\/auth\/verify$/, (env, req) => verifyLink(env, req)],
@@ -51,6 +54,10 @@ const routes: [method: string, pattern: RegExp, handler: Handler][] = [
   ['GET', new RegExp(`^/api/cities/${ID}/leaderboard$`), (env, req, [c]) => leaderboard(env, req, c)],
   ['POST', new RegExp(`^/api/cities/${ID}/checkin$`), (env, req, [c]) => checkIn(env, req, c)],
   ['GET', new RegExp(`^/api/cities/${ID}/live$`), (env, req, [c]) => live(env, req, c)],
+  ['POST', /^\/api\/party$/, (env, req) => createParty(env, req)],
+  ['GET', new RegExp(`^/api/party/${CODE}$`), (env, req, [c]) => peekParty(env, req, c)],
+  ['POST', new RegExp(`^/api/party/${CODE}/join$`), (env, req, [c]) => joinParty(env, req, c)],
+  ['GET', new RegExp(`^/api/party/${CODE}/live$`), (env, req, [c]) => partyLive(env, req, c)],
 ]
 
 /** Cookies are SameSite=Lax, which already stops cross-site POSTs carrying
