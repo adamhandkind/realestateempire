@@ -20,8 +20,7 @@ import WeekSummaryModal from './components/WeekSummaryModal'
 import { activeMarketModifier, isPhase2Teaser, rankOf } from './logic/economy'
 import { money } from './logic/rand'
 import { parseImport, serialize } from './state/serial'
-import LandGrab from './components/board/LandGrab'
-import { practiceBoard, type BoardTransport } from './net/board'
+import PartyPromo from './components/party/PartyPromo'
 import type { Action, GameState, WeekSummary } from './state/types'
 
 type TabId = 'today' | 'office' | 'marketing' | 'leads' | 'portfolio' | 'city' | 'board' | 'closet' | 'log' | 'league'
@@ -50,9 +49,6 @@ export interface OnlineShell {
   summaryExtra?: ReactNode
   /** Shared city: the morning report has been read. */
   onSummaryClosed?: () => void
-  /** The city's Land Grab table (the board game). Offline play gets a
-   *  practice table against bots instead. */
-  board?: BoardTransport
   /** Shared city: the last tick's report, for the Today briefing. */
   report?: { summary: WeekSummary | null; offers: string[] } | null
 }
@@ -73,8 +69,6 @@ export default function Game({
 }) {
   /* Today is the front door: what happened, what needs you, what's next. */
   const [tab, setTab] = useState<TabId>('today')
-  const onlineBoard = online?.board
-  const board = useMemo(() => onlineBoard ?? practiceBoard(), [onlineBoard])
   const [showSummary, setShowSummary] = useState(false)
   const [confetti, setConfetti] = useState(false)
   const [importText, setImportText] = useState('')
@@ -259,7 +253,7 @@ export default function Game({
       {tab === 'leads' && <LeadsTab state={state} dispatch={dispatch} />}
       {tab === 'portfolio' && <PortfolioTab state={state} dispatch={dispatch} />}
       {tab === 'city' && <MapTab state={state} dispatch={dispatch} curtain={showSummary || !!state.postComposerPending || !!state.ceremony} />}
-      {tab === 'board' && <LandGrab transport={board} />}
+      {tab === 'board' && <PartyPromo />}
       {tab === 'closet' && <ClosetTab state={state} dispatch={dispatch} />}
       {tab === 'log' && <LogTab state={state} />}
       {tab === 'league' && online?.league}

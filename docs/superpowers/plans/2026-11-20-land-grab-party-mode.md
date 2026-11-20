@@ -1,6 +1,6 @@
 # Land Grab: Party Mode
 
-Nov 20, 2026 · Status: **Phase 2 done** (phone controller). Phase 3 next.
+Nov 20, 2026 · Status: **Phases 1–4 built.** Waiting on the in-person gates: a real game night (Phase 3) and playtest timing (Phase 4).
 
 **Goal:** Land Grab becomes a same-room party game. One big screen (a TV or
 a laptop on the wall) shows the board. Everyone plays from their own phone:
@@ -312,7 +312,7 @@ but more so. Done ahead of Phase 3:
 - Rules stay plain (deal card text, error messages): the jokes are in the
   table talk, so nobody misreads a rule.
 
-### Phase 3: party flow — in progress
+### Phase 3: party flow — built, waiting on a real game night
 
 - **Turn clock** (`partyRoom.ts`): a minute a turn, 30 seconds a
   placement; building or trading puts a full minute back once a turn. A
@@ -339,4 +339,27 @@ but more so. Done ahead of Phase 3:
 - **Play again:** a new `again` op (TV or host) puts the same people back in
   the lobby with fresh tallies; their phones stay connected.
 - **Dropped from the plan:** counter-offers (decided above).
+
+### Phase 4: tuning and clean-up — built, waiting on playtests
+
+- **Retuned for party length** from 300 bot games per setting (median
+  rounds; 4 / 3 / 2 players):
+
+  | Setting | 4p | 3p | 2p |
+  | --- | --- | --- | --- |
+  | 12 points, eras 4/7/10 (before) | 24 | 28 | 37 |
+  | **10 points, eras 3/6/8 (now)** | **19** | **23** | **32** |
+  | 9 points, eras 3/5/7 | 18 | 20 | 29 |
+
+  At about 40 s a human turn and 5 s a bot turn, 19 rounds is roughly 50
+  minutes with four people, 30 with two people and two bots. All four eras
+  show up in 98% of games, and no seat wins more than its share. People
+  trade more than bots, so real games may run shorter; the playtest decides
+  whether to drop to 9.
+- **Removed the Nov 20 tab:** `LandGrab.tsx`, `src/net/board.ts`,
+  `worker/board.ts`, `boardRoom.ts`, `boardObject.ts`, the
+  `/api/cities/:id/board` routes, the `BOARD` binding and its tests. Wrangler
+  migration `v4` deletes the `BoardObject` class (any per-city tables are
+  dropped on deploy). The main game's Land Grab tab now points to `/tv`.
+- **README** rewritten for party mode.
 

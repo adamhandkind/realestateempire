@@ -1,7 +1,6 @@
 /* Bindings and settings the Worker runs with. Values live in wrangler.jsonc
    (vars) or `wrangler secret put` (secrets). */
 
-import type { BoardObject } from './boardObject'
 import type { CityObject } from './cityObject'
 import type { PartyObject } from './partyObject'
 
@@ -10,7 +9,6 @@ export interface Env {
   /** One Durable Object per city: the live game and the nightly tick. */
   CITY: DurableObjectNamespace<CityObject>
   /** One Durable Object per city: its Land Grab table. */
-  BOARD: DurableObjectNamespace<BoardObject>
   /** One Durable Object per Land Grab party room (named 'party:<code>'). */
   PARTY: DurableObjectNamespace<PartyObject>
   /** Per-IP limit on the party routes anyone can call. Optional: absent in

@@ -1,8 +1,8 @@
 /* Land Grab: the board game. A hex map of Brantford, 2–4 friends (or bots)
    building streets, houses, duplexes and towers, trading what the dice pay
-   out, and racing through four eras to 12 Empire Points.
+   out, and racing through four eras to 10 Empire Points.
 
-   Pure data. The server keeps a BoardState per city (worker/boardRoom.ts);
+   Pure data. The server keeps a BoardState per party room (worker/partyRoom.ts);
    every browser gets a BoardView with the other players' hands hidden. */
 
 export type Res = 'leads' | 'lumber' | 'brick' | 'permits' | 'cash'

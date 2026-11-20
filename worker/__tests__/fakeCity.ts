@@ -3,7 +3,6 @@
    RPC would. `clock` drives the room's sense of time; `fireAlarms` plays the
    alarms that are due. */
 
-import { BoardRoom } from '../boardRoom'
 import { PartyRoom } from '../partyRoom'
 import { Room, RoomError, type RoomEnv, type RoomStorage } from '../room'
 
@@ -85,32 +84,6 @@ export function fakeCityNamespace(env: () => RoomEnv) {
       }
       return fired
     },
-  }
-}
-
-/** Stands in for the BOARD namespace: one BoardRoom per city, copied the
- *  way RPC would copy. */
-export function fakeBoardNamespace() {
-  const rooms = new Map<string, BoardRoom>()
-  return {
-    idFromName: (name: string) => name,
-    get: (id: string) =>
-      new Proxy(
-        {},
-        {
-          get: (_t, method: string) => async (...args: unknown[]) => {
-            let room = rooms.get(id)
-            if (!room) rooms.set(id, (room = new BoardRoom(memoryStorage().storage)))
-            const fn = (room as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>)[method]
-            try {
-              return { ok: true, value: structuredClone(await fn.apply(room, structuredClone(args))) }
-            } catch (e) {
-              if (e instanceof RoomError) return { ok: false, status: e.status, code: e.code, message: e.message }
-              throw e
-            }
-          },
-        },
-      ),
   }
 }
 

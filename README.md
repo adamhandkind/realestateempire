@@ -71,34 +71,50 @@ constant arrays and import nothing but types. Logic files are pure — no React,
 no direct storage access, randomness only through `rand()`. Components hold no
 game rules; anything that decides a game outcome lives in `logic/`.
 
-### Land Grab (the board game)
+### Land Grab (the party board game)
 
-A hex-board strategy game played in the **Land Grab** tab. Two to four
-players, or bots, build streets, houses, duplexes and towers on a map of
-the city. Dice pay out five resources (Leads, Lumber, Brick, Permits, Cash),
-and you trade them with the table or the bank. A 7 is a Market Crash. First
-to 12 Empire Points wins.
+A same-room party game: the board goes on a big screen (a laptop on the TV,
+or a console's browser) and everyone plays on their own phone. Two to four
+players, bots fill empty seats, about 45 minutes. Adults only: the table
+talk is filthy on purpose.
 
-Play has stages at two levels:
+- **Hosting:** open `/tv` while signed in, tick the 18+ box and start a
+  room. The TV shows a 4-letter room code and a QR code.
+- **Joining:** scan the QR code (or open `/join` and type the code), pick a
+  name and a colour, tick 18+. No account needed. The phone remembers its
+  seat, so a locked screen or a reload drops you straight back in.
+- **Playing:** build streets, houses, duplexes and towers on a hex map of
+  the city. Dice pay out five resources (Leads, Lumber, Brick, Permits,
+  Cash) that you trade with the table or the bank. A 7 is a Market Crash.
+  First to 10 Empire Points wins. Four eras move the whole table on when the
+  leader reaches 3, 6 and 8 points: Agent → Landlord (duplexes) → Developer
+  (towers) → Mogul (bank trades 3:1).
+- **On your phone:** your hand, then on your turn Roll → build tray → Trade
+  / Deal cards → End turn. Placing opens the board zoomed in on your legal
+  spots; tap one, the TV shows a ghost of the piece, and nothing is spent
+  until you press Confirm.
+- **The turn clock:** a minute a turn (30 s for opening placement), topped
+  up once if you build or trade; 15 s if your phone isn't connected. When it
+  runs out the bot finishes your turn without spending your cards.
+- **The TV:** the board, big dice, a countdown ring, the latest joke as a
+  caption, full-screen cards for a Market Crash and each new era, sound
+  (with mute), and a winner screen with awards. Play again keeps the same
+  people.
 
-- **Each turn:** opening placement (snake order), then Roll → Trade → Build
-  → End turn.
-- **Across the game:** four eras. The table moves on when the leader reaches
-  4, 7 and 10 points: Agent (streets, houses, deal cards) → Landlord
-  (duplexes) → Developer (towers) → Mogul (bank trades 3:1).
-
-Online, every city has one shared table, run by its own Durable Object
-(`BOARD` → `worker/boardObject.ts` → `worker/boardRoom.ts`). Every move is
-played on the server. Browsers get their own view with the other players'
-hands hidden, plus a WebSocket nudge whenever the table changes. Bots fill
-empty seats. Anyone can hand their own seat to the bot ("step out"), and the
-city owner can do it for anyone. Offline, the same tab is a practice table
-against three bots, saved in localStorage.
+One Durable Object per room (`PARTY` → `worker/partyObject.ts` →
+`worker/partyRoom.ts`) holds the game, the seat tokens (hashed) and the turn
+clock, and pushes every socket its own view over a WebSocket. Bots move a
+second apart on the room's alarm so the room can watch. Rooms are cleared
+after 12 hours of quiet. The main game's Land Grab tab points to `/tv`.
 
 ```
-src/board/       pure rules: types, data, hex geometry, rules engine, bot
-src/net/board.ts the table behind one interface: online or practice
-src/components/board/  the board (SVG) and the tab
+src/board/             pure rules: types, data, hex geometry, rules engine,
+                       bot, table talk (voice.ts)
+src/party/             what the TV, phones and server say to each other,
+                       the socket client, awards, sound
+src/components/party/  the TV, the phone, the phone's zoomable board
+src/components/board/  the board drawing (SVG)
+worker/party*.ts       routes, the room's Durable Object, the room itself
 ```
 
 ## Saves

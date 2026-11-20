@@ -9,7 +9,7 @@ import type { Env } from '../env'
 import worker from '../index'
 import { issueLoginLink } from '../auth'
 import { makeD1 } from './d1'
-import { fakeBoardNamespace, fakeCityNamespace, fakePartyNamespace } from './fakeCity'
+import { fakeCityNamespace, fakePartyNamespace } from './fakeCity'
 
 const APP = 'https://empire.test'
 const OWNER = 'adam@example.com'
@@ -28,7 +28,6 @@ beforeEach(() => {
     OWNER_EMAILS: OWNER + ', other-owner@example.com',
     ALLOW_MANUAL_TICK: '1',
     CITY: null as unknown as Env['CITY'],
-    BOARD: fakeBoardNamespace() as unknown as Env['BOARD'],
     PARTY: fakePartyNamespace() as unknown as Env['PARTY'],
   }
   city = fakeCityNamespace(() => env)
@@ -619,69 +618,6 @@ describe('action gate', () => {
   it('spots NaN anywhere', () => {
     expect(hasNaN({ a: [1, { b: NaN }] })).toBe(true)
     expect(hasNaN({ a: [1, { b: Infinity }] })).toBe(false)
-  })
-})
-
-describe('Land Grab table', () => {
-  it('opens, seats friends and bots, and plays moves on the server', async () => {
-    const { owner, cityId } = await ownerWithCity()
-    await readyAgent(owner, cityId, 'teal')
-    const friend = await friendInCity(owner, cityId, 'friend@example.com')
-    const path = `/api/cities/${cityId}/board`
-
-    expect((await owner.get(path)).data.view).toBeNull()
-    const opened = await owner.post(path, { op: 'open' })
-    expect(opened.status).toBe(200)
-    expect(opened.data.view.seats[0]).toMatchObject({ name: 'Dave Deals', color: '#1fa6a0' })
-    expect((await owner.post(path, { op: 'open' })).status).toBe(409)
-
-    /* Not seated: can watch, can't run the lobby. */
-    expect((await friend.post(path, { op: 'addBot' })).status).toBe(403)
-    const sat = await friend.post(path, { op: 'sit' })
-    expect(sat.data.view.seats).toHaveLength(2)
-    expect(sat.data.view.seats[1].name).toBe('friend')
-    await friend.post(path, { op: 'addBot' })
-    const started = await owner.post(path, { op: 'start' })
-    expect(started.data.view.status).toBe('playing')
-
-    /* The bot has already placed if it went first; now a human is up. */
-    let view = started.data.view
-    const up = view.seats[view.turn]
-    expect(up.bot).toBe(false)
-    const mover = up.name === 'friend' ? friend : owner
-    const other = mover === owner ? friend : owner
-    expect((await other.post(path, { op: 'move', rev: view.rev, move: { t: 'roll' } })).status).toBe(400)
-    expect((await mover.post(path, { op: 'move', rev: view.rev - 1, move: { t: 'roll' } })).status).toBe(409)
-    expect((await mover.post(path, { op: 'move', rev: view.rev, move: { t: 'nope' } })).status).toBe(400)
-
-    /* Hands are private. */
-    view = (await other.get(path)).data.view
-    const mine = view.seats[view.you]
-    expect(mine.hand).toBeDefined()
-    expect(view.seats.filter((s: { hand?: unknown }) => s.hand).length).toBe(1)
-  })
-
-  it('lets you hand your seat to the bot, and the owner hand anyone’s', async () => {
-    const { owner, cityId } = await ownerWithCity()
-    const friend = await friendInCity(owner, cityId, 'pal@example.com')
-    const path = `/api/cities/${cityId}/board`
-    await friend.post(path, { op: 'open' })
-    await owner.post(path, { op: 'sit' })
-    await owner.post(path, { op: 'start' })
-    const friendId = (await friend.get(path)).data.view.seats.find((s: { name: string }) => s.name === 'pal').id
-    const ownerId = (await owner.get(path)).data.view.seats.find((s: { name: string }) => s.name !== 'pal').id
-    expect((await friend.post(path, { op: 'autopilot', on: true, seatId: ownerId })).status).toBe(403)
-    const r = await owner.post(path, { op: 'autopilot', on: true, seatId: friendId })
-    expect(r.status).toBe(200)
-    /* Now only the owner holds the bots up: it's their turn. */
-    expect(r.data.view.seats[r.data.view.turn].id).toBe(ownerId)
-  })
-
-  it('keeps strangers out', async () => {
-    const { cityId } = await ownerWithCity()
-    const stranger = browser('9.9.9.9')
-    await stranger.signIn('other-owner@example.com')
-    expect((await stranger.get(`/api/cities/${cityId}/board`)).status).toBe(404)
   })
 })
 

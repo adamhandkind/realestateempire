@@ -5,6 +5,7 @@
 import { PIPS, TERRAIN_INFO } from '../../board/data'
 import { TOPO } from '../../board/geometry'
 import type { BoardView, BuildingKind } from '../../board/types'
+import './board.css'
 import { S, SEA, VIEW, spotXY, vx, vy, type Ghost } from './frame'
 
 export type { Ghost } from './frame'

@@ -55,7 +55,7 @@ export const BUILDING_INFO: Record<BuildingKind, { name: string; points: number;
   tower: { name: 'Tower', points: 3, yield: 3 },
 }
 
-export const WIN_POINTS = 12
+export const WIN_POINTS = 10
 export const MAIN_STREET_MIN = 5
 export const TOP_PRODUCER_MIN = 3
 export const AWARD_POINTS = 2
@@ -72,9 +72,9 @@ export interface EraDef {
 /** The game's stages. The leader drags everyone into the next one. */
 export const ERAS: EraDef[] = [
   { name: 'Agent Era', at: 0, blurb: 'Streets, houses and deal cards. Everyone starts with a lanyard and no experience. Be gentle.' },
-  { name: 'Landlord Era', at: 4, blurb: 'Duplexes unlocked: turn a house into a duplex. It pays double. Thin walls, so keep it down.' },
-  { name: 'Developer Era', at: 7, blurb: 'Towers unlocked: turn a duplex into a tower. It pays triple. Yes, everyone is comparing sizes now.' },
-  { name: 'Mogul Era', at: 10, blurb: 'The bank gets friendly: trade 3 of a kind for 1, not 4. It’s had a few and it’s feeling loose.' },
+  { name: 'Landlord Era', at: 3, blurb: 'Duplexes unlocked: turn a house into a duplex. It pays double. Thin walls, so keep it down.' },
+  { name: 'Developer Era', at: 6, blurb: 'Towers unlocked: turn a duplex into a tower. It pays triple. Yes, everyone is comparing sizes now.' },
+  { name: 'Mogul Era', at: 8, blurb: 'The bank gets friendly: trade 3 of a kind for 1, not 4. It’s had a few and it’s feeling loose.' },
 ]
 
 export const bankRatio = (era: number) => (era >= 3 ? 3 : 4)

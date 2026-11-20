@@ -29,18 +29,19 @@
 
   // One Durable Object per city: the live game, its feed and the nightly
   // tick (an alarm). SQLite-backed, so a city's storage is generous.
-  // BOARD is the city's Land Grab table (the board game).
+  // PARTY is a Land Grab party room, one per room code.
   "durable_objects": {
     "bindings": [
       { "name": "CITY", "class_name": "CityObject" },
-      { "name": "BOARD", "class_name": "BoardObject" },
       { "name": "PARTY", "class_name": "PartyObject" }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["CityObject"] },
     { "tag": "v2", "new_sqlite_classes": ["BoardObject"] },
-    { "tag": "v3", "new_sqlite_classes": ["PartyObject"] }
+    { "tag": "v3", "new_sqlite_classes": ["PartyObject"] },
+    // The old per-city Land Grab table, replaced by party rooms.
+    { "tag": "v4", "deleted_classes": ["BoardObject"] }
   ],
 
   // Land Grab party rooms can be joined without an account, so the open
